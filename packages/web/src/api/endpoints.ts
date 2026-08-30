@@ -159,6 +159,7 @@ import type {
   InstalledPluginsResponse,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  VersionRollbackResponse,
   VersionResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
@@ -1346,6 +1347,12 @@ export const installOnMachine = (projectId: string, machineId: string) =>
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
 /** The harness versions this data root has committed, newest first, and the current one. */
 export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
+/** Push a kept version back (admin); the swap follows the 202. */
+export const rollbackVersion = (id: string) =>
+  apiFetch<VersionRollbackResponse>("/api/version/history/rollback", {
+    method: "POST",
+    body: { id },
+  });
 /** What changed between two stored interface tables; either hash may be "none". */
 export const getVersionHistoryDiff = (from: string, to: string) =>
   apiFetch<VersionHistoryDiffResponse>(
