@@ -157,6 +157,7 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  VersionHistoryResponse,
   VersionResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
@@ -1342,6 +1343,8 @@ export const installOnMachine = (projectId: string, machineId: string) =>
 // Version & self-update ----------------------------------------------------------------
 
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** The harness versions this data root has committed, newest first, and the current one. */
+export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
 
 /** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
 export const checkUpdate = (force = false) =>
