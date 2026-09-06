@@ -99,6 +99,8 @@ import type {
   SessionContextResponse,
   SessionCreateRequest,
   SessionCreateResponse,
+  SessionSurfaceOpenRequest,
+  SessionSurfaceResponse,
   SessionForkRequest,
   SessionForkResponse,
   SessionPatchRequest,
@@ -1683,3 +1685,22 @@ export const uninstallPlugin = (projectId: string, specifier: string) =>
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
     { method: "DELETE" },
   );
+
+// —— Contributions and session surfaces ——
+
+/** What the server's modules and plugins contribute to the App (pages, session surfaces); this server's, never a machine's. */
+export const getContributions = () =>
+  apiFetch<ContributionsResponse>("/api/contributions", { server: null });
+
+export const getSessionSurface = (sessionId: string) =>
+  apiFetch<SessionSurfaceResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/surface`);
+
+/** Opens the surface (idempotent: a live one is returned as it is); `prompt` reaches it only on a fresh open. */
+export const openSessionSurface = (sessionId: string, body: SessionSurfaceOpenRequest) =>
+  apiFetch<SessionSurfaceResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/surface`, {
+    method: "POST",
+    body,
+  });
+
+export const closeSessionSurface = (sessionId: string) =>
+  apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/surface`, { method: "DELETE" });
