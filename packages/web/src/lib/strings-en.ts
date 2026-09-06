@@ -1995,6 +1995,8 @@ export const en: Strings = {
     thinkingLevelChangeNote:
       "Applies right away. Changing it invalidates the model's cached context — compacting first is recommended.",
     surface: {
+      conversation: "Conversation",
+      chooseKind: "Choose what to open",
       open: "Open",
       opening: "Opening…",
       promptPlaceholder: "First prompt",
