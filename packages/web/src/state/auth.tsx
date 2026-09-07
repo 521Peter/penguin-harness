@@ -73,6 +73,14 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserInfo | null | undefined>(undefined);
+  // The API socket is addressed by the signed-in user (api/socket.ts). It is told BEFORE the
+  // state update that renders the authenticated tree: children's effects run before this
+  // provider's own, so an effect here would let the first calls of the tree (languages, the
+  // sidebar's lists) go out before the socket knew whom to open for — and fall to HTTP.
+  const applyUser = (next: UserInfo | null): void => {
+    setSocketUser(next?.userId ?? null);
+    setUser(next);
+  };
   // Assume isolated until told otherwise: the warning is the exceptional state, and
   // flashing it during initialization would be noise.
   const [previewIsolated, setPreviewIsolated] = useState(true);
@@ -85,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Must be registered before the GET /api/me effect below (effects in the same component
   // run in declaration order).
   useEffect(() => {
-    setUnauthorizedHandler(() => setUser(null));
+    setUnauthorizedHandler(() => applyUser(null));
     return () => setUnauthorizedHandler(null);
   }, []);
 
@@ -95,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .getMe()
       .then((res) => {
         if (cancelled) return;
-        setUser(res.user);
+        applyUser(res.user);
         setPreviewIsolated(res.previewIsolated);
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
@@ -103,24 +111,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof ApiError && err.status === 401) setUser(null);
-        else setUser(null);
+        if (err instanceof ApiError && err.status === 401) applyUser(null);
+        else applyUser(null);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // The API socket is addressed by the signed-in user (api/socket.ts): tell it who that is,
-  // and that it changed — a sign-out closes the socket, a sign-in lets the next stream open it.
-  const userId = user?.userId ?? null;
-  useEffect(() => {
-    setSocketUser(userId);
-  }, [userId]);
-
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });
-    setUser(res.user);
+    applyUser(res.user);
     // previewIsolated only rides on GET /api/me, and the mount-time fetch ran before
     // this session existed — without a refetch, a deployment with no separate preview
     // origin would keep the optimistic `true` after a UI login (navigation is
@@ -130,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // until the next refresh.
     try {
       const me = await api.getMe();
-      setUser(me.user);
+      applyUser(me.user);
       setPreviewIsolated(me.previewIsolated);
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
@@ -144,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } finally {
-      setUser(null);
+      applyUser(null);
     }
   }, []);
 
@@ -152,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const res = await api.getMe();
-    setUser(res.user);
+    applyUser(res.user);
     setPreviewIsolated(res.previewIsolated);
     setDesktopMode(res.desktopMode);
     setSessionVia(res.sessionVia);
