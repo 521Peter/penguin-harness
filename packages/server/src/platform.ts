@@ -112,6 +112,7 @@ import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
 import { AuthRoutes } from "./http/routes/auth.js";
+import { CommandRoutes } from "./http/routes/command.js";
 import { DesktopRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
@@ -412,6 +413,7 @@ export class MessagingHubModule {}
     VersionRoutes,
     HmrRoutes,
     DesktopRoutes,
+    CommandRoutes,
     DesktopUpdateRoutes,
     PluginRoutes,
     PluginRegistryRoutes,
