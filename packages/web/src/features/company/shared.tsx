@@ -2,8 +2,8 @@
  * Small pieces every organization page shares: the organization's status pill and dot, the
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
  * what a converted amount will be stored as), the ticket status and priority pills, the
- * blocked badge, the failed-refresh line, the corner button that jumps from a summary to the
- * page it summarizes, the labelled value and the bordered KPI tile, and principal naming.
+ * blocked badge, the failed-refresh line, the button that jumps from a summary card or row to
+ * what it summarizes, the labelled value and the bordered KPI tile, and principal naming.
  * Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
@@ -39,10 +39,14 @@ export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.0
 const JUMP_ICON = "M7 7h10v10M7 17 17 7";
 
 /**
- * The corner button of a summary card: a flat glyph that opens the page the card summarizes.
- * The card itself is deliberately not a link — a whole-card click swallows the controls that
- * live inside it, and it leaves a reader guessing where the click would land — so the jump is
- * this one explicit affordance, named for its destination ("Open the org chart").
+ * The one explicit way out of a summary: a flat glyph button that opens the page, the ticket or
+ * the session the thing beside it stands for, named for its destination ("Open the org chart",
+ * 「查看工单」). It sits in a summary card's corner and at the end of a summary row.
+ *
+ * Neither the card nor the row is itself the link. A whole-area click swallows the controls
+ * living inside it and leaves a reader guessing where the click would land, so the surface stays
+ * inert and the navigation is this button — always drawn, never revealed on hover, since a
+ * control that appears only under a pointer cannot be reached by touch at all.
  */
 export function JumpButton({
   label,
@@ -60,7 +64,7 @@ export function JumpButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className={`inline-flex shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200 ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${className}`}
     >
       <GlyphIcon d={JUMP_ICON} size={ICON_SIZE.inlineGlyph} />
     </button>

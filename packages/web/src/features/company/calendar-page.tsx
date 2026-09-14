@@ -10,6 +10,11 @@
  * the rest into a button that opens the whole day in a popover rather than the create dialog.
  * Past instances carry the outcome the scheduler recorded; every write confirms first, and
  * reports back whatever the server has to say about the rota.
+ *
+ * An empty slot — a month cell, an hour row — is itself the control that creates there, and it
+ * says so: a real button (CREATE_SLOT_CLASS) that tints with the theme's accent and spells out
+ * 「新建日程」 while it is hovered or focused, laid under the chips so an event still opens its
+ * own event.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -26,7 +31,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { employeeColor } from "../../lib/category-colors";
-import { ICON_SIZE } from "../../lib/icon-scale";
+import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
@@ -96,6 +101,42 @@ const MONTH_CELL_CHIPS = 3;
  * px), so a rem-based class and a px constant would agree only at one of the three tiers.
  */
 const DAY_PANEL_WIDTH = 240;
+
+/** The plus that leads the "new event" hint an empty slot spells out while the pointer is on it. */
+const PLUS_ICON = "M12 5v14M5 12h14";
+
+/**
+ * The create control that fills an empty calendar slot — a month cell, an hour row of the week
+ * and day columns. It is a real button, so it takes focus and the keyboard, and it lies *under*
+ * the chips drawn in the same cell: a chip is a button too, and interactive content may not nest
+ * inside a button.
+ *
+ * Resting it is invisible. Hovered or focused it wears a low-alpha wash of the theme's accent
+ * with a hairline inset ring — the `gray-50` it used to hover with was all but unreadable on a
+ * white page, and the accent is a CSS variable, so the tint follows whichever accent the user
+ * picked instead of pinning one hue. With nobody hired there is no event to create, so the slot
+ * is disabled and drops out of the pointer's way entirely — no tint, no tooltip, nothing to say.
+ * Positioning is the call site's (`inset-0` for a month cell, `inset-x-0` plus a top/height for an
+ * hour row), and so is where the hint sits inside it.
+ */
+const CREATE_SLOT_CLASS =
+  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-[var(--accent-bg)]/[0.07] hover:ring-1 hover:ring-inset hover:ring-[var(--accent-bg)]/25 focus-visible:bg-[var(--accent-bg)]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-bg)]/40 disabled:pointer-events-none";
+
+/**
+ * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
+ * hidden until its own slot is hovered or focused — a chip covering part of the slot takes the
+ * pointer itself, so the hint never draws over an event that is already there.
+ */
+function CreateSlotHint() {
+  return (
+    <span
+      className={`pointer-events-none inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400`}
+    >
+      <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.inlineGlyph} />
+      {S.company.calendar.create}
+    </span>
+  );
+}
 
 interface FormState {
   /** Editing an existing event (its file is fixed): agentId + name; null when creating. */
@@ -330,6 +371,10 @@ export function CalendarPage() {
    * One event instance as a chip. Employee colour carries identity; the recorded outcome (on
    * the one instance it belongs to) rides at the end as a toned glyph; a past instance fades,
    * and a disabled or paused event is struck through so the chip says it will not fire.
+   *
+   * It opens its event and nothing else: wherever a chip is drawn, the cell's create button is
+   * a *sibling* laid under it rather than an ancestor, so the click never reaches the create
+   * form and no handler here has to stop it.
    */
   const chip = (i: EventInstance, opts: { block?: boolean; onOpen?: () => void } = {}) => {
     const color = colorOf(i.event.agentId);
@@ -354,8 +399,7 @@ export function CalendarPage() {
         key={i.key}
         type="button"
         title={title}
-        onClick={(e) => {
-          e.stopPropagation();
+        onClick={() => {
           opts.onOpen?.();
           openEdit(i.event);
         }}
@@ -412,7 +456,11 @@ export function CalendarPage() {
 
   /**
    * A month cell: the day number, up to three chips, the rest folded into a button that opens
-   * the whole day; the cell itself creates at 09:00.
+   * the whole day. Creating at 09:00 is the cell's own full-bleed button, laid under that
+   * content (CREATE_SLOT_CLASS) — the cell IS the control, but it cannot *contain* the chips,
+   * which are buttons themselves. The content above it is inert to the pointer so the create
+   * button keeps the whole cell, and each chip takes its pointer events back: a click on an
+   * event opens that event, and only the bare cell creates.
    */
   const monthCell = (day: GridDay) => {
     const list = byDay.get(day.key) ?? [];
@@ -420,49 +468,71 @@ export function CalendarPage() {
     const isToday = day.key === todayKey;
     const createMs = day.dayStartMs + 9 * 3_600_000;
     const weekday = S.company.calendar.weekdays[(new Date(day.dayStartMs).getDay() + 6) % 7] ?? "";
+    const createLabel = S.company.calendar.createAt(`${day.key} 09:00`);
     return (
       <div
         key={day.key}
-        title={S.company.calendar.createAt(`${day.key} 09:00`)}
-        onClick={() => openCreate(createMs)}
-        className={`min-h-24 cursor-pointer border-r border-gray-100 p-1 transition-colors duration-150 last:border-r-0 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900/60 ${
+        className={`relative min-h-24 border-r border-gray-100 p-1 last:border-r-0 dark:border-gray-800 ${
           day.inMonth ? "" : "bg-gray-50/60 text-gray-400 dark:bg-gray-900/40 dark:text-gray-600"
         }`}
       >
-        <p className="mb-1 flex h-5 items-center">
-          <span
-            className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
-              isToday
-                ? "bg-[var(--accent-bg)] font-semibold text-[var(--accent-fg)]"
-                : day.inMonth
-                  ? "text-gray-600 dark:text-gray-300"
-                  : "text-gray-400 dark:text-gray-600"
-            }`}
-          >
-            {new Date(day.dayStartMs).getDate()}
-          </span>
-        </p>
-        <div className="space-y-0.5">
-          {shown.map((i) => chip(i))}
-          {list.length > shown.length && (
-            <DayOverflow
-              hidden={list.length - shown.length}
-              total={list.length}
-              dateLabel={`${day.key} ${weekday}`}
-              onOpenDay={() => {
-                setAnchor(day.dayStartMs);
-                setView("day");
-              }}
+        <button
+          type="button"
+          title={createLabel}
+          aria-label={createLabel}
+          disabled={employees.length === 0}
+          onClick={() => openCreate(createMs)}
+          className={`${CREATE_SLOT_CLASS} inset-0 flex items-end justify-center pb-1`}
+        >
+          <CreateSlotHint />
+        </button>
+        <div className="pointer-events-none relative">
+          <p className="mb-1 flex h-5 items-center">
+            <span
+              className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
+                isToday
+                  ? "bg-[var(--accent-bg)] font-semibold text-[var(--accent-fg)]"
+                  : day.inMonth
+                    ? "text-gray-600 dark:text-gray-300"
+                    : "text-gray-400 dark:text-gray-600"
+              }`}
             >
-              {(close) => list.map((i) => chip(i, { onOpen: close }))}
-            </DayOverflow>
-          )}
+              {new Date(day.dayStartMs).getDate()}
+            </span>
+          </p>
+          <div className="space-y-0.5">
+            {shown.map((i) => (
+              <span key={i.key} className="pointer-events-auto block">
+                {chip(i)}
+              </span>
+            ))}
+            {list.length > shown.length && (
+              <span className="pointer-events-auto block">
+                <DayOverflow
+                  hidden={list.length - shown.length}
+                  total={list.length}
+                  dateLabel={`${day.key} ${weekday}`}
+                  onOpenDay={() => {
+                    setAnchor(day.dayStartMs);
+                    setView("day");
+                  }}
+                >
+                  {(close) => list.map((i) => chip(i, { onOpen: close }))}
+                </DayOverflow>
+              </span>
+            )}
+          </div>
         </div>
       </div>
     );
   };
 
-  /** A day column of the week and day views: hour rows that create on click, chips placed by time and packed into lanes. */
+  /**
+   * A day column of the week and day views: hour rows that create on click — each a real button
+   * that names the hour it would create at and spells out 「新建日程」 while it is under the
+   * pointer — and chips placed by time and packed into lanes. The chips are siblings drawn after
+   * the rows, so they take their own clicks and cover the hint where an event already sits.
+   */
   const timeColumn = (day: GridDay) => {
     const slots = chipLanes(byDay.get(day.key) ?? [], CHIP_SLOT_MS);
     const chipHeight = (CHIP_SLOT_MS / 3_600_000) * HOUR_PX - 2;
@@ -475,15 +545,23 @@ export function CalendarPage() {
         }`}
         style={{ height: HOUR_PX * 24 }}
       >
-        {Array.from({ length: 24 }, (_, h) => (
-          <div
-            key={h}
-            title={S.company.calendar.createAt(`${day.key} ${hourLabel(h)}`)}
-            className="absolute inset-x-0 cursor-pointer border-t border-gray-100 transition-colors duration-150 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900/60"
-            style={{ top: h * HOUR_PX, height: HOUR_PX }}
-            onClick={() => openCreate(day.dayStartMs + h * 3_600_000)}
-          />
-        ))}
+        {Array.from({ length: 24 }, (_, h) => {
+          const createLabel = S.company.calendar.createAt(`${day.key} ${hourLabel(h)}`);
+          return (
+            <button
+              key={h}
+              type="button"
+              title={createLabel}
+              aria-label={createLabel}
+              disabled={employees.length === 0}
+              className={`${CREATE_SLOT_CLASS} inset-x-0 flex items-center justify-center border-t border-gray-100 dark:border-gray-800`}
+              style={{ top: h * HOUR_PX, height: HOUR_PX }}
+              onClick={() => openCreate(day.dayStartMs + h * 3_600_000)}
+            >
+              <CreateSlotHint />
+            </button>
+          );
+        })}
         {isToday && (
           <div
             aria-hidden
@@ -929,16 +1007,14 @@ export function CalendarPage() {
 }
 
 /**
- * The chips a month cell could not fit, behind the count that stands for them. The count used
- * to be plain text inside a cell whose own click creates an event at 09:00, so reading "3 more"
- * opened the create dialog; it is a button now, it stops that click, and it opens the day
- * instead — every chip of it in time order, plus a link into the day view.
+ * The chips a month cell could not fit, behind the count that stands for them: a button that
+ * opens the day — every chip of it in time order, plus a link into the day view. It sits over
+ * the cell's create button rather than inside it, so reading "3 more" never opens the create
+ * dialog.
  *
  * The panel is portaled to document.body and placed by usePortalPanel, which also closes it on
  * an outside click, on Esc (captured, so an enclosing dialog stays open), and on a scroll or a
- * resize that moves the trigger. Portaled or not, a React event still travels the *React* tree,
- * so a click inside the panel would reach the day cell's create handler: the panel stops it at
- * its own root, and a chip closes the panel before opening its event.
+ * resize that moves the trigger. A chip inside it closes the panel before opening its event.
  */
 function DayOverflow({
   hidden,
@@ -977,10 +1053,7 @@ function DayOverflow({
         aria-label={label}
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
+        onClick={() => setOpen((v) => !v)}
         className="block w-full rounded px-1 text-left text-[10px] text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
       >
         {S.company.calendar.moreEvents(hidden)}
@@ -993,7 +1066,6 @@ function DayOverflow({
             id={panelId}
             role="group"
             aria-label={dateLabel}
-            onClick={(e) => e.stopPropagation()}
             style={{
               position: "fixed",
               top: position.topPx,

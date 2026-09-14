@@ -8,9 +8,10 @@
  * the reporting line in three columns — who they are, how they stand, and cumulative against
  * budget as one meter carrying its own percent with the amounts after it and the budget edited
  * in place (typed in the reader's currency, written to the employee in USD) — and the ticket
- * table rolls costs up along parent tickets. The period's warnings and pauses close the page
- * full width, listed by state with how a pause is lifted. `?period=yyyy-mm` switches between
- * this period and the previous one.
+ * table rolls costs up along parent tickets, each row ending in the one button that opens the
+ * ticket (the row and its title read; they do not navigate). The period's warnings and pauses
+ * close the page full width, listed by state with how a pause is lifted. `?period=yyyy-mm`
+ * switches between this period and the previous one.
  *
  * Every panel here is a card and not a ruled section: the KPI tiles are bordered, and a rule
  * standing among them reads as a different kind of thing rather than as the same thing without
@@ -57,6 +58,7 @@ import { orgPagePath } from "./company-nav";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   INVALID_ICON,
+  JumpButton,
   MoneyPerMonthUnit,
   PrincipalChip,
   StatTile,
@@ -663,6 +665,12 @@ export function FinancePage() {
                           </InfoPopover>
                         </span>
                       </th>
+                      {/* The jump column: no visible header, because every row's button names
+                          its own destination — but the column still has to be named for a
+                          screen reader reading the table by column. */}
+                      <th className={headClass}>
+                        <span className="sr-only">{S.company.finance.openTicket}</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
@@ -688,14 +696,12 @@ export function FinancePage() {
                           <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                             <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                               {depth > 0 && <TreeElbow />}
-                              <button
-                                type="button"
-                                title={S.company.finance.openTicket}
-                                onClick={() => openTicket(ticket.ticketId)}
-                                className="truncate text-left font-medium text-gray-900 hover:underline dark:text-gray-100"
-                              >
+                              {/* The title reads; it does not navigate. Opening the ticket is
+                                  the button at the end of the row, so a reader dragging across
+                                  a long title never lands in the drawer by accident. */}
+                              <span className="truncate font-medium text-gray-900 dark:text-gray-100">
                                 {ticket.title}
-                              </button>
+                              </span>
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-2 py-2">
@@ -705,6 +711,12 @@ export function FinancePage() {
                             className={`${cellClass} whitespace-nowrap font-semibold text-gray-900 dark:text-gray-100`}
                           >
                             {formatMoney(ticket.rolledUp, currency)}
+                          </td>
+                          <td className="w-8 px-1 py-2 text-right">
+                            <JumpButton
+                              label={`${S.company.finance.openTicket} · ${ticket.title}`}
+                              onClick={() => openTicket(ticket.ticketId)}
+                            />
                           </td>
                         </tr>
                       );
