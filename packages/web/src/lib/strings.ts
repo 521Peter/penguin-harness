@@ -2653,6 +2653,9 @@ Benchmark：
       dutiesHint: "写进组织图，员工每次工作轮都会读到",
       workspace: "工作区",
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
+      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
+      hireWorkspaceHint:
+        "公共工作区下的子目录，或一个已存在的绝对路径；留空即以该员工的 Agent id 命名的子目录",
       budget: "月预算",
       budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
       hireConfirm: (name: string, manager: string): string =>

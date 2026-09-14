@@ -2712,6 +2712,9 @@ Scenarios:
       workspace: "Workspace",
       workspaceHint:
         "A sub-directory of the shared workspace (`.` for all of it), or an absolute path that already exists",
+      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
+      hireWorkspaceHint:
+        "A sub-directory of the shared workspace, or an absolute path that already exists; left empty, a sub-directory named after the employee's Agent id",
       budget: "Monthly budget",
       budgetHint:
         "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",

@@ -313,6 +313,8 @@ export interface Messages {
     reportsTo: string;
     /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
     employeeWorkspace: string;
+    /** hire's --workspace: the same spec, with the default the employee's own sub-directory. */
+    hireWorkspace: string;
     /** --budget: monthly USD for the employee plus every subordinate. */
     budget: string;
     /** create's --ceo-budget: the CEO's monthly USD, which is the whole company's. */
@@ -1104,6 +1106,8 @@ const en: Messages = {
     reportsTo: "Agent id of the manager",
     employeeWorkspace:
       "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
+    hireWorkspace:
+      "Workspace: a sub-directory of the shared workspace or an absolute path, written as given (defaults to a sub-directory named after the employee)",
     budget: "Monthly budget in USD for the employee plus everyone below it",
     ceoBudget:
       "The CEO's monthly budget in USD, which is the whole company's (budgets accumulate along the reporting line)",
@@ -1848,6 +1852,8 @@ const zh: Messages = {
     title: "头衔",
     reportsTo: "上级的 Agent id",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
+    hireWorkspace:
+      "Workspace：公共工作区的子目录或绝对路径，原样写入（缺省为以该员工命名的子目录）",
     budget: "月预算（美元），含该员工及其全部下属",
     ceoBudget: "CEO 的月预算（美元）；预算沿汇报线累计，CEO 的预算就是整家公司的",
     duties: "职责描述",
