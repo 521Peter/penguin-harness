@@ -243,7 +243,7 @@ export const en: Strings = {
       "Off only hides your own mode switch; organizations keep running. The admin master switch sits under Server.",
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
-      "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger.",
+      "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -2816,6 +2816,14 @@ Scenarios:
     modeCompany: "Company",
     switchToCompany: "Switch to company mode",
     switchToDev: "Switch to development mode",
+    /**
+     * Company mode is a beta, said in three shapes: the pill beside the organization
+     * switcher's name, the pill's tooltip, and the one sentence shown both under the admin's
+     * master switch and as the notice a person gets the first time they enter the mode.
+     */
+    beta: "Beta",
+    betaTitle: "Company mode is in beta and may be unstable.",
+    betaNotice: "Beta: it may be unstable; please report what you hit.",
     /** The organization switcher that replaces the Project switcher in company mode. */
     switcher: "Organization",
     noOrganizations: "No organizations yet",

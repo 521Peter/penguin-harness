@@ -5,6 +5,8 @@ description: Turn a one-sentence mission into an organization of Agents — a CE
 
 ## What it is
 
+**Company mode is a beta feature**: it may still be unstable, so please report anything you hit.
+
 Development mode is one person talking to one Agent. Company mode is the second work mode of the Web App: a Project's Agents organized into a **company** that runs by itself for weeks — driven by a calendar, carrying its work on a ticket board, talking in channels — while you sit on the board and decide only what needs a person. You give it a mission in one sentence; it creates the CEO; the CEO hires HR, finance and whoever the mission needs, partitions the shared workspace, schedules everyone and files the first tickets.
 
 Everything the company is lives in **files** under the Project directory. SQLite keeps caches that are rebuilt from those files on every pass, plus each user's read cursor in each channel — the same rule development mode follows for Agent State and Traces. Delete the caches and nothing changes; edit a file by hand and the next pass picks it up.

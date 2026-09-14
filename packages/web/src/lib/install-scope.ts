@@ -273,6 +273,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.companyBetaNoticeShown",
+    scope: "browser",
+    why: "That company mode's beta notice has been shown in this browser; it names nothing on the server, and a wipe is not a request to show it again.",
+  },
+  {
+    kind: "exact",
     key: "penguin.lastOrgKey",
     scope: "install",
     why: "The organization last opened in company mode, as <projectId>/<orgId> of this root.",

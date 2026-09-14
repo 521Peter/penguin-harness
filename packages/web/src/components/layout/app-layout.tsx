@@ -91,6 +91,9 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     if (next === "company") navigate("/org");
     else if (isOrgRoute(location.pathname)) navigate("/chat");
   };
+  const companyToggleLabel = inCompany
+    ? S.company.switchToDev
+    : `${S.company.switchToCompany} · ${S.company.beta}`;
   const activeSessionId = useMatch("/chat/:sessionId")?.params.sessionId ?? null;
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
@@ -194,15 +197,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
       </Tooltip>
       {/* The work-mode toggle, the rail's compact form of the sidebar's 开发 | 公司 switch:
           one building glyph, pressed while in company mode, the tooltip naming the move a
-          click makes. Same availability rule as the switch. */}
+          click makes. Same availability rule as the switch. The move INTO company mode says
+          the mode is a beta — the rail has no room for the pill the expanded sidebar carries,
+          and the suffix belongs on the label that offers the mode, not on the one that leaves
+          it. */}
       {company.available && (
-        <Tooltip
-          label={inCompany ? S.company.switchToDev : S.company.switchToCompany}
-          className="shrink-0"
-        >
+        <Tooltip label={companyToggleLabel} className="shrink-0">
           <button
             type="button"
-            aria-label={inCompany ? S.company.switchToDev : S.company.switchToCompany}
+            aria-label={companyToggleLabel}
             aria-pressed={inCompany}
             onClick={toggleMode}
             className={railItemClass(inCompany)}

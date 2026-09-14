@@ -258,7 +258,7 @@ export const zh = {
       "关闭只隐藏本人的模式切换，组织照常运转；管理员的总开关在「服务器」分组。",
     companyModeServer: "启用公司模式",
     companyModeServerInfo:
-      "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。",
+      "服务器总开关，缺省关闭，需由管理员在此打开。关闭即停用组织调度器与全部组织路由，并隐藏所有人的模式切换；磁盘上的组织不受影响，重新打开后不会补发错过的触发。内测功能：可能有不稳定的现象，遇到问题请反馈。",
     accentNames: {
       neutral: "灰白",
       blue: "蓝",
@@ -2775,6 +2775,14 @@ Benchmark：
     modeCompany: "公司",
     switchToCompany: "切换到公司模式",
     switchToDev: "切换到开发模式",
+    /**
+     * Company mode is a beta, said in three shapes: the pill beside the organization
+     * switcher's name, the pill's tooltip, and the one sentence shown both under the admin's
+     * master switch and as the notice a person gets the first time they enter the mode.
+     */
+    beta: "内测版",
+    betaTitle: "公司模式是内测功能，可能有不稳定的现象",
+    betaNotice: "内测功能：可能有不稳定的现象，遇到问题请反馈。",
     /** The organization switcher that replaces the Project switcher in company mode. */
     switcher: "组织",
     noOrganizations: "还没有组织",
