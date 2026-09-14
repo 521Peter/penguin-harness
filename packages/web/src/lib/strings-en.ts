@@ -3021,7 +3021,7 @@ Scenarios:
       openBoard: "Open the ticket board",
       openCalendar: "Open the calendar",
       openFinance: "Open finance",
-      /** The button at the end of an inbox row: the row itself is inert, this is where it goes. */
+      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
       openTicket: "Open the ticket",
       openChannel: "Open the channel",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
@@ -3288,7 +3288,6 @@ Scenarios:
       sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
       openSession: "Open session",
       openTicket: "Open ticket",
-      open: "Open",
       progress: "Progress",
       progressEmpty: "No progress recorded yet",
       addProgress: "Add progress",
@@ -3369,9 +3368,13 @@ Scenarios:
         "Expanded along the reporting line: cumulative spend includes every subordinate, and budget and ratio use the same measure.",
       ticketsTable: "Ticket spend",
       ticketsInfo:
-        "Each ticket's contributing-session cost; the rolled-up cost adds up along parent tickets. A session attached to several tickets is shared between them.",
+        "Each ticket's contributing-session cost; the total cost adds up along parent tickets. A session attached to several tickets is shared between them.",
       ticketsEmpty: "No ticket spend this period",
-      rolledUp: "Rolled-up cost",
+      rolledUp: "Total cost",
+      /** The ledger's fold: child tickets are hidden until the parent's chevron opens them. */
+      expandChildren: "Show child tickets",
+      collapseChildren: "Hide child tickets",
+      childCount: (n: number): string => `${n} child ticket${n === 1 ? "" : "s"}`,
       trend: "Trend",
       alerts: "Alerts and pauses",
       alertsEmpty: "No alerts this period",
@@ -3393,7 +3396,7 @@ Scenarios:
       /** Column header explanations, and the tree's root mark. */
       cumulativeInfo:
         "The employee's own spend plus every subordinate's; budget and ratio use this measure.",
-      rolledUpInfo: "This ticket's cost plus every child ticket's.",
+      rolledUpInfo: "This ticket plus its children.",
       root: "Root",
       /** The inline budget editor. */
       budgetEmptyHint: "Leave empty for unbounded",

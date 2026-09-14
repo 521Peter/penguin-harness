@@ -2977,7 +2977,7 @@ Benchmark：
       openBoard: "打开工单看板",
       openCalendar: "打开日历",
       openFinance: "打开财务",
-      /** The button at the end of an inbox row: the row itself is inert, this is where it goes. */
+      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
       openTicket: "查看工单",
       openChannel: "打开频道",
       /** The counts under the board bar: each opens the board filtered to the column it counts. */
@@ -3215,10 +3215,8 @@ Benchmark：
       sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
       openSession: "打开会话",
-      /** The row action of a child ticket, and of a ticket named in the invalid list. */
+      /** The row action of a child ticket, and the tooltip of every ticket title that opens one. */
       openTicket: "打开工单",
-      /** The card's own corner action: the card is the drag handle, this opens the detail. */
-      open: "打开",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
@@ -3296,9 +3294,13 @@ Benchmark：
       spendTree: "支出树",
       spendTreeInfo: "沿汇报线展开：累计支出包含全部下属，预算与占比按同一口径。",
       ticketsTable: "工单支出",
-      ticketsInfo: "每张工单的贡献会话成本；上卷成本沿父工单累加。挂到多张工单的会话按份数分摊。",
+      ticketsInfo: "每张工单的贡献会话成本；总成本沿父工单累加。挂到多张工单的会话按份数分摊。",
       ticketsEmpty: "本周期没有工单支出",
-      rolledUp: "上卷成本",
+      rolledUp: "总成本",
+      /** The ledger's fold: child tickets are hidden until the parent's chevron opens them. */
+      expandChildren: "展开子工单",
+      collapseChildren: "收起子工单",
+      childCount: (n: number): string => `${n} 张子工单`,
       trend: "趋势",
       alerts: "告警与暂停",
       alertsEmpty: "本周期没有告警",
@@ -3316,7 +3318,7 @@ Benchmark：
       alertsSummary: (warned: number, paused: number): string => `${warned} 告警 · ${paused} 暂停`,
       /** Column header explanations, and the tree's root mark. */
       cumulativeInfo: "本人加全部下属的支出之和；预算与占比按这个口径。",
-      rolledUpInfo: "本工单加全部子工单的成本之和。",
+      rolledUpInfo: "本工单与子工单的成本之和。",
       root: "根",
       /** The inline budget editor. */
       budgetEmptyHint: "留空为不限",

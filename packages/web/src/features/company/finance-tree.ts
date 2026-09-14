@@ -1,10 +1,10 @@
 /**
  * The finance page's shaping (pure, unit tested): the spend tree in reporting-line order with
- * depths, the ticket table along parent tickets, period arithmetic for the this / previous
- * switch, the tone a budget ratio takes, the marks an employee's state column carries, the
- * daily series in the trend chart's shape (with the axis breaks where days were skipped), the
- * KPI row's numbers, the alert list grouped by state, and the two row tooltips that carry the
- * figures the tables no longer spend a column on.
+ * depths, the ticket ledger along parent tickets and which of its rows a fold leaves visible,
+ * period arithmetic for the this / previous switch, the tone a budget ratio takes, the marks an
+ * employee's state column carries, the daily series in the trend chart's shape (with the axis
+ * breaks where days were skipped), the KPI row's numbers, the alert list grouped by state, and
+ * the two row tooltips that carry the figures the tables no longer spend a column on.
  */
 import type {
   OrgBudgetAlert,
@@ -66,6 +66,45 @@ export function ticketTreeRows(
     }
   };
   walk(null, 0);
+  return out;
+}
+
+/** A ledger row on screen: the ticket, its depth, and how many children hang directly under it. */
+export interface LedgerRow {
+  ticket: OrgFinanceTicket;
+  depth: number;
+  /** Direct children only — what a folded parent reports, and 0 on a leaf (which wears no chevron). */
+  children: number;
+}
+
+/**
+ * The ticket ledger's rows as the table draws them: a parent's subtree is hidden unless the
+ * parent's id is in `expanded`, so a board of a hundred tickets opens as a short list of roots
+ * and grows only where the reader asks. A row is dropped when *any* ancestor is folded, not
+ * just its own parent, which is what makes expanding a grandchild's parent enough on its own.
+ *
+ * `rows` is `ticketTreeRows`' output: parent-first depth-first, so a row's subtree is exactly
+ * the run of deeper rows that follows it. Expansion is the caller's state and deliberately not
+ * persisted — a fold is how the reader looks at the table now, not a setting.
+ */
+export function visibleLedgerRows(
+  rows: ReadonlyArray<{ ticket: OrgFinanceTicket; depth: number }>,
+  expanded: ReadonlySet<string>,
+): LedgerRow[] {
+  const out: LedgerRow[] = [];
+  /** The depth of the shallowest folded parent whose subtree is being skipped; null while none is. */
+  let folded: number | null = null;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (folded !== null && row.depth > folded) continue;
+    folded = null;
+    let children = 0;
+    for (let j = i + 1; j < rows.length && rows[j]!.depth > row.depth; j++) {
+      if (rows[j]!.depth === row.depth + 1) children++;
+    }
+    out.push({ ticket: row.ticket, depth: row.depth, children });
+    if (children > 0 && !expanded.has(row.ticket.ticketId)) folded = row.depth;
+  }
   return out;
 }
 

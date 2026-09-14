@@ -1,8 +1,9 @@
 /**
- * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket table
- * along parent tickets, period arithmetic, the budget tone thresholds, the marks the state
- * column carries, the trend series and its axis breaks, the KPI row's numbers, the alert
- * grouping, and the two row tooltips that carry what the tables dropped a column for.
+ * finance-tree.ts unit tests: the spend tree along the reporting line, the ticket ledger
+ * along parent tickets and the rows its fold leaves visible, period arithmetic, the budget
+ * tone thresholds, the marks the state column carries, the trend series and its axis breaks,
+ * the KPI row's numbers, the alert grouping, and the two row tooltips that carry what the
+ * tables dropped a column for.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgFinanceEmployee, OrgFinanceTicket } from "@prismshadow/penguin-server/api";
@@ -18,6 +19,7 @@ import {
   spendTreeRows,
   ticketRowTooltip,
   ticketTreeRows,
+  visibleLedgerRows,
 } from "../src/features/company/finance-tree";
 
 const employee = (agentId: string, reportsTo: string | null): OrgFinanceEmployee => ({
@@ -65,6 +67,57 @@ describe("ticketTreeRows", () => {
       ["b", 1],
       ["c", 0],
     ]);
+  });
+});
+
+describe("visibleLedgerRows", () => {
+  /** a > b > c, a > d, and the root e with nothing under it. */
+  const tree = () =>
+    ticketTreeRows([
+      ticket("a"),
+      ticket("b", "a"),
+      ticket("c", "b"),
+      ticket("d", "a"),
+      ticket("e"),
+    ]);
+
+  it("shows the roots alone when nothing is expanded, each counting only its direct children", () => {
+    expect(
+      visibleLedgerRows(tree(), new Set()).map((r) => [r.ticket.ticketId, r.children]),
+    ).toEqual([
+      ["a", 2],
+      ["e", 0],
+    ]);
+  });
+
+  it("opens one level per expanded parent", () => {
+    expect(visibleLedgerRows(tree(), new Set(["a"])).map((r) => r.ticket.ticketId)).toEqual([
+      "a",
+      "b",
+      "d",
+      "e",
+    ]);
+    expect(
+      visibleLedgerRows(tree(), new Set(["a", "b"])).map((r) => [r.ticket.ticketId, r.depth]),
+    ).toEqual([
+      ["a", 0],
+      ["b", 1],
+      ["c", 2],
+      ["d", 1],
+      ["e", 0],
+    ]);
+  });
+
+  it("keeps a subtree hidden while an ancestor above the expanded parent is folded", () => {
+    expect(visibleLedgerRows(tree(), new Set(["b"])).map((r) => r.ticket.ticketId)).toEqual([
+      "a",
+      "e",
+    ]);
+  });
+
+  it("leaves a childless row with no children to count and nothing to fold", () => {
+    const rows = visibleLedgerRows(ticketTreeRows([ticket("only")]), new Set());
+    expect(rows).toEqual([{ ticket: ticket("only"), depth: 0, children: 0 }]);
   });
 });
 

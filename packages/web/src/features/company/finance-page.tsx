@@ -8,9 +8,10 @@
  * the reporting line in three columns — who they are, how they stand, and cumulative against
  * budget as one meter carrying its own percent with the amounts after it and the budget edited
  * in place (typed in the reader's currency, written to the employee in USD) — and the ticket
- * table rolls costs up along parent tickets, each row ending in the one button that opens the
- * ticket (the row and its title read; they do not navigate). The period's warnings and pauses
- * close the page full width, listed by state with how a pause is lifted. `?period=yyyy-mm`
+ * ledger rolls costs up along parent tickets, opening on its roots alone with each parent's
+ * children behind a chevron that says how many it hides, and every title a text button that
+ * opens the ticket (the rest of the row reads; it does not navigate). The period's warnings and
+ * pauses close the page full width, listed by state with how a pause is lifted. `?period=yyyy-mm`
  * switches between this period and the previous one.
  *
  * Every panel here is a card and not a ruled section: the KPI tiles are bordered, and a rule
@@ -46,6 +47,7 @@ import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Chevron } from "../../components/ui/chevron";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon, NAV_ICONS } from "../../components/ui/icons";
@@ -58,12 +60,12 @@ import { orgPagePath } from "./company-nav";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   INVALID_ICON,
-  JumpButton,
   MoneyPerMonthUnit,
   PrincipalChip,
   StatTile,
   StoredUsdNote,
   TicketStatusBadge,
+  TitleButton,
   principalLabel,
 } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
@@ -80,6 +82,7 @@ import {
   spendTreeRows,
   ticketRowTooltip,
   ticketTreeRows,
+  visibleLedgerRows,
 } from "./finance-tree";
 import type { SpendStateKey } from "./finance-tree";
 import { agentPrincipal } from "./principals";
@@ -99,6 +102,12 @@ const iconButtonClass =
 
 /** The tree's indentation step per reporting depth, and the elbow that joins a child to the row above. */
 const INDENT_PX = 20;
+
+/**
+ * The ledger's fold toggle, and the box a childless row leaves in its place so every title in
+ * the column starts on the same x whether or not its row can open.
+ */
+const FOLD_BOX = "h-4 w-4 shrink-0";
 
 function TreeElbow() {
   return (
@@ -297,6 +306,12 @@ export function FinancePage() {
   const [states, setStates] = useState<ReadonlyMap<string, OrgEmployeeState>>(new Map());
   /** The employee whose budget is being typed. */
   const [editingId, setEditingId] = useState<string | null>(null);
+  /**
+   * The ticket ledger's opened parents. Deliberately not persisted and not a URL parameter: a
+   * fold is how the reader is looking at the table right now, and a ledger that reopened
+   * yesterday's branches would hide today's roots behind them.
+   */
+  const [expandedTickets, setExpandedTickets] = useState<ReadonlySet<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const requested = params.get("period");
   /** Sequence of the newest request: a slower, older response must not overwrite a newer one. */
@@ -411,7 +426,13 @@ export function FinancePage() {
       : `${S.company.spendOfBudget(formatMoney(cost, currency), formatMoney(budget, currency))} · ${formatPercent(ratio)}`;
   const gaugeLabel = spendLabel(kpis.total, kpis.budget, kpis.ratio);
   const rows = spendTreeRows(data.employees);
-  const ticketRows = ticketTreeRows(data.tickets);
+  const ticketRows = visibleLedgerRows(ticketTreeRows(data.tickets), expandedTickets);
+  const toggleTicket = (ticketId: string) =>
+    setExpandedTickets((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(ticketId)) next.add(ticketId);
+      return next;
+    });
   const series = financeSeries(data.daily);
   const alerts = groupAlerts(data.alerts);
   // A period switch keeps the last data on screen, dimmed, until the new one lands.
@@ -665,17 +686,12 @@ export function FinancePage() {
                           </InfoPopover>
                         </span>
                       </th>
-                      {/* The jump column: no visible header, because every row's button names
-                          its own destination — but the column still has to be named for a
-                          screen reader reading the table by column. */}
-                      <th className={headClass}>
-                        <span className="sr-only">{S.company.finance.openTicket}</span>
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800/60">
-                    {ticketRows.map(({ ticket, depth }) => {
+                    {ticketRows.map(({ ticket, depth, children }) => {
                       const owner = owners.get(ticket.ticketId);
+                      const open = expandedTickets.has(ticket.ticketId);
                       return (
                         // The id, the owner and the ticket's own cost ride in the row's
                         // tooltip: three columns the table cannot afford beside the spend tree.
@@ -696,12 +712,41 @@ export function FinancePage() {
                           <td className="px-2 py-2" style={{ paddingLeft: 8 + depth * INDENT_PX }}>
                             <span className={`flex min-w-0 items-center ${ICON_GAP.row}`}>
                               {depth > 0 && <TreeElbow />}
-                              {/* The title reads; it does not navigate. Opening the ticket is
-                                  the button at the end of the row, so a reader dragging across
-                                  a long title never lands in the drawer by accident. */}
-                              <span className="truncate font-medium text-gray-900 dark:text-gray-100">
+                              {children > 0 ? (
+                                <button
+                                  type="button"
+                                  aria-expanded={open}
+                                  title={
+                                    open
+                                      ? S.company.finance.collapseChildren
+                                      : S.company.finance.expandChildren
+                                  }
+                                  aria-label={`${
+                                    open
+                                      ? S.company.finance.collapseChildren
+                                      : S.company.finance.expandChildren
+                                  } · ${ticket.title}`}
+                                  onClick={() => toggleTicket(ticket.ticketId)}
+                                  className={`${iconButtonClass} ${FOLD_BOX}`}
+                                >
+                                  <Chevron open={open} size={ICON_SIZE.chevronDense} />
+                                </button>
+                              ) : (
+                                <span aria-hidden className={FOLD_BOX} />
+                              )}
+                              {/* The title is the link; the rest of the row reads. */}
+                              <TitleButton
+                                className="truncate font-medium text-gray-900 dark:text-gray-100"
+                                title={S.company.finance.openTicket}
+                                onClick={() => openTicket(ticket.ticketId)}
+                              >
                                 {ticket.title}
-                              </span>
+                              </TitleButton>
+                              {children > 0 && !open && (
+                                <span className="shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
+                                  {S.company.finance.childCount(children)}
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-2 py-2">
@@ -711,12 +756,6 @@ export function FinancePage() {
                             className={`${cellClass} whitespace-nowrap font-semibold text-gray-900 dark:text-gray-100`}
                           >
                             {formatMoney(ticket.rolledUp, currency)}
-                          </td>
-                          <td className="w-8 px-1 py-2 text-right">
-                            <JumpButton
-                              label={`${S.company.finance.openTicket} · ${ticket.title}`}
-                              onClick={() => openTicket(ticket.ticketId)}
-                            />
                           </td>
                         </tr>
                       );
