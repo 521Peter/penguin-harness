@@ -32,7 +32,7 @@ const ticket = (ticketId: string, extra: Partial<OrgTicketItem> = {}): OrgTicket
   ticketId,
   title: ticketId,
   status: "review",
-  initiator: "user:alice",
+  owner: "user:alice",
   notify: [],
   priority: "P1",
   sessions: [],

@@ -1,8 +1,9 @@
 /**
  * The ticket board's shaping (pure, unit tested): the five columns in lifecycle order, how
  * cards sort inside one, the blocked-only filter and the search box, which moves need a
- * reason, the per-column counts the overview shows, and the two facts a card reads off a
- * ticket's own fields — whether its due date has passed and the day its id was minted.
+ * reason, the per-column counts the overview shows, the shape an id slug must take, and the
+ * two facts a card reads off a ticket's own fields — whether its due date has passed and the
+ * day its id was minted.
  */
 import type {
   OrgTicketItem,
@@ -21,6 +22,18 @@ export const TICKET_COLUMNS: readonly OrgTicketStatus[] = [
 
 export function isTicketStatus(value: string | null | undefined): value is OrgTicketStatus {
   return (TICKET_COLUMNS as readonly string[]).includes(value ?? "");
+}
+
+/**
+ * The shape of a ticket id's slug: lowercase letters in hyphen-joined words, no digits — the
+ * date prefix already carries the numbers. Mirrors TICKET_SLUG_PATTERN in the server's API
+ * contract, which the browser bundle cannot import as a value; the two must stay identical.
+ */
+export const TICKET_SLUG_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
+
+/** Whether a typed slug can be used as written; an empty box is not a slug and is left to the server. */
+export function isTicketSlug(value: string): boolean {
+  return TICKET_SLUG_PATTERN.test(value);
 }
 
 const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
@@ -61,7 +74,7 @@ export function matchesTicketQuery(
 ): boolean {
   const q = query.trim().toLowerCase();
   if (q === "") return true;
-  const ownerId = t.owner !== undefined && t.owner.startsWith("agent:") ? t.owner.slice(6) : null;
+  const ownerId = t.owner.startsWith("agent:") ? t.owner.slice(6) : null;
   const ownerName = ownerId !== null ? names?.get(ownerId) : undefined;
   return [t.title, t.ticketId, t.owner, t.parent, ownerName].some(
     (v) => v !== undefined && v.toLowerCase().includes(q),

@@ -41,12 +41,11 @@ import { Select } from "../../components/ui/select";
 import { FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon } from "../../components/ui/icons";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Skeleton } from "../../components/ui/skeleton";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
-import { BlockedBadge, INVALID_ICON, PriorityBadge } from "./shared";
+import { BlockedBadge, INVALID_ICON, PrincipalChip, PriorityBadge, principalLabel } from "./shared";
 import {
   TICKET_COLUMNS,
   allTickets,
@@ -55,12 +54,13 @@ import {
   invalidTickets,
   isBlocked,
   isOverdue,
+  isTicketSlug,
   isTicketStatus,
   moveNeedsReason,
 } from "./ticket-board";
 import { TicketDrawer } from "./ticket-drawer";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
-import { agentPrincipal, principalAgentId, splitPrincipalList } from "./principals";
+import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
 
 /** Private drag payload type of a card move (never text/plain: a mis-aimed drop must not paste into a text field). */
@@ -206,7 +206,6 @@ export function TicketsPage() {
 
   /** A card: the title first, then what decides its urgency, then who holds it and what it has cost. */
   const card = (t: OrgTicketItem) => {
-    const ownerId = t.owner === undefined ? null : principalAgentId(t.owner);
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
     const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -285,24 +284,12 @@ export function TicketsPage() {
           )}
         </div>
         <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-          {ownerId !== null ? (
-            <span
-              className="inline-flex min-w-0 items-center gap-1"
-              title={names.get(ownerId) ?? ownerId}
-            >
-              <AgentAvatar
-                id={ownerId}
-                name={names.get(ownerId) ?? ownerId}
-                size={ICON_SIZE.rowLead}
-                className="shrink-0 rounded"
-              />
-              <span className="truncate text-gray-700 dark:text-gray-200">
-                {names.get(ownerId) ?? ownerId}
-              </span>
-            </span>
-          ) : (
-            <span className="text-gray-400 dark:text-gray-500">{S.company.tickets.noOwner}</span>
-          )}
+          <span
+            className="min-w-0 text-gray-700 dark:text-gray-200"
+            title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
+          >
+            <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
+          </span>
           <span className="ml-auto inline-flex shrink-0 items-center gap-2 tabular-nums">
             <span className="inline-flex items-center gap-1">
               {S.company.tickets.sessionsCount(t.sessions.length)}
@@ -598,6 +585,7 @@ function CreateTicketDialog({
   onCreated: (ticketId: string) => void;
 }) {
   const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
   const [goal, setGoal] = useState("");
   const [acceptance, setAcceptance] = useState("");
   const [owner, setOwner] = useState("");
@@ -606,11 +594,13 @@ function CreateTicketDialog({
   const [priority, setPriority] = useState<OrgTicketPriority>("P1");
   const [due, setDue] = useState("");
   const [titleError, setTitleError] = useState<string | undefined>(undefined);
+  const [slugError, setSlugError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setTitle("");
+    setSlug("");
     setGoal("");
     setAcceptance("");
     setOwner("");
@@ -619,6 +609,7 @@ function CreateTicketDialog({
     setPriority("P1");
     setDue("");
     setTitleError(undefined);
+    setSlugError(undefined);
   }, [open]);
 
   const submit = async () => {
@@ -626,10 +617,15 @@ function CreateTicketDialog({
       setTitleError(S.common.requiredField);
       return;
     }
+    if (slug.trim() !== "" && !isTicketSlug(slug.trim())) {
+      setSlugError(S.company.tickets.slugInvalid);
+      return;
+    }
     setBusy(true);
     try {
       const detail = await api.createOrgTicket(projectId, orgId, {
         title: title.trim(),
+        ...(slug.trim() ? { slug: slug.trim() } : {}),
         ...(goal.trim() ? { goal: goal.trim() } : {}),
         ...(acceptance.trim() ? { acceptanceCriteria: acceptance.trim() } : {}),
         ...(owner ? { owner } : {}),
@@ -683,6 +679,24 @@ function CreateTicketDialog({
             }
           }}
         />
+        <Input
+          size="sm"
+          label={S.company.tickets.slug}
+          value={slug}
+          hint={S.company.tickets.slugHint}
+          error={slugError}
+          className="font-mono"
+          onChange={(e) => {
+            const next = e.target.value;
+            setSlug(next);
+            // The rule is short and the box is small: say so while it is typed, not on submit.
+            setSlugError(
+              next.trim() === "" || isTicketSlug(next.trim())
+                ? undefined
+                : S.company.tickets.slugInvalid,
+            );
+          }}
+        />
         <Textarea
           size="sm"
           label={S.company.tickets.goal}
@@ -704,9 +718,10 @@ function CreateTicketDialog({
             size="sm"
             label={S.company.tickets.owner}
             value={owner}
+            hint={S.company.tickets.ownerSelfHint}
             onChange={(e) => setOwner(e.target.value)}
           >
-            <option value="">{S.company.tickets.noOwner}</option>
+            <option value="">{S.company.tickets.ownerSelf}</option>
             {employees.map((e) => (
               <option key={e.agentId} value={agentPrincipal(e.agentId)}>
                 {e.name}

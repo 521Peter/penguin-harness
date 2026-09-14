@@ -1,8 +1,8 @@
 /**
  * ticket-board.ts unit tests: the five columns in lifecycle order, card sorting (priority,
  * then due, then id), the blocked-only filter and the search box, the counts the overview
- * shows, which moves need a reason, the "blocked on me" selection, the overdue test, the
- * day read off a ticket id, and the invalid-ticket list.
+ * shows, which moves need a reason, the "blocked on me" selection, the shape of an id slug,
+ * the overdue test, the day read off a ticket id, and the invalid-ticket list.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgTicketItem, OrgTicketsResponse } from "@prismshadow/penguin-server/api";
@@ -14,6 +14,7 @@ import {
   invalidTickets,
   isBlocked,
   isOverdue,
+  isTicketSlug,
   isTicketStatus,
   matchesTicketQuery,
   moveNeedsReason,
@@ -25,7 +26,7 @@ function ticket(over: Partial<OrgTicketItem> & { ticketId: string }): OrgTicketI
   return {
     title: over.ticketId,
     status: "proposed",
-    initiator: "user:alice",
+    owner: "user:alice",
     notify: [],
     priority: "P1",
     sessions: [],
@@ -125,6 +126,24 @@ describe("moves and blocks", () => {
     expect(isBlocked(ticket({ ticketId: "a", blocked: "" }))).toBe(false);
     expect(isBlocked(ticket({ ticketId: "b", blocked: "r" }))).toBe(true);
     expect(isBlocked(ticket({ ticketId: "c" }))).toBe(false);
+  });
+});
+
+describe("id slug", () => {
+  it("accepts lowercase words joined by hyphens and nothing else", () => {
+    expect(isTicketSlug("marketplace")).toBe(true);
+    expect(isTicketSlug("marketplace-site")).toBe(true);
+    expect(isTicketSlug("a-b-c")).toBe(true);
+    // Digits are the date prefix's job, not the slug's.
+    expect(isTicketSlug("site2")).toBe(false);
+    expect(isTicketSlug("2026-site")).toBe(false);
+    expect(isTicketSlug("Marketplace")).toBe(false);
+    expect(isTicketSlug("marketplace site")).toBe(false);
+    expect(isTicketSlug("marketplace_site")).toBe(false);
+    expect(isTicketSlug("marketplace-")).toBe(false);
+    expect(isTicketSlug("-marketplace")).toBe(false);
+    expect(isTicketSlug("")).toBe(false);
+    expect(isTicketSlug("站点")).toBe(false);
   });
 });
 
