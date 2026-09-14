@@ -6,10 +6,12 @@
  * for their Skill, both preview the assembled prompt, and both leave the same way: the prompt is
  * prefilled into a new conversation with the agent that will carry the work out, and pressing
  * Send stays the user's move. A Benchmark can score several agents, so which one is under test
- * is a choice here; the baseline and the default target follow that choice. The evaluation
- * runtime is never picked in this dialog — Evaluate takes the tested agent's own configured
- * model and thinking level, and Optimize reuses what that agent's baseline recorded, so scores
- * stay comparable. Mounted fresh per Benchmark.
+ * is a choice here; the baseline and the default target follow that choice. The model of the
+ * conversation that carries the work out is picked with the Project settings' own model picker
+ * (ModelSelect in its form variant, the one the new-chat defaults and the schedule form use),
+ * preset to the Project's default model. The evaluation runtime is never picked in this dialog —
+ * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
+ * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -24,6 +26,7 @@ import { formatScore } from "../../lib/format";
 import { toneStrip } from "../../lib/tone";
 import { agentDisplayName, useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { FieldHint, FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
@@ -31,6 +34,7 @@ import { Modal } from "../../components/ui/modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { PromptFold, composeAiPrompt, pickDefaultAgent, useAiBridge } from "../ai-create";
+import { ModelSelect } from "../chat/model-select";
 import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, evaluateTail, optimizeTail } from "./benchmark-prompts";
 import type { EvaluateParams, OptimizeParams } from "./benchmark-prompts";
@@ -43,8 +47,6 @@ const OPTIMIZATION_SKILL = "agent-optimization";
 /** Which half of the dialog is on screen. */
 export type UseTab = "evaluate" | "optimize";
 
-/** In-dialog key of a paired model reference; never persisted. */
-const modelKey = (m: ModelRefDto) => `${m.provider} ${m.modelId}`;
 const digits = (v: string) => v.replace(/[^\d]/g, "");
 const errorProp = (message: string | undefined) =>
   message !== undefined ? { error: message } : {};
@@ -94,8 +96,9 @@ export function UseBenchmarkModal({
   const [optimizerId, setOptimizerId] = useState<string | null>(
     pickDefaultAgent(agents)?.agentId ?? null,
   );
-  // "" is the Project default model; otherwise a modelKey of one of the Project's models.
-  const [model, setModel] = useState("");
+  // The conversation's model, preset to the Project's default; null only while the model list
+  // has not arrived yet (the dialog usually opens after the page fetched it).
+  const [modelRef, setModelRef] = useState<ModelRefDto | null>(models?.defaultModel ?? null);
   // Clamped: benchmark_config.toml is hand-editable, and a larger count there would open the
   // dialog on a field its own bound rejects, with Send disabled until the number is retyped.
   const [runs, setRuns] = useState(String(Math.min(benchmark.runs ?? 1, MAX_RUNS)));
@@ -126,6 +129,13 @@ export function UseBenchmarkModal({
   useEffect(() => {
     if (!targetTouched) setTargetScore(String(defaultTarget));
   }, [defaultTarget, targetTouched]);
+
+  // A model list that arrives after the dialog opened seeds the picker the same way the
+  // initial state does; a pick already made is never overwritten.
+  const defaultModel = models?.defaultModel;
+  useEffect(() => {
+    if (defaultModel !== undefined) setModelRef((current) => current ?? defaultModel);
+  }, [defaultModel]);
 
   const lacksSkill = (agentId: string | null, skill: string): boolean => {
     const installed = agentId === null ? undefined : skillsByAgent[agentId];
@@ -158,14 +168,9 @@ export function UseBenchmarkModal({
     runsValue !== null &&
     (tab === "evaluate" || (roundsValue !== null && targetValue !== null));
 
-  const pickedModel = (): ModelRefDto | undefined => {
-    if (model === "") return models?.defaultModel;
-    const found = models?.models.find((m) => modelKey(m) === model);
-    return found ? { provider: found.provider, modelId: found.modelId } : undefined;
-  };
   const go = () => {
     if (runnerId === null) return;
-    const ref = pickedModel();
+    const ref = modelRef ?? defaultModel;
     openAiChat({
       agentId: runnerId,
       text,
@@ -174,30 +179,31 @@ export function UseBenchmarkModal({
     onClose();
   };
 
-  const defaultModel = models?.defaultModel;
-  const defaultModelName =
-    defaultModel === undefined
-      ? null
-      : (models?.models.find((m) => modelKey(m) === modelKey(defaultModel))?.displayName ??
-        defaultModel.modelId);
   const agentOptions = agents.map((a) => (
     <option key={a.agentId} value={a.agentId}>
       {agentDisplayName(a)}
     </option>
   ));
-  const modelOptions = (
-    <>
-      <option value="">
-        {defaultModelName !== null
-          ? S.benchmark.projectDefaultModel(defaultModelName)
-          : S.benchmark.projectDefaultModelUnset}
-      </option>
-      {models?.models.map((m) => (
-        <option key={modelKey(m)} value={modelKey(m)}>
-          {m.displayName ?? m.modelId}
-        </option>
-      ))}
-    </>
+  // The Project settings' model picker (provider logo, searchable grouped panel, the default
+  // row marked), disabled until the list is known; an empty list reads as the models page's
+  // own empty line rather than as a picker with nothing in it.
+  const modelField = (label: string, hint: string) => (
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      {models !== null && models.models.length === 0 ? (
+        <p className="text-xs text-gray-400">{S.models.empty}</p>
+      ) : (
+        <ModelSelect
+          models={models?.models ?? []}
+          value={modelRef}
+          {...(defaultModel !== undefined ? { defaultModel } : {})}
+          onChange={setModelRef}
+          disabled={models === null}
+          variant="form"
+        />
+      )}
+      <FieldHint>{hint}</FieldHint>
+    </div>
   );
   const missingSkillStrip = (missing: boolean, message: string) =>
     missing ? (
@@ -273,14 +279,7 @@ export function UseBenchmarkModal({
               >
                 {agentOptions}
               </Select>
-              <Select
-                label={S.benchmark.evaluateSessionModel}
-                hint={S.benchmark.evaluateSessionModelHint}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              >
-                {modelOptions}
-              </Select>
+              {modelField(S.benchmark.evaluateSessionModel, S.benchmark.evaluateSessionModelHint)}
               {runsInput(S.benchmark.evaluateRunsHint)}
             </div>
             {missingSkillStrip(evaluatorMissingSkill, S.benchmark.evaluatorMissingSkill)}
@@ -317,14 +316,7 @@ export function UseBenchmarkModal({
               >
                 {agentOptions}
               </Select>
-              <Select
-                label={S.benchmark.sessionModel}
-                hint={S.benchmark.sessionModelHint}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-              >
-                {modelOptions}
-              </Select>
+              {modelField(S.benchmark.sessionModel, S.benchmark.sessionModelHint)}
             </div>
             {missingSkillStrip(optimizerMissingSkill, S.benchmark.optimizerMissingSkill)}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

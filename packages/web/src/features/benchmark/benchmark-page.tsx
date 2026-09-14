@@ -57,10 +57,11 @@ function deltaTone(delta: number | null): string {
 
 /**
  * The three steps of the loop, a card each: three across from `md` up, stacked below. Every card
- * names its step and what it does — nothing else stands above or beside them: the maintainer
- * wants the three stages alone, without a how-to line or the Skill names in grey. Nothing is
- * drawn between the cards — the numbers already carry the order, and an arrow would only
- * survive one of the two layouts.
+ * names its step and says where on this page to do it — the create buttons at the top right,
+ * Use → Evaluate and Use → Optimize on a Benchmark — and nothing else stands above or beside
+ * them: the maintainer wants the three stages alone, without a how-to line or the Skill names
+ * in grey. Nothing is drawn between the cards — the numbers already carry the order, and an
+ * arrow would only survive one of the two layouts.
  */
 function GuideSteps() {
   return (

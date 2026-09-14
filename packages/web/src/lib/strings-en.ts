@@ -2716,15 +2716,15 @@ Scenarios:
     guideFlow: [
       {
         title: "Create",
-        text: "Let AI write a set of cases for an agent; agent-evaluation trial-runs each one in an isolated Workspace to calibrate difficulty, and the frozen set arrives with a baseline score.",
+        text: "Press Create with AI at the top right to have AI write a set of cases for an agent and take its baseline score, or Create manually to write the cases yourself.",
       },
       {
         title: "Evaluate",
-        text: "Put any agent on that Benchmark for the full Case × runs matrix; the result is appended to the scoreboard as one labelled evaluation.",
+        text: "Pick a Benchmark, press Use → Evaluate, choose the agent under test and send the prefilled conversation to get one labelled score.",
       },
       {
         title: "Optimize",
-        text: "Improve an agent against that Benchmark, one falsifiable change per round; a new version is kept only when the score strictly improves.",
+        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
       },
     ],
     searchPlaceholder: "Search titles, descriptions or tested agents",
@@ -2961,8 +2961,6 @@ Scenarios:
     invalidScore: "Must be an integer from 1 to 100",
     useTitle: (title: string): string => `Use: ${title}`,
     testedAgent: "Tested agent",
-    projectDefaultModel: (name: string): string => `Project default (${name})`,
-    projectDefaultModelUnset: "Project default",
     evaluateDescription:
       "AI puts the tested agent on this Benchmark for the full Case × runs matrix and appends the result to the scoreboard as one labelled evaluation.",
     evaluateTestedAgentHint:
@@ -2974,7 +2972,7 @@ Scenarios:
       "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
     evaluateSessionModel: "Model of the evaluation conversation",
     evaluateSessionModelHint:
-      "The model that dispatches and totals the runs; the tested agent uses the model it is configured with, which is not changed here",
+      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
     evaluateRunsHint:
       "How many times every case runs, averaged; defaults to the Benchmark's configured count",
     evaluateNoteField: "Note",
@@ -3002,7 +3000,7 @@ Scenarios:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
     sessionModelHint:
-      "The model that analyzes and edits; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
+      "The model that analyzes and edits, the Project's default model unless changed; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
     optimizeRunsHint: "How many times every case runs per candidate version, averaged",
     roundLimitField: "Round limit",
     roundLimitHint: "One change per round; a round counts once its evaluation is complete",

@@ -2667,19 +2667,19 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    /** The three step cards under the intro block, each with the Skill that step rests on. */
+    /** The three step cards under the title: each says where on this page to do that step. */
     guideFlow: [
       {
         title: "出题",
-        text: "让 AI 为某个智能体出一套题，agent-evaluation 在隔离的 Workspace 里逐题试测、校准难度，定稿即取得基线分。",
+        text: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分；也可以「手动创建」自己写题。",
       },
       {
         title: "评估",
-        text: "把任一智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，结果作为一条带标签的评估追加进记分。",
+        text: "选一个 Benchmark，点「使用」→「评估」，选好被测智能体后在新对话中发送，即得到一条带标签的分数。",
       },
       {
         title: "优化",
-        text: "针对这套 Benchmark 改进智能体，每轮只做一个可证伪的改动，分数严格提升才保留新版本。",
+        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
       },
     ],
     searchPlaceholder: "搜索标题、描述或被测智能体",
@@ -2918,8 +2918,6 @@ Benchmark：
     useTitle: (title: string): string => `使用：${title}`,
     // Shared by both tabs.
     testedAgent: "被测智能体",
-    projectDefaultModel: (name: string): string => `Project 默认（${name}）`,
-    projectDefaultModelUnset: "Project 默认",
     // Evaluate tab.
     evaluateDescription:
       "AI 会把被测智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，并把结果作为一条带标签的评估追加进记分。",
@@ -2931,7 +2929,8 @@ Benchmark：
     evaluatorMissingSkill:
       "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
     evaluateSessionModel: "评估会话使用的模型",
-    evaluateSessionModelHint: "派发与汇总评测的模型；被测智能体用的是它自己配置的模型，不在这里改",
+    evaluateSessionModelHint:
+      "派发与汇总评测的模型，缺省为 Project 默认模型；被测智能体用的是它自己配置的模型，不在这里改",
     evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
     evaluateNoteField: "说明",
     evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
@@ -2954,7 +2953,8 @@ Benchmark：
       "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
-    sessionModelHint: "做分析与改动的模型；评测被测智能体时沿用基线记录的模型，不在这里改",
+    sessionModelHint:
+      "做分析与改动的模型，缺省为 Project 默认模型；评测被测智能体时沿用基线记录的模型，不在这里改",
     optimizeRunsHint: "每个候选版本每道题跑几次取平均",
     roundLimitField: "最多轮数",
     roundLimitHint: "每轮一个改动；评测完整才算一轮",
