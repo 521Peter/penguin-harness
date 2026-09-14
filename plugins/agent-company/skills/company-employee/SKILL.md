@@ -26,7 +26,7 @@ Write in the organization's **working language** — the one the handbook's 「�
 | `tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md` | One ticket per file; the column directory is its status | anyone, through `penguin org ticket …` |
 | `channels/<channel_id>/channel.toml` | One channel: its name, purpose and members (`default_channel` holds everyone) | its members, through `penguin org channel …` |
 | `channels/<channel_id>/<yyyy-mm-dd>.jsonl` | A channel's messages, one JSON line each | the server, through `penguin org channel send` |
-| `workspace/` | The shared workspace; each desk gets a sub-directory of it | employees, each in its own partition |
+| `workspace/` | The shared workspace; its root holds the shared inputs and is nobody's desk, and each desk works in a sub-directory of it (the CEO's is `ceo/`, and a hire's is named after its Agent id unless the CEO assigned another) | employees, each in its own partition |
 
 Prefer the `penguin org …` commands over editing these files: the CLI validates and applies at once, while a hand edit is only picked up by the periodic reconcile (about 30 s) and an invalid one is skipped with an error record instead of an error in your terminal. `desks.toml`, a ticket's `Sessions` line and the channels' message files are facts the server records — never edit them.
 

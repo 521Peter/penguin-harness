@@ -45,7 +45,7 @@ penguin org hire --new-agent co_acme_zhang_wei --name "Zhang Wei's twin" --title
   --duties "Digital twin of Zhang Wei (Engineering Manager): relay for Zhang Wei, answer what the handbook allows"
 ```
 
-Give no `--workspace` and no `--budget` beyond what the board asked for: a twin writes messages and handbook pages, not files in a partition.
+Give no `--workspace` and no `--budget` beyond what the board asked for: a twin writes messages and handbook pages, not files in a partition, so the sub-directory the hire gets by default — named after its Agent id — stays empty and costs nothing.
 
 **4. Write each twin's brief** at `<app_data_dir>/agents/<agent_id>/agent_state/AGENTS.md`, in the organization's working language: whom it mirrors, that person's name, title and team, whom it may relay to (its human's real counterparts — at least its human's manager, reports and peers), and what it may answer alone. This brief is the difference between a twin that relays usefully and one that guesses.
 

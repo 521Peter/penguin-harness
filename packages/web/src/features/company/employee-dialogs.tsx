@@ -127,6 +127,9 @@ export function HireDialog({
   }, [open, library]);
 
   const picked = agents.find((a) => a.agentId === agentId);
+  // Left empty, the server partitions the shared workspace by Agent id, so the placeholder
+  // shows the directory this hire will actually get rather than the root, which is nobody's desk.
+  const hireAgentId = (source === "existing" ? agentId : newId.trim()) || ".";
   const hireName =
     source === "existing"
       ? picked !== undefined
@@ -337,8 +340,8 @@ export function HireDialog({
                 size="sm"
                 value={workspace}
                 className="font-mono"
-                hint={S.company.chart.workspaceHint}
-                placeholder="."
+                hint={S.company.chart.hireWorkspaceHint}
+                placeholder={hireAgentId}
                 onChange={(e) => setWorkspace(e.target.value)}
               />
               <MoneyPerMonthInput

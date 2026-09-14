@@ -282,7 +282,10 @@ describe("organization runtime", () => {
     ]);
     expect(briefs.get(CEO)).toContain(`<app_data_dir>/organizations/${ORG}/`);
     expect(created).toHaveLength(1);
-    expect(created[0]!.workspace).toBe(path.join(dir, "workspace"));
+    // The shared root is nobody's desk: the CEO gets `ceo/`, made by the init dispatch.
+    expect(created[0]!.workspace).toBe(path.join(dir, "workspace", "ceo"));
+    expect((await fs.stat(path.join(dir, "workspace", "ceo"))).isDirectory()).toBe(true);
+    expect((await service.chart(P, ORG)).employees[0]!.workspace).toBe("ceo");
     // The CEO is created with a budget, not unbounded: budgets accumulate along the
     // reporting line, so this one number caps the whole company from the first minute.
     expect((await service.chart(P, ORG)).employees).toMatchObject([{ agentId: CEO, budget: 100 }]);
@@ -329,7 +332,7 @@ describe("organization runtime", () => {
       },
       "alice",
     );
-    expect(created[0]!.workspace).toBe(shared);
+    expect(created[0]!.workspace).toBe(path.join(shared, "ceo"));
     expect(sessions.findById(started[0]!.sessionId)?.modelId).toBe("m-bench");
     const detail = await service.detail(P, ORG, "alice");
     expect(detail.settings.workspace).toBe(shared);
@@ -411,6 +414,29 @@ describe("organization runtime", () => {
   });
 
   describe("employee workspaces", () => {
+    it("gives a hire with no workspace its own sub-directory, and still takes an explicit `.`", async () => {
+      await createOrg();
+      const item = await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "HR",
+        reportsTo: CEO,
+      });
+      expect(item.workspace).toBe(HR);
+      expect(item.resolvedWorkspace).toBe(path.join(orgDir(), "workspace", HR));
+      expect((await fs.stat(path.join(orgDir(), "workspace", HR))).isDirectory()).toBe(true);
+      const desk = await service.desk(P, ORG, HR, {});
+      expect(desk.workspace).toBe(path.join(orgDir(), "workspace", HR));
+      // The shared root is nobody's desk by default, but it is still assignable on request.
+      const asked = await service.hire(P, ORG, {
+        newAgent: { agentId: "acme_ops" },
+        title: "Ops",
+        reportsTo: CEO,
+        workspace: ".",
+      });
+      expect(asked.workspace).toBe(".");
+      expect(asked.resolvedWorkspace).toBe(path.join(orgDir(), "workspace"));
+    });
+
     it("creates a relative sub-directory as the employee is hired, and stores one spelling of it", async () => {
       await createOrg();
       const item = await service.hire(P, ORG, {
@@ -1090,7 +1116,7 @@ describe("organization runtime", () => {
       expect(work!.text).toContain("# Ticket: Launch the site");
       // Where it stands, and the rule that makes its output findable by a colleague.
       expect(work!.text).toContain(
-        `Workspace: ${path.join(orgDir(), "workspace")} — the organization is at \`<app_data_dir>/organizations/${ORG}/\`.`,
+        `Workspace: ${path.join(orgDir(), "workspace", HR)} — the organization is at \`<app_data_dir>/organizations/${ORG}/\`.`,
       );
       expect(work!.text).toContain(
         "Name every input you rely on and every deliverable you produce by its full path",

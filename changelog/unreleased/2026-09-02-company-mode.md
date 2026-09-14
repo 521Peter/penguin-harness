@@ -321,3 +321,12 @@ cursors, budget marks) and each user's read cursor per channel.
   「员工数字分身公司」 / "Digital-twin company", whose mission is that mirror company. The
   Company Mode guide gains a section on what it builds, and `company-setup` proposes it for a
   user who describes their colleagues rather than work to produce.
+- No desk works in the shared workspace's root. The CEO's chart entry is now written with
+  `workspace: ceo`, and a hire given no `--workspace` gets a sub-directory named after its
+  Agent id instead of the root — the root holds the shared inputs every desk reads and is
+  nobody's desk. `.` is still accepted, it is simply never the default; `employee set
+  --workspace` keeps its meaning and moves a partition only when it is given one. Existing
+  organizations keep the `.` entries their charts already hold: nothing rewrites a chart, and
+  changing an employee's workspace opens a fresh desk session, so the move stays the CEO's to
+  make. The skills, the organization handbook template, the CEO's initialization run, the
+  Company Mode guide, the CLI reference and the server API reference all describe the rule.

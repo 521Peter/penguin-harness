@@ -615,7 +615,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .option("--skills <names>", t.org.skills)
       .requiredOption("--title <title>", t.org.title)
       .requiredOption("--reports-to <agent_id>", t.org.reportsTo)
-      .option("--workspace <path>", t.org.employeeWorkspace)
+      .option("--workspace <path>", t.org.hireWorkspace)
       .option("--budget <usd>", t.org.budget)
       .option("--duties <text>", t.org.duties),
     t,

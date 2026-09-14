@@ -113,6 +113,13 @@ import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
 
 export const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"] as const;
 
+/**
+ * The CEO's partition of the shared workspace. The root of the shared workspace holds the
+ * inputs every desk reads — specs, data, prior deliverables — and is nobody's desk, so the
+ * CEO gets a sub-directory of its own like every other employee.
+ */
+const CEO_WORKSPACE = "ceo";
+
 /** Who performs a write: a person (route user) or, through the control-env token from inside a session, that session's employee. */
 export interface Actor {
   userId: string;
@@ -558,7 +565,7 @@ export class OrganizationService {
               language === "zh"
                 ? "把使命拆成工单、招募、划分公共工作区、审核工单、向董事会汇报"
                 : "Turn the mission into tickets, hire, partition the shared workspace, review tickets, report to the board",
-            workspace: ".",
+            workspace: CEO_WORKSPACE,
             // Compared on the cumulative line, so this one number is the whole company's cap.
             budget: req.ceoBudget ?? DEFAULT_CEO_BUDGET,
           },
@@ -730,13 +737,11 @@ export class OrganizationService {
    * The workspace spec to store for an employee, with its directory ready: `./hr`, `hr/` and
    * `hr` all become `hr`, a relative partition is created under the shared workspace, and an
    * absolute path must already exist because it is a directory of the user's, not ours to
-   * make. A spec that climbs out of the shared workspace is refused outright.
+   * make. A spec that climbs out of the shared workspace is refused outright. The spec is
+   * always the caller's: each entry point names its own default rather than falling back here.
    */
-  private async requireEmployeeWorkspace(
-    org: LoadedOrg,
-    spec: string | undefined,
-  ): Promise<string> {
-    const normalized = normalizeWorkspaceSpec(spec ?? ".");
+  private async requireEmployeeWorkspace(org: LoadedOrg, spec: string): Promise<string> {
+    const normalized = normalizeWorkspaceSpec(spec);
     const shared = sharedWorkspace(org);
     if (this.deps.store.workspaceTarget(shared, normalized) === null) {
       throw new HttpError(
@@ -778,17 +783,21 @@ export class OrganizationService {
         );
       }
       if (req.model !== undefined) await this.validateModel(projectId, req.model);
-      // Before the Agent and the chart entry: the partition an employee is hired into exists
-      // from the moment the employee does, and a spec that leaves the shared workspace is
-      // refused rather than written and found broken on the first trigger.
-      const workspace = await this.requireEmployeeWorkspace(org, req.workspace);
-      let agentId: string;
+      const agentId = req.newAgent?.agentId ?? req.agentId!;
       if (req.newAgent !== undefined) {
-        agentId = req.newAgent.agentId;
         if (!SEMANTIC_ID_PATTERN.test(agentId))
           throw badRequest("newAgent.agentId is not a valid Agent id.");
-        if (org.byId.has(agentId))
-          throw new HttpError(409, "employee_exists", `${agentId} is already an employee.`);
+      } else if (!(await this.deps.agents.exists(projectId, agentId))) {
+        throw new HttpError(404, "agent_not_found", `Agent does not exist: ${agentId}`);
+      }
+      if (org.byId.has(agentId))
+        throw new HttpError(409, "employee_exists", `${agentId} is already an employee.`);
+      // Before the Agent and the chart entry: the partition an employee is hired into exists
+      // from the moment the employee does, and a spec that leaves the shared workspace is
+      // refused rather than written and found broken on the first trigger. Omitted, it is a
+      // sub-directory named after the employee — the shared root is nobody's desk.
+      const workspace = await this.requireEmployeeWorkspace(org, req.workspace ?? agentId);
+      if (req.newAgent !== undefined) {
         await this.deps.agents.create(
           projectId,
           agentId,
@@ -810,13 +819,6 @@ export class OrganizationService {
             ...(req.duties !== undefined ? { duties: req.duties } : {}),
           }),
         );
-      } else {
-        agentId = req.agentId!;
-        if (!(await this.deps.agents.exists(projectId, agentId))) {
-          throw new HttpError(404, "agent_not_found", `Agent does not exist: ${agentId}`);
-        }
-        if (org.byId.has(agentId))
-          throw new HttpError(409, "employee_exists", `${agentId} is already an employee.`);
       }
       const employee: OrgEmployee = {
         agentId,
@@ -2398,7 +2400,7 @@ function initBody(org: LoadedOrg): string {
       "你是一家全新组织的 CEO，这是它的初始化运行。重要的事由董事会拍板，你负责提案。按顺序完成下面几件事：",
       `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算与 Model，以及公共工作区怎么划分。以明确的问题结尾，然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
       `2. 答复会以提及或本会话消息的形式到来。董事会确认后，先招人事与财务——\`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\`，\`${org.orgId}_finance\` 同理——再招确认过的其他角色。`,
-      "3. 按确认的方案划分公共工作区：把子目录分配下去（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
+      "3. 按确认的方案划分公共工作区。你自己在 `ceo/` 里工作，招募时不给 `--workspace` 的员工落在以其 Agent id 命名的子目录里，公共工作区的根目录只放大家共读的共享输入、不是任何人的工位。要换个分区名字再单独分配（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
       "4. 把你自己、人事与财务排进日历（`penguin org calendar add …`），做成轮值表而不是广播：你每天 09:00，人事每三天 10:00，财务每周 16:00（组织时区，写成带偏移量的 ISO 时刻，绝不用 `--start-at now`），此后每招一人就给它一个各自不同的时点。",
       "5. 把确认过的工单开进 `proposed`（`penguin org ticket create …`）：一个项目级目标一张父工单，每条工作线一张子工单。接受一张工单进入 `in_progress` 时就指派负责人（`penguin org ticket assign <id> --owner agent:<员工>`）：那名员工的工位会在下一次巡检时接手并发起工单会话。只有工单的负责人可以为它发起会话，所以你只为自己名下的工单执行 `penguin org ticket start <id>`；工位只负责调度与跟踪，绝不在工位上做工单本身的活。",
       "6. 每条工作线开一个频道（`penguin org channel create ch_<工作线> --name …`）并邀请它的负责人（`penguin org channel invite ch_<工作线> agent:<agent_id>`），免得一条线索淹没全员频道。",
@@ -2413,7 +2415,7 @@ function initBody(org: LoadedOrg): string {
     "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
     `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
     `2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
-    "3. Partition the shared workspace as confirmed: assign the sub-directories (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
+    "3. Partition the shared workspace as confirmed. You already work in `ceo/`, and a hire given no `--workspace` lands in a sub-directory named after its Agent id; the root of the shared workspace holds the shared inputs everyone reads and is nobody's desk. Assign a different sub-directory where a partition should be named for the stream rather than the employee (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
     "5. File the confirmed tickets in `proposed` (`penguin org ticket create …`): one parent ticket for the project-level goal and children per stream. Assign an owner as you accept one into `in_progress` (`penguin org ticket assign <id> --owner agent:<employee>`): that employee's desk picks it up in its next sweep and starts the ticket session itself. Only a ticket's owner may start its sessions, so run `penguin org ticket start <id>` for the tickets you own yourself — the desk schedules and tracks, and never does the ticket work itself.",
     "6. Open one channel per stream (`penguin org channel create ch_<stream> --name …`) and invite its owner (`penguin org channel invite ch_<stream> agent:<agent_id>`), so a stream's thread does not drown the all-hands channel.",

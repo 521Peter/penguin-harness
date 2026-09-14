@@ -427,7 +427,9 @@ export class FakeServer {
 
   /**
    * Adds an employee (OrgEmployeeItem shape; `reportsTo` defaults to the CEO). An employee
-   * is an Agent, so one is listed under /agents as well when it is not already.
+   * is an Agent, so one is listed under /agents as well when it is not already. The workspace
+   * defaults the way the server does: the CEO's partition is `ceo`, everyone else's is named
+   * after its Agent id, and the shared root is nobody's desk.
    */
   addEmployee(orgId: string, item: Json & { agentId: string }): Json {
     const org = this.orgs.get(orgId)!;
@@ -445,7 +447,7 @@ export class FakeServer {
       name: item.agentId,
       title: "Employee",
       reportsTo: item.agentId === org.ceoAgentId ? null : org.ceoAgentId,
-      workspace: ".",
+      workspace: item.agentId === org.ceoAgentId ? "ceo" : item.agentId,
       resolvedWorkspace: `/shared/${item.agentId}`,
       state: "idle",
       spend: { own: 0, cumulative: 0 },

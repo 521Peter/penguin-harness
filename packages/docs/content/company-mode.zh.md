@@ -37,7 +37,7 @@ id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定�
 | 日程 | 按员工分组的日程项，格式同定时任务、去掉目标字段——唯一的周期性驱动 | `calendar/<agent_id>/<event>.toml` |
 | 工单 | 一个工单一个 Markdown 文件，所在列目录即状态 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
 | 频道 | 一个频道一个目录：一份写有名称、用途与成员的意图文件，加上一行一条消息、按天分的 JSON Lines | `channels/<channel_id>/channel.toml`、`channels/<channel_id>/<yyyy-mm-dd>.jsonl` |
-| 公共工作区 | 公司的工作目录；CEO 划分子目录指定给各工位——相对子目录在指定时由服务端建好，绝对路径必须已经存在 | `workspace/` |
+| 公共工作区 | 公司的工作目录；根目录放共享输入、不是任何人的工位——CEO 在 `ceo/` 里工作，新员工不另行指定就落在以其 Agent id 命名的子目录里；相对子目录在指定时由服务端建好，绝对路径必须已经存在 | `workspace/` |
 | 组织手册 | 公司知识库；根部 `README.md` 是每个工作轮先读的索引，其余文档在索引中列出、按需读取 | `handbook/` |
 
 手册就是渐进加载的落地：每次触发都指向 `handbook/README.md`，索引写明目录布局、协议、职责约定，以及每份文档一行「何时需要读」，工作轮只在那一行说相关时才读对应文档。董事会的决策记在 `handbook/decisions/<yyyy-mm-dd>-<slug>.md`，约定与操作指南放在旁边；Web App 的「手册」页可以浏览、编辑与新建文档，会话里用 `penguin org handbook list | show | write | rm` 做同样的事。索引不可删除。
