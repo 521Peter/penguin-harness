@@ -462,12 +462,12 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
-          "company-setup",
         ],
       },
       {
         title: "Agent 公司",
         skills: [
+          "company-setup",
           "company-employee",
           "company-ceo",
           "company-hr",

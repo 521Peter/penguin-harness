@@ -1,42 +1,43 @@
 /**
- * Company mode (admin only, server-global), modelled on the proxy section: one switch written
- * by a single PUT to /api/admin/settings. The switch is off on a server nobody has turned it
- * on, which is why the pre-hydration state below is off rather than on. Off stops the
- * organization scheduler, 404s every organization route and hides the mode switch for
- * everyone; on again resumes without backfilling what was missed. Same form contract as the neighbouring pages — the control and
- * Save stay disabled until the stored value arrives, an unchanged save sends nothing, and the
- * saved response is the new baseline. The auth context is refreshed afterwards because the
- * shell reads the flag from /api/me, not from this page.
+ * Company mode (admin only, server-global): one switch that applies the moment it is flipped —
+ * a single PUT to /api/admin/settings, no Save button, and so no draft state to lose. The switch
+ * is off on a server nobody has turned it on, which is why the pre-hydration state below is off
+ * rather than on; it stays disabled until the stored value arrives and again while a write is in
+ * flight, so a second flip cannot race the first. Off stops the organization scheduler, 404s
+ * every organization route and hides the mode switch for everyone; on again resumes without
+ * backfilling what was missed. A write that fails puts the switch back on the stored value and
+ * names the reason on a line under it (a toast would leave the switch and the message on
+ * separate surfaces). The auth context is refreshed afterwards because the shell reads the flag
+ * from /api/me, not from this page.
  */
 import { useEffect, useState } from "react";
-import type { ServerSettings, ServerSettingsUpdateRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { toneInk } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
-import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { toastError } from "../../components/ui/toast";
+import { writeCompanyMode } from "./company-mode-write";
 import { SectionShell } from "./section-shell";
 
 export function CompanySection() {
   const { refresh } = useAuth();
-  /** Stored settings as hydrated on mount (null until then) — the no-change baseline. */
-  const [settings, setSettings] = useState<ServerSettings | null>(null);
+  /** The last value the server confirmed; null until the settings load. */
+  const [stored, setStored] = useState<boolean | null>(null);
+  /** What the switch shows: the stored value, or the pending one while a write is in flight. */
   const [companyMode, setCompanyMode] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  const adopt = (next: ServerSettings) => {
-    setSettings(next);
-    setCompanyMode(next.companyMode);
-  };
+  const [error, setError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
     void api
       .adminGetSettings()
       .then((res) => {
-        if (!cancelled) adopt(res.settings);
+        if (cancelled) return;
+        setStored(res.settings.companyMode);
+        setCompanyMode(res.settings.companyMode);
       })
       .catch((e: unknown) => {
         if (!cancelled) toastError(apiErrorText(e));
@@ -46,45 +47,44 @@ export function CompanySection() {
     };
   }, []);
 
-  const save = async () => {
-    if (settings === null || busy) return;
-    if (companyMode === settings.companyMode) {
-      toastInfo(S.common.noChangesToSave);
-      return;
-    }
+  const toggle = async (next: boolean) => {
+    if (stored === null || busy) return;
+    // Optimistic: the knob moves with the click, and only a failure moves it back.
+    setCompanyMode(next);
+    setError(undefined);
     setBusy(true);
-    try {
-      const body: ServerSettingsUpdateRequest = { companyMode };
-      const res = await api.adminPutSettings(body);
-      adopt(res.settings);
+    const result = await writeCompanyMode(next, stored, {
+      put: api.adminPutSettings,
+      describeError: apiErrorText,
+    });
+    if (result.status === "applied") {
+      setStored(result.companyMode);
+      setCompanyMode(result.companyMode);
       // The shell decides whether to draw the mode switch from /api/me; re-pull it so this
       // tab follows its own change without a reload.
       await refresh().catch(() => {});
-      toastSuccess(S.common.saved);
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setBusy(false);
+    } else {
+      setCompanyMode(result.revertTo);
+      setError(result.error);
     }
+    setBusy(false);
   };
 
-  const hydrated = settings !== null;
+  const hydrated = stored !== null;
   return (
-    <SectionShell
-      actions={
-        <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
-          {S.common.save}
-        </Button>
-      }
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium">{S.settings.companyModeServer}</span>
-        <Switch
-          checked={companyMode}
-          onChange={setCompanyMode}
-          disabled={!hydrated}
-          aria-label={S.settings.companyModeServer}
-        />
+    <SectionShell>
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">{S.settings.companyModeServer}</span>
+          <Switch
+            checked={companyMode}
+            onChange={(next) => void toggle(next)}
+            disabled={!hydrated || busy}
+            aria-label={S.settings.companyModeServer}
+          />
+        </div>
+        {/* The reason the switch went back, under the switch it went back on. */}
+        {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
       </div>
     </SectionShell>
   );

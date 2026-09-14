@@ -93,3 +93,16 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
   现在与之相关的员工仍在各自下一次巡检里看到，而人则在看板与组织概览的 inbox 里读到。频道装的是人和
   员工彼此说的话，加上谁来了谁走了和预算告警——一块自己讲述自己的看板只会把对话淹掉。已经写下的行照常
   渲染，见向后兼容条目。
+
+### company-setup 并入公司插件，总开关拨动即生效（2026-09-14）
+
+- **`company-setup` 从 `agent-development` 移入 `agent-company`。** 与用户一起创建组织的这个
+  Skill，现在与公司模式的其余部分同包，而不再与 SDK、编排类 Skill 放在一起。`agent-company` 是
+  `preinstall: false`，因此随之而来的变化是：`company-setup` 不再缺省装在每个 Agent 上——想让某个
+  Agent 能创建组织，就给它装上公司插件（新建 Agent 对话框的「插件」字段，或 Project 里既有 Agent 的
+  技能标签页）；而 CEO 与员工自受雇之日起就带着它，因为招募本来就会装 `agent-company`。于是
+  `agent-development` 回到四个 Skill，`agent-company` 变为六个；插件清单、Skill 文档、公司模式指南、
+  落地页的 Skill 列表与插件库 README 一并跟上。
+- **管理员的公司模式开关拨动即生效。** 系统设置 › 服务器 › 公司模式不再有保存按钮：拨动即写入
+  （`PUT /api/admin/settings`），请求在途期间开关禁用，写入失败则把开关拨回服务端存着的值，并在其
+  下方以一行说明原因。解释总开关作用的「?」不变。
