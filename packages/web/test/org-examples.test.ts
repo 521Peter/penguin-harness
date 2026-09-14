@@ -1,5 +1,5 @@
 /**
- * org-examples.ts: the three example missions offered under the create-organization
+ * org-examples.ts: the four example missions offered under the create-organization
  * dialog's mission field. The registry holds ids only and the chips are rendered from them,
  * so an id with no entry in one of the dictionaries would render a blank chip rather than
  * fail to compile — which is what this covers.
@@ -10,9 +10,9 @@ import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 describe("organization mission examples", () => {
-  it("lists the three in their rendered order, each id once", () => {
+  it("lists the four in their rendered order, each id once", () => {
     const ids = ORG_EXAMPLES.map((example) => example.id);
-    expect(ids).toEqual(["research", "agentTuning", "cloudReseller"]);
+    expect(ids).toEqual(["research", "agentTuning", "cloudReseller", "mirror"]);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -28,7 +28,7 @@ describe("organization mission examples", () => {
     }
   });
 
-  it("keeps the names distinct, so three chips never read as one", () => {
+  it("keeps the names distinct, so four chips never read as one", () => {
     for (const dict of [zh, en]) {
       const names = ORG_EXAMPLES.map(({ id }) => dict.company.missionExamples[id].name);
       expect(new Set(names).size).toBe(names.length);

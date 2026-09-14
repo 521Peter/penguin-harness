@@ -139,7 +139,9 @@ One message: what finished, what is blocked and on whom, spend against budget, t
 
 ## The init work run
 
-A `kind: init` trigger is the first message of a new organization's CEO; its body is the mission and the initialization tasks. In order:
+A `kind: init` trigger is the first message of a new organization's CEO; its body is the mission and the initialization tasks.
+
+**First, read what kind of company the mission asks for.** If it says the organization **mirrors a real company** — a digital twin (数字分身) per real colleague, a company whose job is to relay between people rather than to produce anything of its own — follow `company-mirror` instead and skip the checklist below entirely: that company hires from the real org chart the board hands you, and it schedules nothing, files nothing and partitions nothing. Everything else is an ordinary mission; work through the following, in order:
 
 1. **Read the handbook**, then write ONE proposal to the board in the all-hands channel: your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with their budgets and model, and how you will split the shared workspace. **Name your own budget in that proposal** — the `budget:` line of the trigger block is what the board gave you (100 USD per month unless creation said otherwise), and since budgets accumulate along the reporting line it is the whole company's cap: every salary you propose has to fit inside it. If the plan does not fit, say so and ask for the number you need instead of proposing hires that will pause the company. End with the question, @-mention the creator, and **end the run** — nothing is hired, scheduled or filed before the answer. Write it in the organization's working language, the one the handbook's 「工作语言」 / “Working language” section names — as you write every message, ticket, document and brief from here on; commands, ids, file names and field names stay ASCII.
 2. **When the board confirms** (a mention or a message in your desk conversation), hire HR and finance, then the confirmed roles (`penguin org hire --new-agent <org_id>_<role> …`, default plugins).

@@ -300,3 +300,24 @@ cursors, budget marks) and each user's read cursor per channel.
   App offers to create another in its place, and the Agents and sessions stay — the sessions
   still marked as the organization's, so they never return to development mode's list. The
   Company Mode guide and the server API reference say so.
+
+### The mirror-company example (2026-09-14)
+
+- A company can now mirror a real one. The new `company-mirror` skill of the `agent-company`
+  plugin is the protocol for an organization whose employees are digital twins of real
+  colleagues: the CEO's initialization run asks the board for the real org chart — name,
+  title, reporting line and which bot is whose — and ends there; once the board confirms the
+  roster it hires one twin per person with `--reports-to` mirroring the real line, writes each
+  twin's brief and each person's `people/<name>.md` handbook page, and reports the desk
+  sessions the board has to bind. Nothing recurring drives such a company: no calendar events,
+  no tickets, no per-stream channels. A twin runs when its own human writes through the bound
+  bot — it answers from the handbook when it can and otherwise relays the question with an
+  `@` to the right colleague's twin, which makes the question its run's final reply so the bot
+  delivers it — and everything that comes back is written into the handbook so the next such
+  question is answered alone. `company-ceo`'s init checklist and `company-employee`'s desk
+  section route a mirror mission here, and the CEO's initialization run says so in its first
+  line, in both languages.
+- The create-organization dialog and the empty company landing offer a fourth mission example,
+  「员工数字分身公司」 / "Digital-twin company", whose mission is that mirror company. The
+  Company Mode guide gains a section on what it builds, and `company-setup` proposes it for a
+  user who describes their colleagues rather than work to produce.

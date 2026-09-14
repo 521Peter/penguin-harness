@@ -2510,6 +2510,11 @@ Scenarios:
         mission:
           "Set up a company that runs a cloud-service-style website for me: collect every low-priced service on the market, bundle and resell them at a markup to make money, and grow the site's SEO and visibility.",
       },
+      mirror: {
+        name: "Digital-twin company",
+        mission:
+          "Set up a company that mirrors our real company: I will give the CEO our real org chart and the CEO creates one digital twin per real employee; each twin's desk session is bound to that colleague's Feishu bot. A twin only receives its own colleague's messages by default, answers what it can on its own and relays the rest to the relevant colleague's twin, who passes it on to the real person. The CEO hires nobody on its own, schedules nothing and files no tickets; the company only relays and solves what it can.",
+      },
     },
     createdOpeningCeo: "Organization created — opening the CEO's desk session",
     /** Create and settings dialogs: the model and the shared workspace, both optional. */
