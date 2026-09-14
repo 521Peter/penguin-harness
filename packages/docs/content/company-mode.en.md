@@ -17,7 +17,7 @@ A desk or ticket session is stamped as the organization's on the row itself when
 
 Three entry points, one server call behind all of them:
 
-- **the Web App** — 新建组织 in the organization switcher: the display name comes first, and a button beside the id field asks the server to derive an id from it (the Project's default model proposes a short English snake_case id, an ASCII slug of the name answers when it cannot, and a name neither can name is filled with a dated placeholder that says under the field why and asks to be replaced — the button always leaves an id in the box); three mission examples fill the mission with one click;
+- **the Web App** — 新建组织 in the organization switcher: the display name comes first, and a button beside the id field asks the server to derive an id from it (the Project's default model proposes a short English snake_case id, an ASCII slug of the name answers when it cannot, and a name neither can name is filled with a dated placeholder that says under the field why and asks to be replaced — the button always leaves an id in the box); four mission examples fill the mission with one click;
 - **the CLI** — `penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`;
 - **the general agent** — ask any Agent carrying the `agent-development` plugin to set a company up and its `company-setup` skill takes over: one question at a time (id, name, mission, shared workspace, model, CEO budget), a summary to confirm, then that same command. It stops there — hiring, scheduling and tickets are the CEO's, after the board answers.
 
@@ -80,6 +80,17 @@ The mission *"Build a DeepSeek Harness plugin marketplace, promote it on social 
 7. Paid featured slots ship and the CEO reports to the board in the all-hands channel, mentioning you.
 
 The server test `organization-scenario.test.ts` runs exactly this story on the runtime's seams.
+
+## A mirror organization
+
+The fourth mission example is a company with no work of its own. *"Set up a company that mirrors our real company: I will give the CEO our real org chart and the CEO creates one digital twin per real employee; each twin's desk session is bound to that colleague's Feishu bot. A twin only receives its own colleague's messages by default, answers what it can on its own and relays the rest to the relevant colleague's twin, who passes it on to the real person. The CEO hires nobody on its own, schedules nothing and files no tickets; the company only relays and solves what it can."*
+
+Such a mission puts the CEO on the `company-mirror` skill instead of the standard checklist, and the company it builds is shaped differently:
+
+- **The roster comes from outside.** The CEO's initialization run asks the board for the real org chart — every person's name, title, reporting line and which bot will be theirs — and ends there. Once the board answers and confirms the roster, the CEO hires one twin per person, `--reports-to` mirroring the real line, and writes each twin's brief.
+- **Nothing recurring drives it.** No calendar events, no tickets, no per-stream channels. A twin runs when its own human writes to it through the bound bot, or when another twin `@`-mentions it.
+- **The binding is the setup's last step.** Each twin's desk session has to be bound to that colleague's bot — open the desk session and use its Remote control panel, or take the session id from `penguin org desk show <agent_id>`. An unbound twin can neither hear its human nor answer them.
+- **Relay, then write it down.** A twin answers from the handbook when it can and otherwise relays the question to the right colleague's twin, which asks its own human and passes the answer back. Everything that comes back is written into the handbook (`people/<name>.md`, `faq.md`), so the same question is answered alone next time. Relays spend the mention chain, which is why a busy mirror organization raises `mention_chain_limit` in `org_config.toml`.
 
 ## Commands
 
