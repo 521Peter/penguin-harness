@@ -50,7 +50,7 @@ penguin cost --days 7 --by agent                # the Project view: spend by age
 penguin cost --days 7 --by session --agent-id <org_id>_dev --json    # which sessions of one employee cost the most
 ```
 
-Read, in order: anyone paused; anyone above the warn ratio; spend against days elapsed in the month (an employee at 60% on the 10th will pause by the 20th); the most expensive tickets and whether their `Sessions` count explains them; sessions that cost much and moved no ticket (a runaway conversation, a sweep that finds nothing). Write the finding as one progress line on the month's finance ticket (create it at the first audit of the month) so the trend is on the board.
+Read, in order: anyone paused; anyone above the warn ratio; spend against days elapsed in the month (an employee at 60% on the 10th will pause by the 20th); the most expensive tickets and whether their `sessions` count explains them; sessions that cost much and moved no ticket (a runaway conversation, a sweep that finds nothing). Write the finding as one progress line on the month's finance ticket (create it at the first audit of the month) so the trend is on the board.
 
 ## Explaining alerts and proposing savings
 

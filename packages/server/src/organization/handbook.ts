@@ -95,19 +95,27 @@ text \`@<id>\` is shorthand: employees resolve first, then Project members; writ
 
 ## Ticket protocol
 
+- A ticket file is YAML frontmatter (\`title\`, \`status\`, \`owner\`, \`notify\`, \`priority\`, \`due\`,
+  \`blocked\`, \`sessions\`, \`history\`) followed by \`## Goal\`, \`## Acceptance criteria\`,
+  \`## Progress\` and \`## Result\`. Its id is \`<yyyy-mm-dd>-<slug>\`, the slug lowercase English
+  words joined by hyphens.
 - Columns: \`proposed\` → \`in_progress\` → \`review\` (optional) → \`done\`, or \`rejected\` (give a reason).
+- **One owner.** \`owner\` is the single principal responsible for the ticket — whoever filed it
+  unless the filing named someone else — and \`history\` records who filed it and everything since.
 - Anyone may propose. The CEO, the owner's manager or a person accepts (→ in_progress) or rejects.
 - The owner moves a finished ticket to \`review\`; the CEO or a person moves it to \`done\`.
   P2 tickets may go straight to \`done\` when the acceptance criteria are plainly met.
 - Before a ticket session ends it writes progress (\`penguin org ticket progress <id> -m …\`) and
-  moves the ticket if the work is complete.
+  moves the ticket if the work is complete. \`## Progress\` is plain sentences: what was done and
+  where. No ids, no timestamps, no names — the server records who wrote each line and when.
 - Stuck (waiting for a decision, another ticket, a missing key): \`penguin org ticket block <id>
   --reason … --by …\` and stop working on it. Blocked tickets are skipped by the sweep until unblocked.
 - Name every input you rely on and every deliverable you produce by its full path (absolute, or
   \`<app_data_dir>/…\`) in \`## Goal\`, \`## Acceptance criteria\`, your progress lines and \`## Result\`;
   a colleague must be able to open it without asking.
-- Closing a ticket notifies its \`Notify\` list, and the initiator when it is an employee; a person
-  who wants to hear about it lists themselves in \`Notify\`.
+- Closing a ticket notifies its \`notify\` list, and its owner when an employee owns it; a person
+  who wants to hear about it lists themselves in \`notify\`. Ticket changes are never posted in a
+  channel: the board is read from the board.
 
 ## Decisions belong to the board
 
@@ -214,13 +222,20 @@ ${input.mission}
 
 ## 工单协议
 
+- 工单文件由 YAML frontmatter（\`title\`、\`status\`、\`owner\`、\`notify\`、\`priority\`、\`due\`、
+  \`blocked\`、\`sessions\`、\`history\`）加 \`## Goal\`、\`## Acceptance criteria\`、\`## Progress\`、
+  \`## Result\` 四节组成。id 形如 \`<yyyy-mm-dd>-<slug>\`，slug 是用连字符连接的小写英文单词。
 - 列：\`proposed\` → \`in_progress\` → \`review\`（可选）→ \`done\`，或 \`rejected\`（须给出理由）。
+- **负责人只有一个。** \`owner\` 是这张工单唯一的责任人——除非创建时指名他人，否则就是创建者本人；
+  谁创建的以及此后发生的一切都记在 \`history\` 里。
 - 任何人都可以提出。由 CEO、负责人的上级或某个人接受（→ in_progress）或拒绝。
 - 负责人把完成的工单移到 \`review\`；由 CEO 或某个人移到 \`done\`。验收标准明显已满足的 P2 工单可以直接进 \`done\`。
-- 工单会话结束前要写进展（\`penguin org ticket progress <id> -m …\`），工作完成则移列。
+- 工单会话结束前要写进展（\`penguin org ticket progress <id> -m …\`），工作完成则移列。\`## Progress\`
+  只写大白话句子：做了什么、东西在哪。不写 id、不写时间、不写人名——谁写的、什么时候写的由服务端记录。
 - 卡住了（等人拍板、等另一张工单、缺一把 key）：\`penguin org ticket block <id> --reason … --by …\`，然后停手。被阻塞的工单在解除之前会被巡检跳过。
 - \`## Goal\`、\`## Acceptance criteria\`、进展行与 \`## Result\` 里的每个参考物与交付物都写**完整路径**（绝对路径或 \`<app_data_dir>/…\`），同事不用问就能打开。
-- 关闭一张工单会通知它的 \`Notify\` 名单，发起人是员工时也通知发起人；想收到通知的人把自己列进 \`Notify\`。
+- 关闭一张工单会通知它的 \`notify\` 名单，负责人是员工时也通知负责人；想收到通知的人把自己列进 \`notify\`。
+  工单的变化从不发到频道里：看板上的事，到看板上看。
 
 ## 决策属于董事会
 

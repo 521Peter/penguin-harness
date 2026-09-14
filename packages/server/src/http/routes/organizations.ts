@@ -24,9 +24,9 @@
  * that deletes an organization: `status` (`active` / `paused`) is its whole lifecycle, so the
  * conversations, employees, desks and tickets of an organization that is switched off stay
  * reachable. Every route answers 404 while the admin master switch is off. A write carries the
- * caller's session id when it comes from inside a session (the CLI's control environment), so
- * the file records the employee rather than the token's user — see {@link callerSessionId} for
- * why only the control environment may make that claim.
+ * caller's Agent id and session id when it comes from inside a session (the CLI's control
+ * environment), so the file records the employee rather than the token's user — see
+ * {@link callerSessionId} for why only the control environment may make that claim.
  */
 import { Hono } from "hono";
 import type { Context } from "hono";
@@ -111,27 +111,48 @@ function callerSessionId(
   return c.var.sessionVia === "token" ? sessionId : undefined;
 }
 
+/**
+ * Who performs this write. `agentId` is the same kind of identity claim as `sessionId` — the
+ * `PENGUIN_AGENT_ID` a Session hands its command subprocesses — and is backed by the same
+ * credential, so a cookie-authenticated body's `agentId` is dropped. It names the operator
+ * more precisely than the session does, so the service prefers it.
+ *
+ * `identityAgentId: false` is for the one route whose body already uses `agentId` for
+ * something else: `tickets/:id/start` names there the employee the ticket session is to run
+ * as, which may be a colleague the owner enlists — reading it as the caller would hand the
+ * ownership check the wrong principal.
+ */
 function actorOf(
   c: { var: { user: { userId: string }; sessionVia: SessionVia } },
   body: Record<string, unknown>,
+  opts: { identityAgentId?: boolean } = {},
 ): Actor {
   const sessionId = callerSessionId(c, body);
-  return { userId: c.var.user.userId, ...(sessionId !== undefined ? { sessionId } : {}) };
+  const agentId =
+    opts.identityAgentId !== false && c.var.sessionVia === "token"
+      ? optionalString(body, "agentId", { minLen: 2, maxLen: 64 })
+      : undefined;
+  return {
+    userId: c.var.user.userId,
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(agentId !== undefined ? { agentId } : {}),
+  };
 }
 
 /**
- * The same identity claim on a read, where there is no body to carry it: `?sessionId=` is
- * how a desk or ticket session asks "which channels am I in". It is backed by exactly the
- * credential {@link callerSessionId} requires — the boot's local API token — so a cookie
- * request's query parameter is dropped and the read is answered as that person.
+ * The same identity claim on a read, where there is no body to carry it: `?sessionId=` and
+ * `?agentId=` are how a desk or ticket session asks "which channels am I in". Both are backed
+ * by exactly the credential {@link callerSessionId} requires — the boot's local API token —
+ * so a cookie request's query parameters are dropped and the read is answered as that person.
  */
 function actorOfQuery(c: Context<AppEnv>): Actor {
+  const byToken = c.var.sessionVia === "token";
   const sessionId = c.req.query("sessionId");
+  const agentId = c.req.query("agentId");
   return {
     userId: c.var.user.userId,
-    ...(c.var.sessionVia === "token" && sessionId !== undefined && sessionId !== ""
-      ? { sessionId }
-      : {}),
+    ...(byToken && sessionId !== undefined && sessionId !== "" ? { sessionId } : {}),
+    ...(byToken && agentId !== undefined && agentId !== "" ? { agentId } : {}),
   };
 }
 
@@ -515,12 +536,12 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const title = requireString(body, "title", { minLen: 1, maxLen: 200 });
-    const initiator = optionalString(body, "initiator", { minLen: 1, maxLen: 100 });
     const slug = optionalString(body, "slug", { minLen: 1, maxLen: 64 });
     const goal = optionalString(body, "goal", { maxLen: 100_000 });
     const acceptanceCriteria = optionalString(body, "acceptanceCriteria", { maxLen: 100_000 });
     const text = optionalString(body, "body", { maxLen: 200_000 });
-    const owner = optionalString(body, "owner", { maxLen: 100 });
+    // Absent means "the caller owns it"; an empty string is no principal at all.
+    const owner = optionalString(body, "owner", { minLen: 1, maxLen: 100 });
     const parent = optionalString(body, "parent", { minLen: 1, maxLen: 100 });
     const notify = optionalStringArray(body, "notify");
     const priority = optionalEnum(body, "priority", PRIORITIES);
@@ -530,7 +551,6 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
       orgId,
       {
         title,
-        ...(initiator !== undefined ? { initiator } : {}),
         ...(slug !== undefined ? { slug } : {}),
         ...(goal !== undefined ? { goal } : {}),
         ...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
@@ -561,7 +581,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     member(c, projectId);
     const body = await readJson(c);
     const title = optionalString(body, "title", { minLen: 1, maxLen: 200 });
-    const owner = nullableString(body, "owner", { maxLen: 100 });
+    // No null: a ticket always has an owner — reassign it, never clear it.
+    const owner = optionalString(body, "owner", { minLen: 1, maxLen: 100 });
     const parent = nullableString(body, "parent", { maxLen: 100 });
     const notify = optionalStringArray(body, "notify");
     const priority = optionalEnum(body, "priority", PRIORITIES);
@@ -666,7 +687,8 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
         ...(workspace !== undefined ? { workspace } : {}),
       },
       // Who asks decides whether it may: an employee starts sessions only on its own tickets.
-      actorOf(c, body),
+      // The body's `agentId` is the employee to run AS, not the caller, so it is not identity.
+      actorOf(c, body, { identityAgentId: false }),
     );
     return c.json(res, 202);
   });

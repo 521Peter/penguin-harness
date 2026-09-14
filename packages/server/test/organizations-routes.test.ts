@@ -2,10 +2,10 @@
  * Organization routes over the real app: the admin master switch starts off, 404s the whole
  * group while it is off, and is reported by /api/me and /api/admin/settings; Project
  * authorization gates reads and writes (an outsider gets 404, a member may write), and no
- * route deletes an organization;
- * bodies are validated before the service is asked; and the calling session rides write bodies as
- * `sessionId` (a read's query string), but only from the control environment's API token —
- * a signed-in member's claim is dropped. The service itself is a recording fake here — its semantics have their
+ * route deletes an organization; bodies are validated before the service is asked; and the
+ * calling session and employee ride write bodies as `sessionId` / `agentId` (a read's query
+ * string), but only from the control environment's API token — a signed-in member's claim is
+ * dropped. The service itself is a recording fake here — its semantics have their
  * own suites — so no Agent is created and no session runs.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -282,12 +282,13 @@ describe("organization routes", () => {
     });
   });
 
-  it("carries a ticket initiator through to the service, and validates it first", async () => {
+  it("carries a ticket owner and slug through to the service, and validates them first", async () => {
     const base = `/api/projects/${ownerProject}/organizations/acme`;
     const created = await owner.post(`${base}/tickets`, {
       title: "Audit the calendar",
       goal: "One event per employee",
-      initiator: "agent:acme_hr",
+      owner: "agent:acme_hr",
+      slug: "audit-the-calendar",
     });
     expect(created.status).toBe(201);
     expect(calls.at(-1)).toMatchObject({
@@ -295,17 +296,24 @@ describe("organization routes", () => {
       args: [
         ownerProject,
         "acme",
-        { title: "Audit the calendar", goal: "One event per employee", initiator: "agent:acme_hr" },
+        {
+          title: "Audit the calendar",
+          goal: "One event per employee",
+          owner: "agent:acme_hr",
+          slug: "audit-the-calendar",
+        },
         { userId: "olivia" },
       ],
     });
-    // An empty or oversized initiator is no principal, so it never reaches the service.
+    // An empty or oversized owner is no principal, so it never reaches the service.
     calls.length = 0;
-    expect((await owner.post(`${base}/tickets`, { title: "T", initiator: "" })).status).toBe(400);
+    expect((await owner.post(`${base}/tickets`, { title: "T", owner: "" })).status).toBe(400);
     expect(
-      (await owner.post(`${base}/tickets`, { title: "T", initiator: "a".repeat(101) })).status,
+      (await owner.post(`${base}/tickets`, { title: "T", owner: "a".repeat(101) })).status,
     ).toBe(400);
     expect(calls).toEqual([]);
+    // An owner cannot be cleared: a ticket always has one, so `null` is refused as a shape.
+    expect((await owner.put(`${base}/tickets/2026-09-01-site`, { owner: null })).status).toBe(400);
   });
 
   it("routes handbook documents by their relative path and keeps the index", async () => {
@@ -438,16 +446,20 @@ describe("organization routes", () => {
     expect([200, 201]).toContain(
       (await owner.post(`/api/projects/${ownerProject}/members`, { userId: "admin" })).status,
     );
-    const res = await t.app.request(`${base}?sessionId=session-desk`, {
+    const res = await t.app.request(`${base}?sessionId=session-desk&agentId=acme_dev`, {
       headers: { authorization: `Bearer ${t.deps.authService.localApiToken()}` },
     });
     expect(res.status).toBe(200);
     expect(calls.at(-1)).toEqual({
       method: "channels",
-      args: [ownerProject, "acme", { userId: "admin", sessionId: "session-desk" }],
+      args: [
+        ownerProject,
+        "acme",
+        { userId: "admin", sessionId: "session-desk", agentId: "acme_dev" },
+      ],
     });
     // The same claim over a cookie is dropped: a cookie proves a person, not a session.
-    expect((await owner.get(`${base}?sessionId=session-desk`)).status).toBe(200);
+    expect((await owner.get(`${base}?sessionId=session-desk&agentId=acme_dev`)).status).toBe(200);
     expect(calls.at(-1)).toEqual({
       method: "channels",
       args: [ownerProject, "acme", { userId: "olivia" }],
@@ -462,6 +474,7 @@ describe("organization routes", () => {
     const res = await fromSession(t, `${base}/progress`, {
       text: "half done",
       sessionId: "session-desk",
+      agentId: "acme_dev",
     });
     expect(res.status).toBe(200);
     expect(calls.at(-1)).toMatchObject({
@@ -471,7 +484,7 @@ describe("organization routes", () => {
         "acme",
         "2026-09-01-site",
         "half done",
-        { userId: "admin", sessionId: "session-desk" },
+        { userId: "admin", sessionId: "session-desk", agentId: "acme_dev" },
       ],
     });
     const start = await owner.post(`${base}/start`, { agentId: "acme_dev", message: "go" });
@@ -488,7 +501,12 @@ describe("organization routes", () => {
         { userId: "olivia" },
       ],
     });
-    const startFromDesk = await fromSession(t, `${base}/start`, { sessionId: "session-desk" });
+    // On `start`, the body's `agentId` is the employee the session RUNS AS, not the caller:
+    // the owner may enlist a colleague on its own ticket, so it never becomes the identity.
+    const startFromDesk = await fromSession(t, `${base}/start`, {
+      sessionId: "session-desk",
+      agentId: "acme_mkt",
+    });
     expect(startFromDesk.status).toBe(202);
     expect(calls.at(-1)).toMatchObject({
       method: "startTicket",
@@ -496,7 +514,7 @@ describe("organization routes", () => {
         ownerProject,
         "acme",
         "2026-09-01-site",
-        {},
+        { agentId: "acme_mkt" },
         { userId: "admin", sessionId: "session-desk" },
       ],
     });
@@ -543,6 +561,7 @@ describe("organization routes", () => {
     const progress = await memberApi.post(`${base}/tickets/2026-09-01-site/progress`, {
       text: "done",
       sessionId: "session-ceo-desk",
+      agentId: "acme_ceo",
     });
     expect(progress.status).toBe(200);
     expect(calls.at(-1)?.args.at(-1)).toEqual({ userId: "mallory" });

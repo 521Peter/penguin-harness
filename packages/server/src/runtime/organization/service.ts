@@ -33,6 +33,7 @@ import type {
   OrgSessionsResponse,
   OrgTicketCreateRequest,
   OrgTicketDetail,
+  OrgTicketHistoryAction,
   OrgTicketItem,
   OrgTicketSessionItem,
   OrgTicketStatus,
@@ -48,6 +49,7 @@ import type {
   OrgHandbookFileResponse,
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
+import { TICKET_SLUG_PATTERN } from "../../api/types.js";
 import { HttpError } from "../../http/errors.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
@@ -55,15 +57,16 @@ import {
   DEFAULT_CEO_BUDGET,
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
+  defaultTicketNotify,
   detectLanguage,
   extractMentionTokens,
+  historyNote,
   orgLanguage,
   parseCalendarEvent,
   parseOrgChart,
-  parseProgressLine,
-  progressLine,
   serializeCalendarEvent,
   serializeOrgChart,
+  slugSuffix,
   slugify,
 } from "../../organization/files.js";
 import { renderHandbook } from "../../organization/handbook.js";
@@ -119,10 +122,17 @@ import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
  */
 const CEO_WORKSPACE = "ceo";
 
-/** Who performs a write: a person (route user) or, through the control-env token from inside a session, that session's employee. */
+/**
+ * Who performs a write: a person (route user) or, through the control-env token from the
+ * control environment of a session, that session's employee. `agentId` is the employee the
+ * command subprocess was handed (`PENGUIN_AGENT_ID`) and it wins over the session, so a
+ * command run from a subagent or a nested session of an employee is still recorded as that
+ * employee; `sessionId` answers when there is no Agent id to go by.
+ */
 export interface Actor {
   userId: string;
   sessionId?: string;
+  agentId?: string;
 }
 
 const notFound = (orgId: string): HttpError =>
@@ -257,8 +267,16 @@ export class OrganizationService {
     return org;
   }
 
-  /** `agent:<id>` when the write comes from a session of this organization, else `user:<id>`. */
+  /**
+   * The principal a write is recorded under: the Agent id the caller carries when it names an
+   * employee of this organization, else the employee of the calling session, else the person.
+   * The Agent id comes first because it is the narrower fact — the session may be a desk that
+   * spawned the command, while `PENGUIN_AGENT_ID` names exactly who ran it.
+   */
   private actorPrincipal(org: LoadedOrg, actor: Actor): string {
+    if (actor.agentId !== undefined && org.byId.has(actor.agentId)) {
+      return agentPrincipal(actor.agentId);
+    }
     if (actor.sessionId !== undefined) {
       const owner = this.deps.cache.ownerOfSession(actor.sessionId);
       if (owner && owner.projectId === org.projectId && owner.orgId === org.orgId) {
@@ -429,8 +447,8 @@ export class OrganizationService {
    * - `blockedTickets`: every ticket carrying a `Blocked` reason, whoever it waits on —
    *   uncapped, because a blocked ticket is work nobody is doing.
    * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
-   *   taken from the last progress line that moved them there. A ticket whose file was moved
-   *   by hand has no such line and no closing time to test, so it is listed with `closedAt`
+   *   taken from the last `moved`-to-`done` history entry. A ticket whose file was moved by
+   *   hand has no such entry and no closing time to test, so it is listed with `closedAt`
    *   absent rather than hidden.
    *
    * Newest first everywhere; ticket ids start with the filing date, so ordering by id
@@ -1154,8 +1172,7 @@ export class OrganizationService {
       ticketId: t.ticketId,
       title: d.title,
       status: d.status,
-      initiator: d.initiator,
-      ...(d.owner !== undefined ? { owner: d.owner } : {}),
+      owner: d.owner,
       ...(d.parent !== undefined ? { parent: d.parent } : {}),
       notify: d.notify,
       priority: d.priority,
@@ -1208,10 +1225,9 @@ export class OrganizationService {
       ...item,
       goal: t.doc.goal,
       acceptanceCriteria: t.doc.acceptanceCriteria,
-      progress: t.doc.progress.map(
-        (line) => parseProgressLine(line) ?? { time: "", by: "", text: line },
-      ),
+      progress: t.doc.progress,
       result: t.doc.result,
+      history: t.doc.history,
       body: file?.raw ?? "",
       children: tickets.filter((x) => x.doc.parent === ticketId).map((x) => x.ticketId),
       rolledUpCost: spend.ticketRolledUp.get(ticketId) ?? 0,
@@ -1246,11 +1262,12 @@ export class OrganizationService {
   }
 
   /**
-   * `initiator`: who the ticket is filed as when it is not the caller. A bare Agent id or
-   * `agent:<id>` has to be an employee and `user:<id>` a Project member — a ticket filed in
-   * the name of somebody the organization does not have is a ticket nobody can be notified about.
+   * `owner`: the one principal responsible for the ticket. A bare Agent id or `agent:<id>`
+   * has to be an employee and `user:<id>` a Project member — a ticket owned by somebody the
+   * organization does not have is a ticket nobody can be notified about, and nobody can start
+   * a session for.
    */
-  private requireInitiator(org: LoadedOrg, raw: string): string {
+  private requireOwner(org: LoadedOrg, raw: string): string {
     const value = raw.trim();
     const parsed = parsePrincipal(value);
     if (parsed === null && org.byId.has(value)) return agentPrincipal(value);
@@ -1259,27 +1276,45 @@ export class OrganizationService {
       return userPrincipal(parsed.id);
     }
     throw badRequest(
-      `initiator must be an employee of ${org.orgId} (an Agent id or agent:<id>) or a member of this Project (user:<id>): ${raw}`,
+      `owner must be an employee of ${org.orgId} (an Agent id or agent:<id>) or a member of this Project (user:<id>): ${raw}`,
     );
   }
 
   /**
-   * The `Notify` list a ticket gets when the filer named none: an employee initiator is told
-   * at its desk, so it defaults to itself; a person is not, because one @-mention per closed
-   * ticket is a badge nobody asked for — a person who wants to be told lists itself.
+   * The `notify` list a ticket gets when nobody named one: an employee owner is told at its
+   * desk, so it defaults to itself; a person is not, because one @-mention per closed ticket
+   * is a badge nobody asked for — a person who wants to be told lists itself.
    */
-  private defaultNotify(initiator: string): string[] {
-    return principalAgentId(initiator) !== null ? [initiator] : [];
+  private defaultNotify(owner: string): string[] {
+    return defaultTicketNotify(owner);
+  }
+
+  /** One history entry appended to the ticket; every write leaves exactly one. */
+  private recordHistory(
+    doc: TicketDoc,
+    by: string,
+    action: OrgTicketHistoryAction,
+    note?: string,
+  ): void {
+    doc.history = [
+      ...doc.history,
+      {
+        at: new Date(this.now()).toISOString(),
+        by,
+        action,
+        ...(note !== undefined && note !== "" ? { note } : {}),
+      },
+    ];
   }
 
   /**
    * Books the calling session as a contributing session of the ticket. A write that claims
    * work — a progress line, an edit of the body, the move into `review` — from inside one of
-   * this organization's sessions puts that session on the `Sessions` header, so its cost is
-   * split onto the ticket: a desk that did the work at its own table is at least paid for out
-   * of the ticket's budget. Management writes (accepting, closing, blocking, unblocking) book
-   * nothing — a CEO's desk that accepts twenty tickets has not worked on twenty tickets.
-   * Mutates `doc`; returns the session booked, or null when there was none to book.
+   * this organization's sessions puts that session on the ticket's `sessions` list, so its
+   * cost is split onto the ticket: a desk that did the work at its own table is at least paid
+   * for out of the ticket's budget. Management writes (accepting, closing, blocking,
+   * unblocking) book nothing — a CEO's desk that accepts twenty tickets has not worked on
+   * twenty tickets. Mutates `doc`; returns the session booked, or null when there was none.
    */
   private bookSession(
     org: LoadedOrg,
@@ -1310,6 +1345,52 @@ export class OrganizationService {
     );
   }
 
+  /**
+   * The slug half of a new ticket id. `slug` as given always wins, validated against the
+   * pattern the id carries. Otherwise the title is slugified; a title that yields fewer than
+   * two words carries too little meaning to name the work — which is every title written in
+   * a language with no Latin letters — so the Project's model is asked for an English one,
+   * with a single retry when its answer sanitizes to nothing. When there is no model, or it
+   * cannot name it either, the caller is told to pass `--slug` rather than given a ticket
+   * called `t-4f2a`: a ticket id is read by people for the life of the organization.
+   */
+  private async ticketSlug(
+    projectId: string,
+    title: string,
+    requested: string | undefined,
+  ): Promise<string> {
+    if (requested !== undefined && requested.trim() !== "") {
+      const slug = requested.trim().toLowerCase();
+      if (!TICKET_SLUG_PATTERN.test(slug)) {
+        throw badRequest(
+          `slug must be lowercase English words joined by hyphens: ${requested.trim()}`,
+        );
+      }
+      return slug;
+    }
+    const fromTitle = slugify(title);
+    if (fromTitle.includes("-")) return fromTitle;
+    const complete = this.deps.completeOnce;
+    if (complete !== undefined) {
+      const base = ticketSlugPrompt(title);
+      for (const prompt of [base, `${base} ${TICKET_SLUG_RETRY_RULE}`]) {
+        const res = await complete(projectId, prompt);
+        if (!res.ok) {
+          this.deps.log?.(`org: ticket slug for "${title}" fell back: ${res.error}`);
+          break;
+        }
+        const proposed = slugify(firstLine(res.text));
+        if (proposed !== "") return proposed;
+      }
+    }
+    if (fromTitle !== "") return fromTitle;
+    throw new HttpError(
+      400,
+      "slug_required",
+      "pass --slug: lowercase English words joined by hyphens",
+    );
+  }
+
   async createTicket(
     projectId: string,
     orgId: string,
@@ -1320,49 +1401,46 @@ export class OrganizationService {
       const org = await this.requireValidOrg(projectId, orgId);
       const title = req.title.trim();
       if (title === "") throw badRequest("title must not be empty.");
-      const initiator =
-        req.initiator !== undefined && req.initiator.trim() !== ""
-          ? this.requireInitiator(org, req.initiator)
-          : this.actorPrincipal(org, actor);
+      const by = this.actorPrincipal(org, actor);
+      const owner =
+        req.owner !== undefined && req.owner.trim() !== "" ? this.requireOwner(org, req.owner) : by;
+      // The model ask that names an untitled-in-English ticket runs under the organization's
+      // lock: filing a ticket is rare, and a slug settled outside it could collide with one
+      // filed meanwhile.
+      const slug = await this.ticketSlug(projectId, title, req.slug);
       const date = zonedDate(org.config.timezone, this.now());
-      const base = req.slug !== undefined ? slugify(req.slug) : slugify(title);
-      const slug = base !== "" ? base : `t-${Math.random().toString(16).slice(2, 8)}`;
       let id = `${date}-${slug}`;
-      for (let n = 2; (await this.deps.store.findTicket(org.dir, id)) !== null; n++)
-        id = `${date}-${slug}-${n}`;
-      if (!TICKET_ID_PATTERN.test(id))
-        throw badRequest("The title yields no usable ticket id; pass a slug.");
+      for (let n = 2; (await this.deps.store.findTicket(org.dir, id)) !== null; n++) {
+        id = `${date}-${slug}-${slugSuffix(n)}`;
+      }
       if (
         req.parent !== undefined &&
         (await this.deps.store.findTicket(org.dir, req.parent)) === null
       ) {
         throw badRequest(`Parent ticket does not exist: ${req.parent}`);
       }
-      const owner =
-        req.owner !== undefined && req.owner !== ""
-          ? this.requirePerson(req.owner, "owner")
-          : undefined;
       const notify = (req.notify ?? []).map((n) => this.requirePerson(n, "notify"));
       const doc: TicketDoc = {
         title,
         status: "proposed",
-        initiator,
-        ...(owner !== undefined ? { owner } : {}),
+        owner,
         ...(req.parent !== undefined ? { parent: req.parent } : {}),
-        notify: notify.length > 0 ? notify : this.defaultNotify(initiator),
+        notify: notify.length > 0 ? notify : this.defaultNotify(owner),
         priority: req.priority ?? "P2",
         ...(req.due !== undefined ? { due: req.due } : {}),
         sessions: [],
+        history: [],
         goal: (req.body ?? req.goal ?? "").trim(),
         acceptanceCriteria: req.body !== undefined ? "" : (req.acceptanceCriteria ?? "").trim(),
-        progress: [
-          progressLine(new Date(this.now()).toISOString(), initiator, "created the ticket"),
-        ],
+        progress: [],
         result: "",
-        extraHeaders: [],
+        extra: {},
         extraSections: [],
       };
-      // Baseline the notice state with no owner, so an owner set at creation is noticed as an assignment.
+      this.recordHistory(doc, by, "created");
+      // Filing for somebody else is two facts: who filed it, and who it landed on.
+      if (owner !== by) this.recordHistory(doc, by, "assigned", owner);
+      // Baseline the notice state with no owner, so the owner is noticed as an assignment.
       this.deps.cache.upsertTicketState({
         projectId,
         orgId,
@@ -1397,41 +1475,66 @@ export class OrganizationService {
       const org = await this.requireValidOrg(projectId, orgId);
       const t = await this.requireTicket(org, ticketId);
       const d = t.doc;
+      const by = this.actorPrincipal(org, actor);
+      // The fields the edit actually changed, for the history entry that records it.
+      const changed: string[] = [];
       if (req.title !== undefined) {
         if (req.title.trim() === "") throw badRequest("title must not be empty.");
+        if (d.title !== req.title.trim()) changed.push("title");
         d.title = req.title.trim();
       }
-      if (req.owner === null) delete d.owner;
-      else if (req.owner !== undefined) d.owner = this.requirePerson(req.owner, "owner");
-      if (req.parent === null) delete d.parent;
-      else if (req.parent !== undefined) {
+      let assigned: string | null = null;
+      if (req.owner !== undefined && req.owner.trim() !== "") {
+        const owner = this.requireOwner(org, req.owner);
+        if (owner !== d.owner) assigned = owner;
+        d.owner = owner;
+      }
+      if (req.parent === null) {
+        if (d.parent !== undefined) changed.push("parent");
+        delete d.parent;
+      } else if (req.parent !== undefined) {
         if (
           req.parent === ticketId ||
           (await this.deps.store.findTicket(org.dir, req.parent)) === null
         ) {
           throw badRequest(`Parent ticket does not exist: ${req.parent}`);
         }
+        if (d.parent !== req.parent) changed.push("parent");
         d.parent = req.parent;
       }
       if (req.notify !== undefined) {
         const notify = req.notify.map((n) => this.requirePerson(n, "notify"));
-        d.notify = notify.length > 0 ? notify : this.defaultNotify(d.initiator);
+        d.notify = notify.length > 0 ? notify : this.defaultNotify(d.owner);
+        changed.push("notify");
       }
-      if (req.priority !== undefined) d.priority = req.priority;
-      if (req.due === null) delete d.due;
-      else if (req.due !== undefined) d.due = req.due;
-      if (req.goal !== undefined) d.goal = req.goal.trim();
-      if (req.acceptanceCriteria !== undefined)
+      if (req.priority !== undefined) {
+        if (d.priority !== req.priority) changed.push("priority");
+        d.priority = req.priority;
+      }
+      if (req.due === null) {
+        if (d.due !== undefined) changed.push("due");
+        delete d.due;
+      } else if (req.due !== undefined) {
+        if (d.due !== req.due) changed.push("due");
+        d.due = req.due;
+      }
+      if (req.goal !== undefined) {
+        if (d.goal !== req.goal.trim()) changed.push("goal");
+        d.goal = req.goal.trim();
+      }
+      if (req.acceptanceCriteria !== undefined) {
+        if (d.acceptanceCriteria !== req.acceptanceCriteria.trim())
+          changed.push("acceptance criteria");
         d.acceptanceCriteria = req.acceptanceCriteria.trim();
-      if (req.result !== undefined) d.result = req.result.trim();
-      d.progress.push(
-        progressLine(
-          new Date(this.now()).toISOString(),
-          this.actorPrincipal(org, actor),
-          "updated the ticket",
-          actor.sessionId,
-        ),
-      );
+      }
+      if (req.result !== undefined) {
+        if (d.result !== req.result.trim()) changed.push("result");
+        d.result = req.result.trim();
+      }
+      // An assignment is its own entry; the rest of the edit is one `edited` entry naming
+      // the fields, so a ticket assigned and retitled at once reads as the two things it was.
+      if (assigned !== null) this.recordHistory(d, by, "assigned", assigned);
+      if (changed.length > 0) this.recordHistory(d, by, "edited", changed.join(", "));
       const booked = this.bookSession(org, actor, d);
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, d);
       this.cacheBookedSession(org, ticketId, booked);
@@ -1466,18 +1569,11 @@ export class OrganizationService {
       const d = t.doc;
       const from = t.column;
       d.status = status;
-      if (reason !== undefined && reason.trim() !== "") {
-        d.result =
-          d.result.trim() === "" ? reason.trim() : `${d.result.trim()}\n\n${reason.trim()}`;
+      const why = reason?.trim() ?? "";
+      if (why !== "") {
+        d.result = d.result.trim() === "" ? why : `${d.result.trim()}\n\n${why}`;
       }
-      d.progress.push(
-        progressLine(
-          new Date(this.now()).toISOString(),
-          by,
-          `moved ${from} → ${status}${reason ? `: ${reason.trim()}` : ""}`,
-          actor.sessionId,
-        ),
-      );
+      this.recordHistory(d, by, "moved", why === "" ? status : `${status}: ${why}`);
       // Handing work in is a claim of work; accepting, closing and rejecting are decisions.
       const booked = status === "review" ? this.bookSession(org, actor, d) : null;
       await this.deps.store.moveTicket(org.dir, ticketId, from, status, d);
@@ -1513,13 +1609,11 @@ export class OrganizationService {
       d.blocked = reason.trim();
       if (by !== undefined && by !== "") d.blockedBy = by.trim();
       else delete d.blockedBy;
-      d.progress.push(
-        progressLine(
-          new Date(this.now()).toISOString(),
-          this.actorPrincipal(org, actor),
-          `blocked: ${reason.trim()}${by ? ` (waiting on ${by})` : ""}`,
-          actor.sessionId,
-        ),
+      this.recordHistory(
+        d,
+        this.actorPrincipal(org, actor),
+        "blocked",
+        `${reason.trim()}${by ? ` (by ${by.trim()})` : ""}`,
       );
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, d);
     });
@@ -1539,14 +1633,7 @@ export class OrganizationService {
       const d = t.doc;
       delete d.blocked;
       delete d.blockedBy;
-      d.progress.push(
-        progressLine(
-          new Date(this.now()).toISOString(),
-          this.actorPrincipal(org, actor),
-          "unblocked",
-          actor.sessionId,
-        ),
-      );
+      this.recordHistory(d, this.actorPrincipal(org, actor), "unblocked");
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, d);
     });
     await this.scheduler.reconcile(projectId, orgId);
@@ -1563,15 +1650,11 @@ export class OrganizationService {
     await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const t = await this.requireTicket(org, ticketId);
-      if (text.trim() === "") throw badRequest("text must not be empty.");
-      t.doc.progress.push(
-        progressLine(
-          new Date(this.now()).toISOString(),
-          this.actorPrincipal(org, actor),
-          text,
-          actor.sessionId,
-        ),
-      );
+      const sentence = text.replace(/\s*\n\s*/g, " ").trim();
+      if (sentence === "") throw badRequest("text must not be empty.");
+      // The section is prose: the sentence alone, with who wrote it and when in the history.
+      t.doc.progress = [...t.doc.progress, sentence];
+      this.recordHistory(t.doc, this.actorPrincipal(org, actor), "progress", historyNote(sentence));
       const booked = this.bookSession(org, actor, t.doc);
       await this.deps.store.writeTicket(org.dir, ticketId, t.column, t.doc);
       this.cacheBookedSession(org, ticketId, booked);
@@ -1605,7 +1688,7 @@ export class OrganizationService {
     const sessionId = await this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireValidOrg(projectId, orgId);
       const t = await this.requireTicket(org, ticketId);
-      const owner = t.doc.owner !== undefined ? principalAgentId(t.doc.owner) : null;
+      const owner = principalAgentId(t.doc.owner);
       const caller = this.actorEmployee(org, actor);
       if (caller !== null && caller !== owner) {
         throw new HttpError(
@@ -1627,6 +1710,7 @@ export class OrganizationService {
         ...(req.message !== undefined ? { message: req.message } : {}),
         ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
         budget: budgetLine(org, spend, agentId),
+        by: this.actorPrincipal(org, actor),
       });
       if (!r.ok) throw new HttpError(409, "ticket_session_failed", r.error);
       return r.sessionId;
@@ -1650,14 +1734,7 @@ export class OrganizationService {
         throw new HttpError(404, "session_not_found", `Session does not exist: ${sessionId}`);
       if (!t.doc.sessions.includes(sessionId)) {
         t.doc.sessions = [...t.doc.sessions, sessionId];
-        t.doc.progress.push(
-          progressLine(
-            new Date(this.now()).toISOString(),
-            this.actorPrincipal(org, actor),
-            "attached a session",
-            sessionId,
-          ),
-        );
+        this.recordHistory(t.doc, this.actorPrincipal(org, actor), "session_attached", sessionId);
         await this.deps.store.writeTicket(org.dir, ticketId, t.column, t.doc);
         this.deps.cache.addTicketSession(projectId, orgId, ticketId, sessionId, row.agentId);
         this.deps.notifyProject(projectId, {
@@ -2304,17 +2381,18 @@ function requireHandbookPath(rel: string): void {
 /** How many rows one inbox list carries: a page, the same cap the overview renders. */
 const INBOX_PAGE = 20;
 
-/** A progress line `moveTicket` writes when a ticket lands in `done`, reason or not. */
-const MOVED_TO_DONE = /^moved \S+ → done(?::|$)/;
+/** The `note` a `moved` history entry carries when a ticket lands in `done`, reason or not. */
+const MOVED_TO_DONE = /^done(?::|$)/;
 
 /**
- * The time a ticket last moved into `done`, from its progress log. Null when the log has no
- * such line, which is what a ticket moved by editing its file looks like.
+ * The time a ticket last moved into `done`, from its history. Null when the history has no
+ * such entry, which is what a ticket moved by editing its file — or one converted from the
+ * format that predates the history — looks like.
  */
 function lastClosedAt(doc: TicketDoc): string | null {
-  for (let i = doc.progress.length - 1; i >= 0; i -= 1) {
-    const entry = parseProgressLine(doc.progress[i]!);
-    if (entry !== null && MOVED_TO_DONE.test(entry.text)) return entry.time;
+  for (let i = doc.history.length - 1; i >= 0; i -= 1) {
+    const entry = doc.history[i]!;
+    if (entry.action === "moved" && MOVED_TO_DONE.test(entry.note ?? "")) return entry.at;
   }
   return null;
 }
@@ -2329,6 +2407,35 @@ const SEMANTIC_ID_RETRY_RULE =
 
 /** How much of a failed proposal's detail reaches the log and the errors panel. */
 const ID_SUGGEST_FAILURE_MAX = 300;
+
+/** The first non-empty line of a model's answer, stripped of the marks a model wraps one in. */
+function firstLine(answer: string): string {
+  const line = answer
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l !== "");
+  return (line ?? "").replace(/^[`"'“”‘’]+|[`"'“”‘’.]+$/g, "");
+}
+
+/** Appended on the one retry an unusable slug buys: the answer IS the slug, not a sentence about it. */
+const TICKET_SLUG_RETRY_RULE =
+  "Answer with the slug only — lowercase English words joined by hyphens, nothing else.";
+
+/**
+ * The prompt behind a model-named ticket slug. A ticket id is read by people for the life of
+ * the organization, so the ask is for words that name the work rather than a transliteration:
+ * the common case is a Chinese title, which nothing mechanical can turn into English.
+ */
+function ticketSlugPrompt(title: string): string {
+  return [
+    "You name work items. Given a ticket title, answer with ONE slug of 2–5 English words in",
+    "kebab-case: lowercase ASCII letters joined by hyphens, no digits, no explanation, nothing",
+    "else. Translate a non-English title rather than transliterating it. Examples:",
+    "上线站点 → launch-the-site; 季度财报 → quarterly-financial-report; 招募前端 →",
+    "hire-a-frontend-engineer.",
+    `Title: ${title}`,
+  ].join(" ");
+}
 
 /**
  * The prompt behind a model-backed semantic id: the model translates a display name into

@@ -62,3 +62,34 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
 - 公共工作区的根目录不再是任何人的工位。CEO 的组织图条目现在写入 `workspace: ceo`；招募时不给 `--workspace` 的员工，落在以其 Agent id 命名的子目录里，而不是根目录——根目录放的是每个工位都要读的共享输入，不是谁的工位。`.` 依然接受，只是不再是缺省值；`employee set --workspace` 语义不变，只有给出时才改动分区。已存在的组织保留其组织图里已有的 `.` 条目：没有任何环节会改写组织图，而改动某名员工的工作区会开一个新的工位会话，因此要不要搬由 CEO 自己决定。各 Skill、组织手册模板、CEO 的初始化运行、公司模式指南、CLI 参考与服务端 API 参考都已照此叙述。
 - **公司模式缺省关闭，由管理员打开。** 系统设置 › 服务器 › 公司模式这个总开关，在从未写过设置的服务器上现在读作关闭，而不是打开：没有主动启用公司模式的服务器，所有组织路由回 404，`GET /api/me` 返回 `companyMode: false`，组织调度器保持空转，模式切换也不绘制。此前从未动过这个开关的安装，公司模式本是打开的，本次改动之后变为关闭——磁盘上什么也不改，组织原样保留，调度器只是空转到管理员重新打开为止；重新打开不会补发关闭期间错过的触发。公司模式指南与设置页的「?」都已照此说明。
 - **员工装着的公司插件会被保持在当前版本。** Agent 的插件此前只在创建时写入一次，之后只有 Agents 页面上逐个 Agent 的手工更新会重写它——而在无人值守运转的组织里没人会去点，于是 `agent-company` 新增的 Skill（例如 `company-mirror`）永远到不了早已在岗的员工身上。现在每一轮对账都会把每位员工装着的 `agent-company` 与 `agent-development` 与插件库的版本比对，落后的整包重装——与 Agents 页面执行的是同一次更新——每次更新记一行日志。版本一致时不写任何文件；员工本就没装的插件不会被装上；某次更新失败记为 `org_plugin_update_failed` 错误，不中断该轮对账。`company-employee` 已写明这些 Skill 由服务端保持最新，员工不必自行安装。
+
+### 工单改为 frontmatter 文件（2026-09-14）
+
+- 工单文件现在是 YAML frontmatter 加正文。`title`、`status`、`owner`、`parent`、`notify`、
+  `priority`、`due`、`blocked`、`blocked_by`、`sessions`、`history` 都是字段；`# Ticket:` 标题行与
+  `Key: value` 头部块取消，本版本不认识的字段原样保留。旧格式的工单仍可读取，并在第一次被写入时完成
+  转换——见[向后兼容条目](2026-09-09-backward-compatibility.zh.md)。
+- **负责人只有一个。** `initiator` 从文件、DTO 与 CLI 中彻底移除。一张工单只有一个责任人 `owner`，
+  缺省是创建它的人；`POST /tickets` 收 `owner`（不再有 `initiator`），`PUT /tickets/:id` 的 `owner`
+  可以改派但不能清空，`notify` 的缺省跟着负责人走——负责人是员工时为 `[owner]`，是人时为 `[]`。
+  `penguin org ticket create --initiator` 已移除。
+- **`## Progress` 是大白话。** 一条进展就是一句话：做了什么、东西在哪。不写时间、不写主体、不写
+  `session:` 标记。`OrgTicketDetail.progress` 变为 `string[]`，`OrgTicketProgressEntry` 已删除。
+- **每次写入留下一条 history。** `history` 是工单的操作日志，最早的在前：`created`、`assigned`、
+  `moved`、`blocked`、`unblocked`、`progress`、`session_started`、`session_attached`、`edited`，
+  每条带时间、主体与备注。它在 `OrgTicketDetail` 上是必填字段；`penguin org ticket show` 在字段与
+  正文各节之后以 `History:` 打印它。组织概览的 `closedAt` 改从最后一条「moved 到 done」的 history
+  条目读取，不再依赖进展日志。
+- **工单 id 说得出意思。** slug 是用连字符连接的小写英文单词，丢掉数字，最多六个词。标题推不出两个
+  词时——任何不含拉丁字母的标题都是如此——交给 Project 的缺省模型取一个 2–5 词的英文 kebab-case
+  slug，失败重试一次；没有模型或模型也取不出，则以 400 `slug_required` 拒绝，请调用方传 `--slug`。
+  id 撞车时加的是字母后缀（`-b`、`-c`……），绝不是数字。`penguin org ticket create --slug <words>`
+  是显式写法，且永远优先。
+- **操作者由 Agent id 认出。** 写入体与需要身份的读取现在在 `sessionId` 之外还接受 `agentId`——会话
+  发给其命令子进程的 `PENGUIN_AGENT_ID`——与 `sessionId` 一样，仅对携带本机 API token 的请求生效。
+  `agentId` 指向某名员工时优先于调用会话，于是员工的嵌套会话或子 Agent 里跑出的命令仍记在该员工名下。
+  `POST /tickets/:id/start` 是例外：它的 `agentId` 指的是工单会话以谁的身份运行，不是调用方。
+- **工单的变化不再写进全员频道。** 工单完成、被拒或被阻塞，过去会在全员频道留下一条 `system` 行；
+  现在与之相关的员工仍在各自下一次巡检里看到，而人则在看板与组织概览的 inbox 里读到。频道装的是人和
+  员工彼此说的话，加上谁来了谁走了和预算告警——一块自己讲述自己的看板只会把对话淹掉。已经写下的行照常
+  渲染，见向后兼容条目。

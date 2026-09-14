@@ -349,3 +349,45 @@ cursors, budget marks) and each user's read cursor per channel.
   uninstalled, and an update that fails is recorded as an `org_plugin_update_failed` error
   without stopping the pass. `company-employee` says the server keeps these skills current, so
   no employee installs one by hand.
+
+### Tickets as frontmatter files (2026-09-14)
+
+- A ticket file is now YAML frontmatter followed by its prose. `title`, `status`, `owner`,
+  `parent`, `notify`, `priority`, `due`, `blocked`, `blocked_by`, `sessions` and `history` are
+  fields; the `# Ticket:` heading and the `Key: value` header block are gone, and fields this
+  server does not know survive a round trip. Tickets written in the old format are still read
+  and convert on their first write — see the
+  [backward-compatibility entry](2026-09-09-backward-compatibility.md).
+- **One owner.** `initiator` is gone from the file, the DTOs and the CLI. A ticket has exactly
+  one responsible principal, `owner`, which defaults to whoever filed it; `POST /tickets` takes
+  `owner` (no `initiator`), `PUT /tickets/:id` takes an `owner` that can be reassigned but never
+  cleared, and the default `notify` follows the owner — `[owner]` when an employee owns it, `[]`
+  when a person does. `penguin org ticket create --initiator` is removed.
+- **`## Progress` is prose.** A progress line is a plain sentence saying what was done and where:
+  no timestamp, no principal, no `session:` tag. `OrgTicketDetail.progress` is `string[]` and
+  `OrgTicketProgressEntry` is gone.
+- **Every write leaves one history entry.** `history` is the ticket's operation log, oldest
+  first: `created`, `assigned`, `moved`, `blocked`, `unblocked`, `progress`, `session_started`,
+  `session_attached`, `edited`, each with the time, the principal and a note. It is required on
+  `OrgTicketDetail`, and `penguin org ticket show` prints it under `History:` after the fields
+  and the prose sections. The overview's `closedAt` now comes from the last `moved`-to-`done`
+  entry instead of the progress log.
+- **Ticket ids carry meaning.** The slug is lowercase English words joined by hyphens, digits
+  dropped, at most six words. A title that yields fewer than two words — every title with no
+  Latin letters in it — is put to the Project's default model for a 2–5 word English slug, with
+  one retry; when there is no model or it cannot name it either, the write is refused with 400
+  `slug_required` and the caller passes `--slug`. A taken id takes a letter (`-b`, `-c`, …),
+  never a digit. `penguin org ticket create --slug <words>` is the explicit form and always wins.
+- **The operator is known from the Agent id.** Write bodies and the identity-carrying reads now
+  take `agentId` beside `sessionId` — the `PENGUIN_AGENT_ID` a Session hands its command
+  subprocesses — honoured only for a request carrying the local API token, like `sessionId`. An
+  `agentId` that names an employee wins over the calling session, so a command run from a nested
+  session or a subagent of an employee is still recorded as that employee. `POST
+  /tickets/:id/start` is the exception: its `agentId` names the employee the ticket session runs
+  as, not the caller.
+- **Ticket changes no longer write into the all-hands channel.** A closed, rejected or blocked
+  ticket used to post a `system` line there; now the employees it concerns hear about it in
+  their own next sweep, as before, and people read it on the board and in the overview's inbox.
+  A channel holds what people and employees say to each other, plus who joined and left and the
+  budget alerts — a board that narrates itself buries the conversation. Lines already written
+  still render; see the backward-compatibility entry.

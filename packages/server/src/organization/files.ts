@@ -5,20 +5,28 @@
  * Intent files (`org_config.toml`, `org_chart.yaml`, calendar events, tickets, the
  * handbook, `channel.toml`) are edited by people and employees; the API is a validating
  * writer over the same format, so a hand-edited file and an API-written one parse under one
- * set of rules. Fact files (`desks.toml`, a ticket's `Sessions` header, message lines) are
- * written by the server only. An invalid file is reported, never repaired in place.
+ * set of rules. Fact files (`desks.toml`, a ticket's `sessions` and `history` fields,
+ * message lines) are written by the server only. An invalid file is reported, never
+ * repaired in place.
  */
 import path from "node:path";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import {
+  Document as YamlDocument,
+  isMap,
+  isSeq,
+  parse as parseYaml,
+  stringify as stringifyYaml,
+} from "yaml";
 import type {
   OrgApprovalMode,
   OrgChannelMessage,
   OrgChannelNoticeKind,
   OrgLanguage,
   OrgStatus,
+  OrgTicketHistoryAction,
+  OrgTicketHistoryEntry,
   OrgTicketPriority,
-  OrgTicketProgressEntry,
   OrgTicketStatus,
 } from "../api/types.js";
 import { parseScheduleFile } from "../runtime/schedule-file.js";
@@ -503,39 +511,71 @@ export function serializeCalendarEvent(fields: {
 // tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md
 // ---------------------------------------------------------------------------
 
-export const TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
+/** `<yyyy-mm-dd>-<slug>`; the slug is hyphen-joined lowercase English words, never a digit. */
+export const TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
 
-/** A URL-safe slug from a title; a title with no Latin letters or digits yields an empty string (the caller picks a fallback). */
-export function slugify(title: string): string {
-  return title
+/** At most this many words in a derived slug, and at most this many characters in each. */
+const SLUG_MAX_WORDS = 6;
+const SLUG_MAX_WORD_LENGTH = 20;
+
+/**
+ * The slug of a ticket id, derived from a title or from a model's proposal: ASCII letters
+ * only, lowercased, hyphen-joined. Digits are dropped — the id already starts with the date,
+ * and `-2` on the end of a slug reads as a version rather than as a name. Text that carries
+ * no Latin letters at all (a Chinese title) yields `""`, and one that yields a single word
+ * says as little as none: both are the case the caller asks the model to name.
+ */
+export function slugify(text: string): string {
+  return text
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48)
-    .replace(/-+$/g, "");
+    .replace(/[^a-z]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w !== "")
+    .slice(0, SLUG_MAX_WORDS)
+    .map((w) => w.slice(0, SLUG_MAX_WORD_LENGTH))
+    .join("-");
+}
+
+const ALPHABET = "abcdefghijklmnopqrstuvwxyz";
+
+/**
+ * The letters that make a taken id unique: `2` → `b`, `3` → `c`, … `26` → `z`, `27` → `aa`.
+ * Letters rather than numbers because the slug pattern has no digits in it, and starting at
+ * `b` because the first candidate is the bare slug.
+ */
+export function slugSuffix(n: number): string {
+  let out = "";
+  for (let v = n; v > 0; v = Math.floor((v - 1) / ALPHABET.length)) {
+    out = `${ALPHABET[(v - 1) % ALPHABET.length]}${out}`;
+  }
+  return out;
 }
 
 export interface TicketDoc {
   title: string;
   status: OrgTicketStatus;
-  initiator: string;
-  owner?: string;
+  /** The ONE responsible principal (`agent:<id>` / `user:<id>`); every ticket has one. */
+  owner: string;
   parent?: string;
   notify: string[];
   priority: OrgTicketPriority;
   due?: string;
   blocked?: string;
   blockedBy?: string;
+  /** Contributing session ids, in the order they were attached (fact, server-written). */
   sessions: string[];
+  /** The operation log, oldest first (fact, server-written). */
+  history: OrgTicketHistoryEntry[];
   goal: string;
   acceptanceCriteria: string;
-  /** Raw progress lines (`- <time> <principal> <text> [session:<id>]`). */
+  /** Plain progress sentences, without their bullet; who wrote one and when is in the history. */
   progress: string[];
   result: string;
-  /** Header lines this parser does not know, kept verbatim. */
-  extraHeaders: Array<[string, string]>;
+  /** Frontmatter keys this parser does not know, kept verbatim across a round trip. */
+  extra: Record<string, unknown>;
   /** Sections beyond the four fixed ones, kept verbatim. */
   extraSections: Array<{ heading: string; body: string }>;
 }
@@ -547,7 +587,301 @@ const SECTION_KEYS: Record<string, "goal" | "acceptanceCriteria" | "progress" | 
   result: "result",
 };
 
-const KNOWN_HEADERS = new Set([
+const KNOWN_FIELDS = new Set([
+  "title",
+  "status",
+  "owner",
+  "parent",
+  "notify",
+  "priority",
+  "due",
+  "blocked",
+  "blocked_by",
+  "sessions",
+  "history",
+]);
+
+const HISTORY_ACTIONS: readonly OrgTicketHistoryAction[] = [
+  "created",
+  "assigned",
+  "moved",
+  "blocked",
+  "unblocked",
+  "progress",
+  "session_started",
+  "session_attached",
+  "edited",
+];
+
+/** How much of a progress sentence the history entry that records it carries. */
+export const HISTORY_NOTE_MAX = 80;
+
+function isPersonPrincipal(raw: string): boolean {
+  const p = parsePrincipal(raw);
+  return p !== null && (p.kind === "agent" || p.kind === "user");
+}
+
+type Frontmatter =
+  { kind: "none" } | { kind: "unterminated" } | { kind: "ok"; yaml: string; body: string };
+
+/** The `---` fenced block at the top of the file, and everything after it. */
+function splitFrontmatter(text: string): Frontmatter {
+  const lines = text.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i]!.trim() === "") i++;
+  if (lines[i]?.trim() !== "---") return { kind: "none" };
+  const start = i + 1;
+  for (let j = start; j < lines.length; j++) {
+    if (lines[j]!.trim() === "---") {
+      return {
+        kind: "ok",
+        yaml: lines.slice(start, j).join("\n"),
+        body: lines.slice(j + 1).join("\n"),
+      };
+    }
+  }
+  return { kind: "unterminated" };
+}
+
+/**
+ * A ticket file: YAML frontmatter followed by the prose sections. The frontmatter carries
+ * the fields (the title among them — there is no H1), the prose carries `## Goal`,
+ * `## Acceptance criteria`, `## Progress` and `## Result`; unknown fields and unknown
+ * sections survive a round trip. A file in the format that predates the frontmatter is read
+ * by {@link parseLegacyTicket} and converted the next time it is written.
+ */
+export function parseTicket(raw: string): ParseResult<TicketDoc> {
+  const text = raw.replace(/\r\n/g, "\n");
+  const fm = splitFrontmatter(text);
+  if (fm.kind === "none") return parseLegacyTicket(text);
+  if (fm.kind === "unterminated") return fail("the frontmatter block is not closed by `---`");
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(fm.yaml);
+  } catch (err) {
+    return fail(
+      `Failed to parse the frontmatter: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return fail("the frontmatter is not a YAML mapping");
+  }
+  const front = parsed as Record<string, unknown>;
+  const fields = ticketFields(front);
+  if (!fields.ok) return fields;
+  const sections = ticketSections(fm.body);
+  if (!sections.ok) return sections;
+  return { ok: true, value: { ...fields.value, ...sections.value } };
+}
+
+type TicketFields = Omit<
+  TicketDoc,
+  "goal" | "acceptanceCriteria" | "progress" | "result" | "extraSections"
+>;
+
+/** The frontmatter's fields, validated; anything this parser does not know lands in `extra`. */
+function ticketFields(front: Record<string, unknown>): ParseResult<TicketFields> {
+  const str = (key: string): string => {
+    const v = front[key];
+    return typeof v === "string" ? v.trim() : "";
+  };
+  const title = str("title");
+  if (title === "") return fail("title must be a non-empty string");
+  const status = str("status");
+  if (!isTicketColumn(status)) {
+    return fail(`status must be one of the board columns, got \`${status}\``);
+  }
+  const owner = str("owner");
+  if (!isPersonPrincipal(owner)) return fail("owner must be agent:<id> or user:<id>");
+  const parent = str("parent");
+  if (parent !== "" && !TICKET_ID_PATTERN.test(parent)) return fail("parent must be a ticket id");
+  const notifyList = front["notify"];
+  if (notifyList !== undefined && notifyList !== null && !Array.isArray(notifyList)) {
+    return fail("notify must be a list of principals");
+  }
+  // No `notify`, or an empty one: tell the owner when it is an employee — its next sweep
+  // lists the change — and nobody when a person owns it, because one @-mention per closed
+  // ticket is a badge nobody asked for. A person lists itself to be told.
+  const notify =
+    Array.isArray(notifyList) && notifyList.length > 0
+      ? notifyList.map((n) => String(n).trim())
+      : defaultTicketNotify(owner);
+  for (const n of notify)
+    if (!isPersonPrincipal(n)) return fail(`notify entry is not a principal: ${n}`);
+  const priority = str("priority") === "" ? "P2" : str("priority");
+  if (priority !== "P0" && priority !== "P1" && priority !== "P2") {
+    return fail("priority must be P0, P1 or P2");
+  }
+  const due = str("due");
+  if (due !== "" && !/^\d{4}-\d{2}-\d{2}/.test(due)) return fail("due must start with yyyy-mm-dd");
+  const blocked = str("blocked");
+  const blockedBy = str("blocked_by");
+  if (blockedBy !== "" && !TICKET_ID_PATTERN.test(blockedBy) && !isPersonPrincipal(blockedBy)) {
+    return fail("blocked_by must be a ticket id or a principal");
+  }
+  const sessionList = front["sessions"];
+  if (sessionList !== undefined && sessionList !== null && !Array.isArray(sessionList)) {
+    return fail("sessions must be a list of session ids");
+  }
+  const sessions = Array.isArray(sessionList) ? sessionList.map((s) => String(s).trim()) : [];
+  const history = parseTicketHistory(front["history"]);
+  if (!history.ok) return history;
+  const extra: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(front)) if (!KNOWN_FIELDS.has(key)) extra[key] = value;
+  return {
+    ok: true,
+    value: {
+      title,
+      status,
+      owner,
+      ...(parent !== "" ? { parent } : {}),
+      notify,
+      priority,
+      ...(due !== "" ? { due } : {}),
+      ...(blocked !== "" ? { blocked } : {}),
+      ...(blockedBy !== "" ? { blockedBy } : {}),
+      sessions,
+      history: history.value,
+      extra,
+    },
+  };
+}
+
+/** The `Notify` list a ticket falls back to: its owner when an employee owns it, nobody otherwise. */
+export function defaultTicketNotify(owner: string): string[] {
+  return parsePrincipal(owner)?.kind === "agent" ? [owner] : [];
+}
+
+function parseTicketHistory(value: unknown): ParseResult<OrgTicketHistoryEntry[]> {
+  if (value === undefined || value === null) return { ok: true, value: [] };
+  if (!Array.isArray(value)) return fail("history must be a list of entries");
+  const out: OrgTicketHistoryEntry[] = [];
+  for (const [i, item] of value.entries()) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      return fail(`history[${i}] is not a mapping`);
+    }
+    const e = item as Record<string, unknown>;
+    const at = typeof e["at"] === "string" ? e["at"].trim() : "";
+    const by = typeof e["by"] === "string" ? e["by"].trim() : "";
+    const action = typeof e["action"] === "string" ? e["action"].trim() : "";
+    if (!(HISTORY_ACTIONS as readonly string[]).includes(action)) {
+      return fail(`history[${i}].action is not a known action: ${action}`);
+    }
+    const note = typeof e["note"] === "string" ? e["note"] : undefined;
+    out.push({
+      at,
+      by,
+      action: action as OrgTicketHistoryAction,
+      ...(note !== undefined && note !== "" ? { note } : {}),
+    });
+  }
+  return { ok: true, value: out };
+}
+
+type TicketProse = Pick<
+  TicketDoc,
+  "goal" | "acceptanceCriteria" | "progress" | "result" | "extraSections"
+>;
+
+/** The prose half: the four fixed sections, plus any others kept as written. */
+function ticketSections(body: string): ParseResult<TicketProse> {
+  const out: TicketProse = {
+    goal: "",
+    acceptanceCriteria: "",
+    progress: [],
+    result: "",
+    extraSections: [],
+  };
+  const sections: Array<{ heading: string; body: string[] }> = [];
+  let current: { heading: string; body: string[] } | null = null;
+  for (const line of body.split("\n")) {
+    const h = /^## (.+)$/.exec(line);
+    if (h) {
+      current = { heading: h[1]!.trim(), body: [] };
+      sections.push(current);
+    } else if (current) {
+      current.body.push(line);
+    } else if (line.trim() !== "") {
+      return fail(`text before the first section heading: ${line}`);
+    }
+  }
+  for (const s of sections) {
+    const key = SECTION_KEYS[s.heading.toLowerCase()];
+    const text = trimBlank(s.body).join("\n");
+    if (key === "progress") {
+      out.progress = trimBlank(s.body)
+        .filter((l) => l.trim() !== "")
+        .map((l) => l.trim().replace(/^[-*]\s+/, ""));
+    } else if (key !== undefined) {
+      out[key] = text;
+    } else {
+      out.extraSections.push({ heading: s.heading, body: text });
+    }
+  }
+  return { ok: true, value: out };
+}
+
+function trimBlank(lines: string[]): string[] {
+  let a = 0;
+  let b = lines.length;
+  while (a < b && lines[a]!.trim() === "") a++;
+  while (b > a && lines[b - 1]!.trim() === "") b--;
+  return lines.slice(a, b);
+}
+
+export function serializeTicket(doc: TicketDoc): string {
+  const front: Record<string, unknown> = {
+    title: doc.title,
+    status: doc.status,
+    owner: doc.owner,
+    ...(doc.parent !== undefined ? { parent: doc.parent } : {}),
+    notify: doc.notify,
+    priority: doc.priority,
+    ...(doc.due !== undefined ? { due: doc.due } : {}),
+    ...(doc.blocked !== undefined && doc.blocked !== "" ? { blocked: doc.blocked } : {}),
+    ...(doc.blockedBy !== undefined && doc.blockedBy !== "" ? { blocked_by: doc.blockedBy } : {}),
+    sessions: doc.sessions,
+    history: doc.history.map((h) => ({
+      at: h.at,
+      by: h.by,
+      action: h.action,
+      ...(h.note !== undefined && h.note !== "" ? { note: h.note } : {}),
+    })),
+    ...doc.extra,
+  };
+  const yamlDoc = new YamlDocument(front);
+  // One line per list and per history entry: a ticket file is read and hand-edited, and a
+  // twenty-line `sessions` block would bury the fields above it.
+  for (const key of ["notify", "sessions"]) {
+    const node = yamlDoc.get(key, true);
+    if (isSeq(node)) node.flow = true;
+  }
+  const history = yamlDoc.get("history", true);
+  if (isSeq(history)) for (const item of history.items) if (isMap(item)) item.flow = true;
+  const sections: string[] = [
+    `## Goal\n${doc.goal}`,
+    `## Acceptance criteria\n${doc.acceptanceCriteria}`,
+    `## Progress\n${doc.progress.map((p) => `- ${p}`).join("\n")}`,
+    `## Result\n${doc.result}`,
+    ...doc.extraSections.map((s) => `## ${s.heading}\n${s.body}`),
+  ];
+  const yaml = yamlDoc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return `---\n${yaml}---\n\n${sections.map((s) => s.trimEnd()).join("\n\n")}\n`;
+}
+
+/** One progress sentence as the history records it: the first {@link HISTORY_NOTE_MAX} characters, on one line. */
+export function historyNote(text: string): string {
+  return text
+    .replace(/\s*\n\s*/g, " ")
+    .trim()
+    .slice(0, HISTORY_NOTE_MAX);
+}
+
+// ---------------------------------------------------------------------------
+// Legacy ticket files
+// ---------------------------------------------------------------------------
+
+const LEGACY_HEADERS = new Set([
   "status",
   "initiator",
   "owner",
@@ -560,164 +894,133 @@ const KNOWN_HEADERS = new Set([
   "sessions",
 ]);
 
-function isPersonPrincipal(raw: string): boolean {
-  const p = parsePrincipal(raw);
-  return p !== null && (p.kind === "agent" || p.kind === "user");
+/** A legacy progress line: `- <time> <principal> <text> [session:<id>]`. */
+function parseLegacyProgressLine(line: string): { time: string; by: string; text: string } | null {
+  const m = /^-\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line.trim());
+  if (!m) return null;
+  let text = m[3]!.trim();
+  const s = /\s*session:(\S+)$/.exec(text);
+  if (s) text = text.slice(0, s.index).trim();
+  if (!isPersonPrincipal(m[2]!)) return null;
+  return { time: m[1]!, by: m[2]!, text };
 }
 
-export function parseTicket(raw: string): ParseResult<TicketDoc> {
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+/**
+ * A ticket written before the frontmatter format: `# Ticket: <title>` followed by
+ * `Key: value` header lines. `Initiator` becomes the `created` history entry and, when no
+ * `Owner` was set, the owner; each old progress line becomes a plain progress sentence plus
+ * one `progress` history entry carrying its time and principal. Nothing is repaired on disk
+ * here — the file converts to the new format the first time it is written.
+ *
+ * **Compatibility shim.** It can be deleted one release after the frontmatter format ships,
+ * by which time every ticket an organization still writes to has been converted; see
+ * `changelog/unreleased/2026-09-09-backward-compatibility.md`.
+ */
+export function parseLegacyTicket(text: string): ParseResult<TicketDoc> {
+  const lines = text.split("\n");
   let i = 0;
   while (i < lines.length && lines[i]!.trim() === "") i++;
   const titleLine = /^# Ticket: (.+)$/.exec(lines[i] ?? "");
-  if (!titleLine) return fail("the first line must be `# Ticket: <title>`");
+  if (!titleLine)
+    return fail("the file must start with `---` (frontmatter) or `# Ticket: <title>`");
   const title = titleLine[1]!.trim();
   i++;
   while (i < lines.length && lines[i]!.trim() === "") i++;
   const headers = new Map<string, string>();
-  const extraHeaders: Array<[string, string]> = [];
+  const extra: Record<string, unknown> = {};
   for (; i < lines.length; i++) {
     const line = lines[i]!;
     if (line.trim() === "" || line.startsWith("## ")) break;
     const kv = /^([A-Za-z][A-Za-z-]*):\s?(.*)$/.exec(line);
     if (!kv) return fail(`header line is not \`Key: value\`: ${line}`);
     const key = kv[1]!.toLowerCase();
-    if (KNOWN_HEADERS.has(key)) headers.set(key, kv[2]!.trim());
-    else extraHeaders.push([kv[1]!, kv[2]!.trim()]);
+    if (LEGACY_HEADERS.has(key)) headers.set(key, kv[2]!.trim());
+    else extra[kv[1]!] = kv[2]!.trim();
   }
   const status = headers.get("status") ?? "";
   if (!isTicketColumn(status))
     return fail(`Status must be one of the board columns, got \`${status}\``);
   const initiator = headers.get("initiator") ?? "";
   if (!isPersonPrincipal(initiator)) return fail("Initiator must be agent:<id> or user:<id>");
-  const owner = headers.get("owner") ?? "";
-  if (owner !== "" && !isPersonPrincipal(owner))
+  // One owner now: an unassigned legacy ticket is owned by whoever filed it.
+  const ownerHeader = headers.get("owner") ?? "";
+  if (ownerHeader !== "" && !isPersonPrincipal(ownerHeader)) {
     return fail("Owner must be agent:<id> or user:<id>");
+  }
+  const owner = ownerHeader !== "" ? ownerHeader : initiator;
   const parent = headers.get("parent") ?? "";
-  if (parent !== "" && !TICKET_ID_PATTERN.test(parent)) return fail("Parent must be a ticket id");
+  if (parent !== "" && !TICKET_ID_PATTERN.test(parent) && !LEGACY_TICKET_ID_PATTERN.test(parent)) {
+    return fail("Parent must be a ticket id");
+  }
   const notifyRaw = headers.get("notify");
-  // No Notify header, or an empty one: tell the initiator when it is an employee — its next
-  // sweep lists the change — and nobody when a person filed the ticket, because one
-  // @-mention per closed ticket is a badge nobody asked for. A person lists itself to be told.
   const notify =
     notifyRaw === undefined || notifyRaw === ""
-      ? parsePrincipal(initiator)?.kind === "agent"
-        ? [initiator]
-        : []
+      ? defaultTicketNotify(owner)
       : splitPrincipalList(notifyRaw);
   for (const n of notify)
     if (!isPersonPrincipal(n)) return fail(`Notify entry is not a principal: ${n}`);
   const priority = headers.get("priority") ?? "P2";
-  if (priority !== "P0" && priority !== "P1" && priority !== "P2")
+  if (priority !== "P0" && priority !== "P1" && priority !== "P2") {
     return fail("Priority must be P0, P1 or P2");
+  }
   const due = headers.get("due") ?? "";
   if (due !== "" && !/^\d{4}-\d{2}-\d{2}/.test(due)) return fail("Due must start with yyyy-mm-dd");
   const blocked = headers.get("blocked") ?? "";
   const blockedBy = headers.get("blocked-by") ?? "";
-  if (blockedBy !== "" && !TICKET_ID_PATTERN.test(blockedBy) && !isPersonPrincipal(blockedBy)) {
+  if (
+    blockedBy !== "" &&
+    !TICKET_ID_PATTERN.test(blockedBy) &&
+    !LEGACY_TICKET_ID_PATTERN.test(blockedBy) &&
+    !isPersonPrincipal(blockedBy)
+  ) {
     return fail("Blocked-by must be a ticket id or a principal");
   }
   const sessions = splitPrincipalList(headers.get("sessions") ?? "");
-
-  const sections: Array<{ heading: string; body: string[] }> = [];
-  let current: { heading: string; body: string[] } | null = null;
-  for (; i < lines.length; i++) {
-    const line = lines[i]!;
-    const h = /^## (.+)$/.exec(line);
-    if (h) {
-      current = { heading: h[1]!.trim(), body: [] };
-      sections.push(current);
-    } else if (current) {
-      current.body.push(line);
-    } else if (line.trim() !== "") {
-      return fail(`text before the first section heading: ${line}`);
+  const prose = ticketSections(lines.slice(i).join("\n"));
+  if (!prose.ok) return prose;
+  // The old progress log carried the operator and the time inline; they move to the history,
+  // the sentence stays. A line nothing can be read out of is kept as a sentence and nothing else.
+  const history: OrgTicketHistoryEntry[] = [];
+  const progress: string[] = [];
+  for (const line of prose.value.progress) {
+    const entry = parseLegacyProgressLine(`- ${line}`);
+    if (entry === null) {
+      progress.push(line);
+      continue;
     }
+    progress.push(entry.text);
+    history.push({
+      at: entry.time,
+      by: entry.by,
+      action: "progress",
+      note: historyNote(entry.text),
+    });
   }
-  const doc: TicketDoc = {
-    title,
-    status,
-    initiator,
-    ...(owner !== "" ? { owner } : {}),
-    ...(parent !== "" ? { parent } : {}),
-    notify,
-    priority,
-    ...(due !== "" ? { due } : {}),
-    ...(blocked !== "" ? { blocked } : {}),
-    ...(blockedBy !== "" ? { blockedBy } : {}),
-    sessions,
-    goal: "",
-    acceptanceCriteria: "",
-    progress: [],
-    result: "",
-    extraHeaders,
-    extraSections: [],
+  // Filing is what the `Initiator` header recorded; its time is the first thing that happened.
+  history.unshift({ at: history[0]?.at ?? "", by: initiator, action: "created" });
+  return {
+    ok: true,
+    value: {
+      title,
+      status,
+      owner,
+      ...(parent !== "" ? { parent } : {}),
+      notify,
+      priority,
+      ...(due !== "" ? { due } : {}),
+      ...(blocked !== "" ? { blocked } : {}),
+      ...(blockedBy !== "" ? { blockedBy } : {}),
+      sessions,
+      history,
+      ...prose.value,
+      progress,
+      extra,
+    },
   };
-  for (const s of sections) {
-    const key = SECTION_KEYS[s.heading.toLowerCase()];
-    const body = trimBlank(s.body).join("\n");
-    if (key === "progress") {
-      doc.progress = trimBlank(s.body).filter((l) => l.trim() !== "");
-    } else if (key !== undefined) {
-      doc[key] = body;
-    } else {
-      doc.extraSections.push({ heading: s.heading, body });
-    }
-  }
-  return { ok: true, value: doc };
 }
 
-function trimBlank(lines: string[]): string[] {
-  let a = 0;
-  let b = lines.length;
-  while (a < b && lines[a]!.trim() === "") a++;
-  while (b > a && lines[b - 1]!.trim() === "") b--;
-  return lines.slice(a, b);
-}
-
-export function serializeTicket(doc: TicketDoc): string {
-  const header: string[] = [
-    `Status: ${doc.status}`,
-    `Initiator: ${doc.initiator}`,
-    `Owner: ${doc.owner ?? ""}`,
-    ...(doc.parent !== undefined ? [`Parent: ${doc.parent}`] : []),
-    `Notify: ${doc.notify.join(", ")}`,
-    `Priority: ${doc.priority}`,
-    ...(doc.due !== undefined ? [`Due: ${doc.due}`] : []),
-    ...(doc.blocked !== undefined && doc.blocked !== "" ? [`Blocked: ${doc.blocked}`] : []),
-    ...(doc.blockedBy !== undefined && doc.blockedBy !== ""
-      ? [`Blocked-by: ${doc.blockedBy}`]
-      : []),
-    `Sessions: ${doc.sessions.join(", ")}`,
-    ...doc.extraHeaders.map(([k, v]) => `${k}: ${v}`),
-  ];
-  const sections: string[] = [
-    `## Goal\n${doc.goal}`,
-    `## Acceptance criteria\n${doc.acceptanceCriteria}`,
-    `## Progress\n${doc.progress.join("\n")}`,
-    `## Result\n${doc.result}`,
-    ...doc.extraSections.map((s) => `## ${s.heading}\n${s.body}`),
-  ];
-  return `# Ticket: ${doc.title}\n\n${header.join("\n")}\n\n${sections.map((s) => s.trimEnd()).join("\n\n")}\n`;
-}
-
-/** One progress line as written: `- <time> <principal> <text> session:<id>`. */
-export function progressLine(time: string, by: string, text: string, sessionId?: string): string {
-  const oneLine = text.replace(/\s*\n\s*/g, " ").trim();
-  return `- ${time} ${by} ${oneLine}${sessionId !== undefined ? ` session:${sessionId}` : ""}`;
-}
-
-export function parseProgressLine(line: string): OrgTicketProgressEntry | null {
-  const m = /^-\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line.trim());
-  if (!m) return null;
-  let text = m[3]!.trim();
-  let sessionId: string | undefined;
-  const s = /\s*session:(\S+)$/.exec(text);
-  if (s) {
-    sessionId = s[1]!;
-    text = text.slice(0, s.index).trim();
-  }
-  return { time: m[1]!, by: m[2]!, text, ...(sessionId !== undefined ? { sessionId } : {}) };
-}
+/** Ticket ids written before the letters-only slug rule, as legacy files still reference them. */
+const LEGACY_TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
 
 // ---------------------------------------------------------------------------
 // channels/<channel_id>/channel.toml

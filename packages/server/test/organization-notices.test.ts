@@ -16,7 +16,6 @@ import {
   employeeJoined,
   employeeLeft,
   systemMessage,
-  ticketState,
 } from "../src/runtime/organization/notices.js";
 
 const ID = "msg-2026-09-01-10-00-00-0000000a";
@@ -74,17 +73,20 @@ describe("organization system notices", () => {
     expect(budgetPaused(facts).notice.kind).toBe("budget_paused");
   });
 
-  it("writes a ticket's closing line with or without mentions", () => {
-    expect(ticketState("ticket_done", "2026-09-01-site", "Site", [])).toEqual({
+  it("still reads a ticket line written before the board stopped narrating itself", () => {
+    // Nothing writes these any more; the lines already in an organization's files must render.
+    const line = serializeChannelMessageLine({
+      id: ID,
+      time: "2026-09-01T10:00:00.000Z",
+      sender: "system",
+      hop: 0,
       text: "Ticket 2026-09-01-site (Site) is now done",
+      mentions: [],
       notice: { kind: "ticket_done", params: { ticket: "2026-09-01-site", title: "Site" } },
     });
-    expect(ticketState("ticket_rejected", "2026-09-01-site", "Site", ["user:alice"]).text).toBe(
-      "Ticket 2026-09-01-site (Site) is now rejected: @user:alice",
-    );
-    expect(ticketState("ticket_blocked", "2026-09-01-site", "Site", []).notice.kind).toBe(
-      "ticket_blocked",
-    );
+    const parsed = parseChannelMessageLine(line);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.notice?.kind).toBe("ticket_done");
   });
 
   it("round-trips a notice through a message line", () => {

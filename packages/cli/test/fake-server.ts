@@ -121,8 +121,10 @@ const DEFAULT_CEO_BUDGET = 100;
 const ORG_PERIOD = "2026-09";
 const TICKET_COLUMNS = ["proposed", "in_progress", "review", "done", "rejected"] as const;
 const OPEN_COLUMNS: readonly string[] = ["proposed", "in_progress", "review"];
-/** The server's TICKET_ID_PATTERN. */
-const TICKET_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
+/** The server's TICKET_ID_PATTERN: a date and a letters-only slug. */
+const TICKET_ID_RE = /^\d{4}-\d{2}-\d{2}-[a-z]+(?:-[a-z]+)*$/;
+/** The server's TICKET_SLUG_PATTERN. */
+const TICKET_SLUG_RE = /^[a-z]+(?:-[a-z]+)*$/;
 /** The server's CHANNEL_ID_PATTERN. */
 const CHANNEL_ID_RE = /^[a-z][a-z0-9_]{1,63}$/;
 /** `agent:<id>` / `user:<id>`, the only two principal kinds a channel holds. */
@@ -132,7 +134,6 @@ const TICKET_ITEM_KEYS = [
   "ticketId",
   "title",
   "status",
-  "initiator",
   "owner",
   "parent",
   "notify",
@@ -146,11 +147,17 @@ const TICKET_ITEM_KEYS = [
   "invalid",
 ] as const;
 
+/** The server's slugify: ASCII letters only, at most six words of at most twenty characters. */
 function slugify(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/[^a-z]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w !== "")
+    .slice(0, 6)
+    .map((w) => w.slice(0, 20))
+    .join("-");
 }
 
 /** The principals a chat text mentions (`@all`, `@agent:<id>`, `@user:<id>`). */
@@ -463,10 +470,11 @@ export class FakeServer {
     const ticket: Json = {
       title: item.ticketId,
       status: "proposed",
-      initiator: "user:admin",
+      owner: "user:admin",
       notify: ["user:admin"],
       priority: "P1",
       sessions: [],
+      history: [],
       running: false,
       cost: 0,
       goal: "",
@@ -563,6 +571,7 @@ export class FakeServer {
       acceptanceCriteria: rec.acceptanceCriteria,
       progress: rec.progress,
       result: rec.result,
+      history: rec.history,
       body: this.ticketBody(rec),
       children: [...org.tickets.values()]
         .filter((x) => x.parent === rec.ticketId)
@@ -575,19 +584,24 @@ export class FakeServer {
     };
   }
 
-  /** The ticket file as the server writes it: title line, header block, sections (or the supplied body under the generated header). */
+  /** The ticket file as the server writes it: YAML frontmatter, then the sections (or the supplied body). */
   private ticketBody(rec: Json): string {
-    const header = [
-      `Status: ${rec.status}`,
-      `Initiator: ${rec.initiator}`,
-      `Owner: ${rec.owner ?? ""}`,
-      ...(rec.parent !== undefined ? [`Parent: ${rec.parent}`] : []),
-      `Notify: ${(rec.notify as string[]).join(", ")}`,
-      `Priority: ${rec.priority}`,
-      ...(rec.due !== undefined ? [`Due: ${rec.due}`] : []),
-      ...(isNonEmptyString(rec.blocked) ? [`Blocked: ${rec.blocked}`] : []),
-      ...(isNonEmptyString(rec.blockedBy) ? [`Blocked-by: ${rec.blockedBy}`] : []),
-      `Sessions: ${(rec.sessions as string[]).join(", ")}`,
+    const front = [
+      `title: ${rec.title}`,
+      `status: ${rec.status}`,
+      `owner: ${rec.owner}`,
+      ...(rec.parent !== undefined ? [`parent: ${rec.parent}`] : []),
+      `notify: [${(rec.notify as string[]).join(", ")}]`,
+      `priority: ${rec.priority}`,
+      ...(rec.due !== undefined ? [`due: ${rec.due}`] : []),
+      ...(isNonEmptyString(rec.blocked) ? [`blocked: ${rec.blocked}`] : []),
+      ...(isNonEmptyString(rec.blockedBy) ? [`blocked_by: ${rec.blockedBy}`] : []),
+      `sessions: [${(rec.sessions as string[]).join(", ")}]`,
+      `history:`,
+      ...(rec.history as Json[]).map(
+        (h) =>
+          `  - {at: ${h.at}, by: ${h.by}, action: ${h.action}${h.note !== undefined ? `, note: ${h.note}` : ""}}`,
+      ),
     ].join("\n");
     const sections =
       typeof rec.rawBody === "string"
@@ -595,27 +609,44 @@ export class FakeServer {
         : [
             `## Goal\n${rec.goal}`,
             `## Acceptance criteria\n${rec.acceptanceCriteria}`,
-            `## Progress\n${(rec.progress as Json[]).map((p) => `- ${p.time} ${p.by} ${p.text}`).join("\n")}`,
+            `## Progress\n${(rec.progress as string[]).map((line) => `- ${line}`).join("\n")}`,
             `## Result\n${rec.result}`,
           ].join("\n\n");
-    return `# Ticket: ${rec.title}\n\n${header}\n\n${sections}\n`;
+    return `---\n${front}\n---\n\n${sections}\n`;
   }
 
   /**
-   * Who a write is attributed to: the calling session's Agent when the body names one (an
-   * unknown session is a 404, never a silent fallback), else the token's user.
+   * Who a write is attributed to: the calling employee when the body names one, else the
+   * calling session's Agent (an unknown session is a 404, never a silent fallback), else the
+   * token's user. `agentId` wins, as it does on the server.
    */
   private actorOf(body: Json | undefined): FakeCaller {
-    return this.callerOfSession(body?.sessionId);
+    return this.callerOf(body?.agentId, body?.sessionId);
   }
 
   /**
-   * The same claim on a read, where there is no body to carry it: `?sessionId=` is how a desk
-   * or ticket session asks "which channels am I in". The CLI appends it on every channel read
-   * and on the member DELETE.
+   * The same claim on a read, where there is no body to carry it: `?sessionId=` / `?agentId=`
+   * are how a desk or ticket session asks "which channels am I in". The CLI appends them on
+   * every channel read and on the member DELETE.
    */
   private callerOfQuery(url: URL): FakeCaller {
-    return this.callerOfSession(url.searchParams.get("sessionId") ?? undefined);
+    return this.callerOf(
+      url.searchParams.get("agentId") ?? undefined,
+      url.searchParams.get("sessionId") ?? undefined,
+    );
+  }
+
+  /** The Agent id first, the session second: the order the server resolves an operator in. */
+  private callerOf(agentId: unknown, sessionId: unknown): FakeCaller {
+    if (isNonEmptyString(agentId)) {
+      return {
+        ok: true,
+        principal: `agent:${agentId}`,
+        agentId,
+        ...(isNonEmptyString(sessionId) ? { sessionId } : {}),
+      };
+    }
+    return this.callerOfSession(sessionId);
   }
 
   /**
@@ -1413,18 +1444,33 @@ export class FakeServer {
     if (body.parent !== undefined && !TICKET_ID_RE.test(String(body.parent))) {
       return this.badRequest("parent must be a ticket id.");
     }
+    if (typeof body.slug === "string" && !TICKET_SLUG_RE.test(body.slug)) {
+      return this.badRequest("slug must be lowercase English words joined by hyphens.");
+    }
     const slug = typeof body.slug === "string" ? body.slug : slugify(body.title);
-    const ticketId = `${ORG_TODAY}-${slug || "ticket"}`;
+    if (slug === "") {
+      return this.error(
+        400,
+        "slug_required",
+        "pass --slug: lowercase English words joined by hyphens",
+      );
+    }
+    const ticketId = `${ORG_TODAY}-${slug}`;
     if (org.tickets.has(ticketId))
       return this.error(409, "ticket_exists", `Ticket already exists: ${ticketId}`);
-    // `--initiator` files the ticket in another principal's name; the server validates it.
-    const initiator = isNonEmptyString(body.initiator) ? body.initiator : actor.principal;
+    // One owner: `--owner` when it is given, the caller otherwise.
+    const owner = isNonEmptyString(body.owner) ? body.owner : actor.principal;
     const rec = this.addTicket(org.orgId, {
       ticketId,
       title: body.title,
-      initiator,
+      owner,
       notify: Array.isArray(body.notify) ? body.notify : [],
-      ...(typeof body.owner === "string" ? { owner: body.owner } : {}),
+      history: [
+        { at: ORG_NOW, by: actor.principal, action: "created" },
+        ...(owner !== actor.principal
+          ? [{ at: ORG_NOW, by: actor.principal, action: "assigned", note: owner }]
+          : []),
+      ],
       ...(typeof body.parent === "string" ? { parent: body.parent } : {}),
       ...(typeof body.priority === "string" ? { priority: body.priority } : {}),
       ...(typeof body.due === "string" ? { due: body.due } : {}),
@@ -1479,12 +1525,16 @@ export class FakeServer {
         if (!isNonEmptyString(body?.text)) return this.badRequest("text is required.");
         const actor = this.actorOf(body);
         if (!actor.ok) return actor.res;
-        (rec.progress as Json[]).push({
-          time: ORG_NOW,
+        (rec.progress as string[]).push(body.text);
+        (rec.history as Json[]).push({
+          at: ORG_NOW,
           by: actor.principal,
-          text: body.text,
-          ...(actor.sessionId !== undefined ? { sessionId: actor.sessionId } : {}),
+          action: "progress",
+          note: body.text.slice(0, 80),
         });
+        if (actor.sessionId !== undefined && !sessions.includes(actor.sessionId)) {
+          sessions.push(actor.sessionId);
+        }
         return this.json(this.ticketDetail(org, rec));
       }
       case "start": {

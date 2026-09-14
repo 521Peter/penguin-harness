@@ -4,6 +4,11 @@
  * is the same fact as a kind plus string parameters, so a client renders it in the reader's
  * language and with display names. Building both here is what stops the two from drifting:
  * a kind that changes its parameters changes its sentence in the same function.
+ *
+ * A channel holds what people and employees say to each other, plus the two facts that change
+ * who is in the room — an employee joining or leaving, a channel's membership and archive
+ * state — and the budget alerts. Ticket changes write no line here: the board is read from
+ * the board, and a board that narrates itself buries the conversation.
  */
 import type { OrgChannelMessage, OrgChannelNotice } from "../../api/types.js";
 
@@ -104,29 +109,4 @@ export function budgetPaused(f: BudgetFacts): SystemLine {
     text: `Budget pause: ${f.agent} reached ${f.percent}% of its ${f.period} budget (${money(f.cost)} / ${money(f.budget)} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
     notice: { kind: "budget_paused", params: budgetParams(f) },
   };
-}
-
-/** The ticket changes that reach people in the all-hands channel. */
-export type TicketNoticeKind = "ticket_blocked" | "ticket_done" | "ticket_rejected";
-
-const TICKET_STATE: Record<TicketNoticeKind, string> = {
-  ticket_blocked: "blocked",
-  ticket_done: "done",
-  ticket_rejected: "rejected",
-};
-
-/**
- * A ticket's state reaching the all-hands channel. `mentions` are the principals the line
- * @-mentions; an empty list still writes the line — the board reads completions from the
- * channel, it is only the mention badge that is reserved for who asked for it.
- */
-export function ticketState(
-  kind: TicketNoticeKind,
-  ticket: string,
-  title: string,
-  mentions: readonly string[],
-): SystemLine {
-  const head = `Ticket ${ticket} (${title}) is now ${TICKET_STATE[kind]}`;
-  const tail = mentions.length === 0 ? "" : `: ${mentions.map((m) => `@${m}`).join(" ")}`;
-  return { text: `${head}${tail}`, notice: { kind, params: { ticket, title } } };
 }

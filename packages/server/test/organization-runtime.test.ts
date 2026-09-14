@@ -896,7 +896,7 @@ describe("organization runtime", () => {
         alice,
       );
       await service.moveTicket(P, ORG, early.ticketId, "done", undefined, alice);
-      // A ticket whose file was moved by hand carries no closing line at all.
+      // A ticket whose file was moved by hand carries no closing entry at all.
       const byHand = await service.createTicket(
         P,
         ORG,
@@ -910,7 +910,7 @@ describe("organization runtime", () => {
         file,
         raw
           .split("\n")
-          .filter((line) => !line.includes("→ done"))
+          .filter((line) => !line.includes("action: moved"))
           .join("\n"),
         "utf8",
       );
@@ -1117,7 +1117,7 @@ describe("organization runtime", () => {
       events.length = 0;
     });
 
-    it("creates in proposed with the initiator, queues the assignment, and opens ticket sessions that contribute", async () => {
+    it("creates in proposed with an owner, queues the assignment, and opens ticket sessions that contribute", async () => {
       const t = await service.createTicket(
         P,
         ORG,
@@ -1126,9 +1126,13 @@ describe("organization runtime", () => {
       );
       expect(t.ticketId).toMatch(/^2026-09-01-launch-the-site$/);
       expect(t.status).toBe("proposed");
-      expect(t.initiator).toBe("user:alice");
-      // A person who files a ticket is not @-mentioned when it closes; it lists itself to be.
-      expect(t.notify).toEqual([]);
+      // Filed by alice for HR: the owner is the employee, and the history says who filed it.
+      expect(t.owner).toBe(`agent:${HR}`);
+      expect(t.notify).toEqual([`agent:${HR}`]);
+      expect(t.history.map((h) => [h.by, h.action, h.note ?? ""])).toEqual([
+        ["user:alice", "created", ""],
+        ["user:alice", "assigned", `agent:${HR}`],
+      ]);
       await expect(
         fs.stat(path.join(orgDir(), "tickets", "2026-09", "proposed", `${t.ticketId}.md`)),
       ).resolves.toBeTruthy();
@@ -1154,7 +1158,8 @@ describe("organization runtime", () => {
         ticket: t.ticketId,
       });
       expect(work!.text).toContain("Note from the desk: Start with the scaffold");
-      expect(work!.text).toContain("# Ticket: Launch the site");
+      expect(work!.text).toContain("---\ntitle: Launch the site\nstatus: proposed\n");
+      expect(detail.history.at(-1)).toMatchObject({ action: "session_started", note: sessionId });
       // Where it stands, and the rule that makes its output findable by a colleague.
       expect(work!.text).toContain(
         `Workspace: ${path.join(orgDir(), "workspace", HR)} — the organization is at \`<app_data_dir>/organizations/${ORG}/\`.`,
@@ -1173,8 +1178,13 @@ describe("organization runtime", () => {
         userId: "alice",
         sessionId,
       });
-      const last = withProgress.progress.at(-1)!;
-      expect(last).toMatchObject({ by: `agent:${HR}`, text: "half done", sessionId });
+      // The section is prose; who wrote it and when is the history entry beside it.
+      expect(withProgress.progress).toEqual(["half done"]);
+      expect(withProgress.history.at(-1)).toMatchObject({
+        by: `agent:${HR}`,
+        action: "progress",
+        note: "half done",
+      });
     });
 
     it("delivers queued changes in the next sweep, keeps them while paused, and empties the queue", async () => {
@@ -1285,7 +1295,7 @@ describe("organization runtime", () => {
       expect(t.owner).toBe(`agent:${HR}`);
     });
 
-    it("moves between columns, notifies on done, and rejects need a reason", async () => {
+    it("moves between columns, queues done for Notify, and rejects need a reason", async () => {
       const t = await service.createTicket(
         P,
         ORG,
@@ -1304,8 +1314,9 @@ describe("organization runtime", () => {
         service.moveTicket(P, ORG, t.ticketId, "rejected", undefined, { userId: "alice" }),
       ).rejects.toMatchObject({ status: 400 });
       await service.moveTicket(P, ORG, t.ticketId, "done", undefined, { userId: "alice" });
-      // Notify = CEO (agent) and the initiator alice (user): the change is queued for the
-      // CEO's next sweep and written as a system line for alice. Neither is a run.
+      // Notify = CEO and the owner HR: both are queued for their own next sweep. Neither is
+      // a run, and no line is written into the all-hands channel — the board is read from
+      // the board.
       expect(started).toHaveLength(0);
       expect(cache.takeDeskNotices(P, ORG, CEO).map((n) => [n.ticketId, n.change])).toEqual([
         [t.ticketId, "done"],
@@ -1317,21 +1328,15 @@ describe("organization runtime", () => {
         DEFAULT_CHANNEL_ID,
         {},
       );
-      const line = allHands.messages.find(
-        (m) => m.sender === "system" && m.text.includes(t.ticketId),
-      );
-      // The line lands for the board to read; nobody is @-mentioned, because the only user
-      // involved is the initiator and it did not ask to be told.
-      expect(line?.mentions).toEqual([]);
-      expect(line?.text).toBe(`Ticket ${t.ticketId} (Write docs) is now done`);
-      expect(line?.notice).toEqual({
-        kind: "ticket_done",
-        params: { ticket: t.ticketId, title: "Write docs" },
-      });
-      expect(line?.refs?.ticket).toBe(t.ticketId);
+      expect(
+        allHands.messages.filter((m) => m.sender === "system" && m.text.includes(t.ticketId)),
+      ).toEqual([]);
       expect(events.some((e) => e.type === "org_ticket" && e.change === "status:done")).toBe(true);
       const board = await service.tickets(P, ORG);
       expect(board.columns.done.map((x) => x.ticketId)).toEqual([t.ticketId]);
+      // The closing move is in the history, which is where the overview reads `closedAt`.
+      const closed = await service.ticket(P, ORG, t.ticketId);
+      expect(closed.history.at(-1)).toMatchObject({ action: "moved", note: "done" });
     });
 
     it("books the writing session onto the ticket, so a desk that did the work pays for it", async () => {
@@ -1372,43 +1377,44 @@ describe("organization runtime", () => {
       expect(finance.tickets.find((x) => x.ticketId === t.ticketId)?.cost).toBe(4);
     });
 
-    it("files a ticket in another principal's name, and refuses one nobody holds", async () => {
+    it("files a ticket for another principal, and refuses one nobody holds", async () => {
       const byEmployee = await service.createTicket(
         P,
         ORG,
-        { title: "Audit the calendar", initiator: HR },
+        { title: "Audit the calendar", owner: HR },
         { userId: "alice" },
       );
-      // A bare Agent id is the employee's principal; an employee initiator is notified at its desk.
-      expect(byEmployee.initiator).toBe(`agent:${HR}`);
+      // A bare Agent id is the employee's principal; an employee owner is notified at its desk.
+      expect(byEmployee.owner).toBe(`agent:${HR}`);
       expect(byEmployee.notify).toEqual([`agent:${HR}`]);
-      expect(byEmployee.progress[0]).toMatchObject({
-        by: `agent:${HR}`,
-        text: "created the ticket",
-      });
+      expect(byEmployee.history[0]).toMatchObject({ by: "user:alice", action: "created" });
       const prefixed = await service.createTicket(
         P,
         ORG,
-        { title: "Audit again", initiator: `agent:${CEO}` },
+        { title: "Audit again", owner: `agent:${CEO}` },
         { userId: "alice" },
       );
-      expect(prefixed.initiator).toBe(`agent:${CEO}`);
+      expect(prefixed.owner).toBe(`agent:${CEO}`);
+      // No owner named: the caller owns it, and a person is not @-mentioned for its own ticket.
       const byUser = await service.createTicket(
         P,
         ORG,
-        { title: "Board request", initiator: "user:alice" },
+        { title: "Board request" },
         { userId: "alice" },
       );
-      expect(byUser.initiator).toBe("user:alice");
+      expect(byUser.owner).toBe("user:alice");
       expect(byUser.notify).toEqual([]);
-      for (const initiator of ["ghost", `agent:ghost`, "user:mallory", "all"]) {
+      expect(byUser.history).toEqual([
+        { at: new Date(nowMs).toISOString(), by: "user:alice", action: "created" },
+      ]);
+      for (const owner of ["ghost", `agent:ghost`, "user:mallory", "all"]) {
         await expect(
-          service.createTicket(P, ORG, { title: "Nope", initiator }, { userId: "alice" }),
+          service.createTicket(P, ORG, { title: "Nope", owner }, { userId: "alice" }),
         ).rejects.toMatchObject({ status: 400 });
       }
     });
 
-    it("mentions on completion only the users Notify names", async () => {
+    it("writes no channel line when a ticket closes, whoever Notify names", async () => {
       const t = await service.createTicket(
         P,
         ORG,
@@ -1423,12 +1429,62 @@ describe("organization runtime", () => {
         DEFAULT_CHANNEL_ID,
         {},
       );
-      const lines = allHands.messages.filter(
-        (m) => m.sender === "system" && m.text.includes(t.ticketId),
+      expect(
+        allHands.messages.filter((m) => m.sender === "system" && m.text.includes(t.ticketId)),
+      ).toEqual([]);
+      // The person reads it from the overview's inbox instead, which is built from the board.
+      const detail = await service.detail(P, ORG, "alice");
+      expect(detail.inbox?.doneTickets.map((x) => x.ticketId)).toEqual([t.ticketId]);
+    });
+
+    it("records the operator from the calling Agent id, over the calling session", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Trace the writer", owner: `agent:${HR}` },
+        { userId: "alice" },
       );
-      expect(lines).toHaveLength(1);
-      expect(lines[0]!.mentions).toEqual(["user:alice"]);
-      expect(lines[0]!.text).toBe(`Ticket ${t.ticketId} (Tell me) is now done: @user:alice`);
+      const ceoDesk = await service.desk(P, ORG, CEO, {});
+      // The CEO's desk ran the command, but PENGUIN_AGENT_ID says HR: the narrower fact wins.
+      const withProgress = await service.progressTicket(P, ORG, t.ticketId, "looked at it", {
+        userId: "alice",
+        sessionId: ceoDesk.sessionId,
+        agentId: HR,
+      });
+      expect(withProgress.history.at(-1)).toMatchObject({ by: `agent:${HR}`, action: "progress" });
+      // An Agent id that names no employee is ignored; the session answers instead.
+      const again = await service.progressTicket(P, ORG, t.ticketId, "and again", {
+        userId: "alice",
+        sessionId: ceoDesk.sessionId,
+        agentId: "ghost",
+      });
+      expect(again.history.at(-1)).toMatchObject({ by: `agent:${CEO}`, action: "progress" });
+    });
+
+    it("names a ticket whose title carries no English through the Project's model", async () => {
+      completion.answers = [answered("launch-the-site")];
+      const t = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
+      expect(t.ticketId).toBe("2026-09-01-launch-the-site");
+      // `slug` always wins, and is held to the same letters-only rule.
+      const explicit = await service.createTicket(
+        P,
+        ORG,
+        { title: "上线站点", slug: "second-site" },
+        { userId: "alice" },
+      );
+      expect(explicit.ticketId).toBe("2026-09-01-second-site");
+      await expect(
+        service.createTicket(P, ORG, { title: "x", slug: "site-2" }, { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400 });
+      // No usable answer from the model, twice: the caller is told to name it.
+      completion.answers = [answered("站点"), answered("站点")];
+      await expect(
+        service.createTicket(P, ORG, { title: "季度财报" }, { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "slug_required" });
+      // A taken id takes a letter, never a digit.
+      completion.answers = [answered("launch-the-site")];
+      const again = await service.createTicket(P, ORG, { title: "上线站点" }, { userId: "alice" });
+      expect(again.ticketId).toBe("2026-09-01-launch-the-site-b");
     });
 
     it("blocking notices the blocker and the owner's manager; closing the blocker tells the owner", async () => {

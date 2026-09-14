@@ -3651,14 +3651,6 @@ export interface OrgCalendarResponse {
   invalidFiles: Array<{ agentId: string; name: string; error: string }>;
 }
 
-export interface OrgTicketProgressEntry {
-  time: string;
-  /** The principal that wrote it (`agent:<id>` / `user:<id>`), as recorded. */
-  by: string;
-  text: string;
-  sessionId?: string;
-}
-
 /**
  * One line of a ticket's operation history, kept in the file's frontmatter apart from the
  * progress prose: what was done, by whom (`agent:<id>` / `user:<id>` — an employee is recognised
@@ -3694,9 +3686,8 @@ export interface OrgTicketItem {
   ticketId: string;
   title: string;
   status: OrgTicketStatus;
-  /** Being folded into `owner` (a ticket has one responsible principal; who filed it is in the history). */
-  initiator: string;
-  owner?: string;
+  /** The ONE responsible principal (`agent:<id>` / `user:<id>`); who filed it is the history's `created` entry. */
+  owner: string;
   parent?: string;
   notify: string[];
   priority: OrgTicketPriority;
@@ -3725,10 +3716,11 @@ export interface OrgTicketSessionItem {
 export interface OrgTicketDetail extends OrgTicketItem {
   goal: string;
   acceptanceCriteria: string;
-  progress: OrgTicketProgressEntry[];
+  /** `## Progress` as plain sentences; who wrote one and when is the matching history entry. */
+  progress: string[];
   result: string;
-  /** The operation history from the frontmatter, oldest first (absent from a server older than the field). */
-  history?: OrgTicketHistoryEntry[];
+  /** The operation history from the frontmatter, oldest first. */
+  history: OrgTicketHistoryEntry[];
   /** The whole file, for the Markdown view and for clients that prefer to edit it as text. */
   body: string;
   children: string[];
@@ -3761,6 +3753,11 @@ export type OrgChannelNoticeKind =
   | "channel_removed"
   | "budget_warned"
   | "budget_paused"
+  /**
+   * Legacy, read-only: ticket changes no longer write into a channel — the board is read from
+   * the board and the overview's inbox. These three kinds stay so the lines already in an
+   * organization's message files keep rendering; nothing writes them any more.
+   */
   | "ticket_blocked"
   | "ticket_done"
   | "ticket_rejected";
@@ -4095,18 +4092,17 @@ export interface OrgCalendarWriteResponse extends OrgCalendarItem {
 
 export interface OrgTicketCreateRequest {
   title: string;
-  /**
-   * Who files the ticket, when it is not the caller: an employee's `agent:<id>` (or bare Agent
-   * id) or a member's `user:<id>`. Default = the caller — the session's employee inside a desk
-   * or ticket session, else the token's or cookie's user.
-   */
-  initiator?: string;
-  /** Overrides the slug derived from the title. */
+  /** Overrides the slug derived from the title; lowercase English words joined by hyphens. */
   slug?: string;
   goal?: string;
   acceptanceCriteria?: string;
-  /** The whole Markdown body instead of goal + acceptanceCriteria (the header is still generated). */
+  /** The whole Markdown body instead of goal + acceptanceCriteria (the frontmatter is still generated). */
   body?: string;
+  /**
+   * The responsible principal: an employee's `agent:<id>` (or bare Agent id) or a member's
+   * `user:<id>`. Default = the caller — the session's employee inside a desk or ticket
+   * session, else the token's or cookie's user.
+   */
   owner?: string;
   parent?: string;
   notify?: string[];
@@ -4116,7 +4112,8 @@ export interface OrgTicketCreateRequest {
 
 export interface OrgTicketUpdateRequest {
   title?: string;
-  owner?: string | null;
+  /** The new responsible principal; never null — a ticket always has an owner. */
+  owner?: string;
   parent?: string | null;
   notify?: string[];
   priority?: OrgTicketPriority;
@@ -4141,15 +4138,17 @@ export interface OrgTicketBlockRequest {
 export interface OrgTicketProgressRequest {
   text: string;
   /**
-   * The calling session (CLI: PENGUIN_SESSION_ID); the entry is attributed to its Agent and
-   * carries `session:<id>`. Honoured only for a request carrying the local API token — the
-   * control environment's credential; a signed-in user's write is attributed to the user.
+   * The calling session (CLI: PENGUIN_SESSION_ID); the session is booked as a contributing
+   * session and the history entry is attributed to its employee. Honoured only for a request
+   * carrying the local API token — the control environment's credential; a signed-in user's
+   * write is attributed to the user.
    */
   sessionId?: string;
   /**
    * The calling employee's Agent id (CLI: PENGUIN_AGENT_ID from the control environment), the
-   * identity a write is recorded under; honoured only with the local API token, like sessionId,
-   * and ignored — the write falls back to the person — when it names no employee.
+   * identity a write is recorded under; it wins over the session's employee, is honoured only
+   * with the local API token, like sessionId, and is ignored — the write falls back to the
+   * session's employee, then to the person — when it names no employee.
    */
   agentId?: string;
 }

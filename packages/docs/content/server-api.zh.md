@@ -236,7 +236,7 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 
 ### 组织（公司模式）
 
-以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写。没有删除组织的路由：`status`（`active` / `paused`）就是它的开关，暂停的组织仍保留其对话、员工、工位与工单。写入体可带 `sessionId`——调用方所在的会话，CLI 从 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；频道的读取与成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入（仅对携带本机 API token 的请求生效），员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写。没有删除组织的路由：`status`（`active` / `paused`）就是它的开关，暂停的组织仍保留其对话、员工、工位与工单。写入体可带 `agentId` 与 `sessionId`——调用方所在的员工与会话，CLI 从 `PENGUIN_AGENT_ID` 与 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；`agentId` 指向某名员工时以它为准，否则看会话。频道的读取与成员 DELETE 没有请求体，同样两项改由 `?agentId=` / `?sessionId=` 传入。两者都仅对携带本机 API token 的请求生效，员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -252,19 +252,19 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
 | GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` → 除写下的事件外还带一组建议性的 `warnings`（每条一行）：同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算。写入绝不因此被拒 |
 | GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项；`PUT` 的响应与上面的新建相同，同样带 `warnings` |
-| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, initiator?, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。`initiator` 是本组织的员工（裸 Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；它成为工单的 `Initiator`、首条进展的作者，并在没有 `notify` 时成为整个 `Notify`——但仅限它是员工时，人不会因为自己开过的工单被 @ |
-| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（各节、进展、贡献会话、子工单、上卷成本）/ 更新头部字段与各节 |
+| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。`owner` 是这张工单**唯一**的责任人——本组织的员工（裸 Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；没有 `notify` 时它成为整个 `notify`，但仅限它是员工时，人不会因为自己名下的工单被 @。谁创建的记在工单 `history` 的 `created` 条目里。id 的 slug 优先取 `slug`（小写英文单词以连字符连接，否则 400），否则由标题推导；标题推不出两个词时交给 Project 的模型来取，模型也取不出则回 400 `slug_required`，请调用方自己取 |
+| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（frontmatter 字段、正文各节、`progress` 为纯句子、`history`、贡献会话、子工单、上卷成本）/ 更新 `{title?, owner?, parent?, notify?, priority?, due?, goal?, acceptanceCriteria?, result?}`。`owner` 不接受 `null`：工单永远有负责人，只能改派、不能清空；`parent` 与 `due` 仍可传 `null` 清除 |
 | POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
 | POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
 | POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
-| POST | /:orgId/tickets/:ticketId/progress | `{text}`——追加一条归属于调用方的进展 |
-| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `Sessions`。谁能发起取决于调用方：人可以为任何工单发起（`agentId` 指定员工，缺省取负责人）；而以员工身份写入的调用方——工位会话或工单会话在请求体里带上自己的 `sessionId`——只能为**自己名下**的工单发起，对别人的工单或没有员工负责人的工单一律回 403 `not_ticket_owner`。负责人仍可用 `agentId` 把同事拉进自己名下的工单 |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}`——往 `## Progress` 追加一句大白话；谁写的、什么时候写的记为 `history` 里的一条 `progress` |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `sessions` 与 `history`。本路由是唯一一个 `agentId` 不表示调用方身份的路由——它指的是这个会话以谁的身份运行。谁能发起取决于调用方：人可以为任何工单发起（`agentId` 指定员工，缺省取负责人）；而以员工身份写入的调用方——工位会话或工单会话在请求体里带上自己的 `sessionId`——只能为**自己名下**的工单发起，对别人的工单或没有员工负责人的工单一律回 403 `not_ticket_owner`。负责人仍可用 `agentId` 把同事拉进自己名下的工单 |
 | POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
 | GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
 | GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
 | POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
 | DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
-| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`、`ticket_blocked`、`ticket_done`、`ticket_rejected`）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
+| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`，以及遗留的 `ticket_blocked`、`ticket_done`、`ticket_rejected`——这三种已不再写入，保留只是为了让磁盘上已有的行仍能渲染）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
 | POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
 | GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
 | GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |

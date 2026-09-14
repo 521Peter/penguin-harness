@@ -15,9 +15,7 @@ import {
   parseDesks,
   parseOrgChart,
   parseOrgConfig,
-  parseProgressLine,
   parseTicket,
-  progressLine,
   serializeCalendarEvent,
   serializeChannelConfig,
   serializeChannelMessageLine,
@@ -25,6 +23,7 @@ import {
   serializeOrgChart,
   serializeOrgConfig,
   serializeTicket,
+  slugSuffix,
   slugify,
   subordinatesOf,
   ancestorsOf,
@@ -206,7 +205,6 @@ describe("tickets", () => {
   const doc: TicketDoc = {
     title: "Launch the site",
     status: "in_progress",
-    initiator: "user:alice",
     owner: "agent:acme_dev",
     parent: "2026-09-01-marketplace",
     notify: ["agent:acme_ceo", "user:alice"],
@@ -215,35 +213,42 @@ describe("tickets", () => {
     blocked: "Domain not confirmed",
     blockedBy: "user:alice",
     sessions: ["session-2026-09-02-10-00-00-a1b2c3d4"],
+    history: [
+      { at: "2026-09-02T09:00:00Z", by: "user:alice", action: "created" },
+      { at: "2026-09-02T09:01:00Z", by: "user:alice", action: "assigned", note: "agent:acme_dev" },
+      {
+        at: "2026-09-02T10:12:00Z",
+        by: "agent:acme_dev",
+        action: "progress",
+        note: "scaffolded the site",
+      },
+    ],
     goal: "Ship the marketplace site.",
     acceptanceCriteria: "- Home page lists plugins\n- Search works",
-    progress: [
-      progressLine(
-        "2026-09-02T10:12:00+08:00",
-        "agent:acme_dev",
-        "scaffolded the site",
-        "session-2026-09-02-10-00-00-a1b2c3d4",
-      ),
-    ],
+    progress: ["scaffolded the site under /srv/site"],
     result: "",
-    extraHeaders: [],
+    extra: {},
     extraSections: [],
   };
 
-  it("round-trips the header and the four sections", () => {
+  it("round-trips the frontmatter and the four sections", () => {
     const text = serializeTicket(doc);
-    expect(text.startsWith("# Ticket: Launch the site\n\nStatus: in_progress\n")).toBe(true);
+    expect(text.startsWith("---\ntitle: Launch the site\nstatus: in_progress\n")).toBe(true);
+    // Lists stay on one line and a history entry is one flow mapping: the file is hand-read.
+    expect(text).toContain("notify: [agent:acme_ceo, user:alice]");
+    expect(text).toContain("  - {at: 2026-09-02T09:00:00Z, by: user:alice, action: created}\n");
+    expect(text).toContain("## Progress\n- scaffolded the site under /srv/site\n");
     expect(parseTicket(text)).toEqual({ ok: true, value: doc });
   });
 
-  it("defaults Notify to the initiator and Priority to P2, keeps unknown headers and sections", () => {
+  it("defaults notify to the owner and priority to P2, keeps unknown fields and sections", () => {
     const text = [
-      "# Ticket: Minimal",
-      "",
-      "Status: proposed",
-      "Initiator: agent:acme_ceo",
-      "Owner:",
-      "X-Custom: kept",
+      "---",
+      "title: Minimal",
+      "status: proposed",
+      "owner: agent:acme_ceo",
+      "x_custom: kept",
+      "---",
       "",
       "## Goal",
       "Do the thing",
@@ -257,39 +262,81 @@ describe("tickets", () => {
     if (!parsed.ok) return;
     expect(parsed.value.notify).toEqual(["agent:acme_ceo"]);
     expect(parsed.value.priority).toBe("P2");
-    expect(parsed.value.owner).toBeUndefined();
-    expect(parsed.value.extraHeaders).toEqual([["X-Custom", "kept"]]);
+    expect(parsed.value.history).toEqual([]);
+    expect(parsed.value.extra).toEqual({ x_custom: "kept" });
     expect(parsed.value.extraSections).toEqual([{ heading: "Notes", body: "extra" }]);
     const again = parseTicket(serializeTicket(parsed.value));
     expect(again).toEqual(parsed);
   });
 
-  it("rejects a bad status, principal or first line", () => {
-    expect(parseTicket("# Ticket: x\n\nStatus: flying\nInitiator: user:a\n").ok).toBe(false);
-    expect(parseTicket("# Ticket: x\n\nStatus: done\nInitiator: alice\n").ok).toBe(false);
-    expect(parseTicket("Status: done\n").ok).toBe(false);
+  it("rejects a bad status, owner, history action or opening fence", () => {
+    expect(parseTicket("---\ntitle: x\nstatus: flying\nowner: user:a\n---\n").ok).toBe(false);
+    expect(parseTicket("---\ntitle: x\nstatus: done\nowner: alice\n---\n").ok).toBe(false);
+    expect(parseTicket("---\ntitle: x\nstatus: done\nowner: user:a\n").ok).toBe(false);
+    const badAction = parseTicket(
+      "---\ntitle: x\nstatus: done\nowner: user:a\nhistory: [{at: t, by: user:a, action: danced}]\n---\n",
+    );
+    expect(badAction.ok).toBe(false);
+    if (!badAction.ok) expect(badAction.error).toContain("danced");
+    expect(parseTicket("status: done\n").ok).toBe(false);
   });
 
-  it("parses progress lines with and without a session reference", () => {
-    expect(
-      parseProgressLine("- 2026-09-02T10:12:00+08:00 agent:acme_dev did a thing session:session-x"),
-    ).toEqual({
-      time: "2026-09-02T10:12:00+08:00",
-      by: "agent:acme_dev",
-      text: "did a thing",
-      sessionId: "session-x",
-    });
-    expect(parseProgressLine("- t user:alice created the ticket")).toEqual({
-      time: "t",
-      by: "user:alice",
-      text: "created the ticket",
-    });
-    expect(parseProgressLine("nope")).toBeNull();
+  it("reads a ticket in the format that predates the frontmatter, and converts it on write", () => {
+    const legacy = [
+      "# Ticket: Launch the site",
+      "",
+      "Status: in_progress",
+      "Initiator: agent:acme_ceo",
+      "Owner:",
+      "X-Custom: kept",
+      "",
+      "## Goal",
+      "Ship it",
+      "",
+      "## Progress",
+      "- 2026-09-02T10:12:00+08:00 agent:acme_dev scaffolded the site session:session-x",
+      "- 2026-09-02T11:00:00+08:00 user:alice reviewed the copy",
+      "",
+    ].join("\n");
+    const parsed = parseTicket(legacy);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    // No Owner header: the ticket belongs to whoever filed it, and Notify follows the owner.
+    expect(parsed.value.owner).toBe("agent:acme_ceo");
+    expect(parsed.value.notify).toEqual(["agent:acme_ceo"]);
+    // The operator and the time leave the prose for the history; the sentence stays.
+    expect(parsed.value.progress).toEqual(["scaffolded the site", "reviewed the copy"]);
+    expect(parsed.value.history).toEqual([
+      { at: "2026-09-02T10:12:00+08:00", by: "agent:acme_ceo", action: "created" },
+      {
+        at: "2026-09-02T10:12:00+08:00",
+        by: "agent:acme_dev",
+        action: "progress",
+        note: "scaffolded the site",
+      },
+      {
+        at: "2026-09-02T11:00:00+08:00",
+        by: "user:alice",
+        action: "progress",
+        note: "reviewed the copy",
+      },
+    ]);
+    expect(parsed.value.extra).toEqual({ "X-Custom": "kept" });
+    // Written back, it is a frontmatter file that parses to the same document.
+    const converted = serializeTicket(parsed.value);
+    expect(converted.startsWith("---\n")).toBe(true);
+    expect(parseTicket(converted)).toEqual(parsed);
   });
 
-  it("derives ids: month from the id, slug from the title, path from column", () => {
-    expect(slugify("Launch the Site! v2")).toBe("launch-the-site-v2");
+  it("derives ids: letters-only slugs, letter suffixes, month and path", () => {
+    expect(slugify("Launch the Site! v2")).toBe("launch-the-site-v");
     expect(slugify("上线站点")).toBe("");
+    // Six words at most, twenty characters each.
+    expect(slugify("one two three four five six seven")).toBe("one-two-three-four-five-six");
+    expect(slugify("Supercalifragilisticexpialidocious plan")).toBe("supercalifragilistic-plan");
+    expect(slugSuffix(2)).toBe("b");
+    expect(slugSuffix(26)).toBe("z");
+    expect(slugSuffix(27)).toBe("aa");
     expect(ticketMonth("2026-09-02-site")).toBe("2026-09");
     // Joined the way the store joins it, so the assertion holds on Windows too.
     expect(ticketPath("/org", "2026-09-02-site", "review")).toBe(

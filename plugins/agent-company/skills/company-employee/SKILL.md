@@ -28,7 +28,7 @@ Write in the organization's **working language** — the one the handbook's 「�
 | `channels/<channel_id>/<yyyy-mm-dd>.jsonl` | A channel's messages, one JSON line each | the server, through `penguin org channel send` |
 | `workspace/` | The shared workspace; its root holds the shared inputs and is nobody's desk, and each desk works in a sub-directory of it (the CEO's is `ceo/`, and a hire's is named after its Agent id unless the CEO assigned another) | employees, each in its own partition |
 
-Prefer the `penguin org …` commands over editing these files: the CLI validates and applies at once, while a hand edit is only picked up by the periodic reconcile (about 30 s) and an invalid one is skipped with an error record instead of an error in your terminal. `desks.toml`, a ticket's `Sessions` line and the channels' message files are facts the server records — never edit them.
+Prefer the `penguin org …` commands over editing these files: the CLI validates and applies at once, while a hand edit is only picked up by the periodic reconcile (about 30 s) and an invalid one is skipped with an error record instead of an error in your terminal. `desks.toml`, a ticket's `sessions` and `history` fields and the channels' message files are facts the server records — never edit them.
 
 ## The trigger block
 
@@ -52,7 +52,7 @@ budget: 12.40 / 30.00 USD (41%)      # this period's spend (you + subordinates) 
 - `init` — the first run of a new organization's CEO: the mission and the initialization tasks (see `company-ceo`).
 - `event` — a calendar event fired; the body is the event's `prompt`, followed by `## Since your last sweep` when ticket changes are waiting for you.
 - `mention` — someone @-mentioned you in a channel; the body is that message plus up to 20 earlier messages of the same day **in that channel**, quoted. Answer where you were addressed — the `channel:` line names it: `penguin org channel send --channel <channel_id> -m "…"`.
-- `ticket_work` — the first message of a ticket session: the ticket in full plus the starter's note. Do the work.
+- `ticket_work` — the first message of a ticket session: the ticket file in full (frontmatter and prose) plus the starter's note. Do the work.
 
 The first three arrive at your desk session; `ticket_work` opens a ticket session. A message with no block is a human talking to you directly — answer as in any conversation.
 
@@ -80,11 +80,49 @@ A sweep, on a calendar event or whenever a human asks you for one — start it b
 
 A small change you can make in a minute is fine to do at the desk — run `penguin org ticket attach <ticket_id>` first, so the session is recorded as contributing and its cost is booked to the ticket. One task at a time per session: a trigger that arrives while your desk is busy waits in its queue; do not start a second sweep for it.
 
+## The ticket file
+
+A ticket is one Markdown file: YAML frontmatter, then the prose.
+
+```markdown
+---
+title: Launch the marketing site
+status: in_progress            # matches the column directory it sits in
+owner: agent:acme_dev          # the ONE principal responsible for it
+notify: [agent:acme_ceo]       # who hears about it when it closes
+priority: P1                   # P0 | P1 | P2
+due: 2026-09-30                # optional
+blocked: waiting for the domain  # optional; present = blocked
+sessions: [session-…]          # contributing sessions — the server writes this
+history:                       # the operation log — the server writes this
+  - {at: 2026-09-14T09:00:00Z, by: agent:acme_ceo, action: created}
+  - {at: 2026-09-14T10:20:00Z, by: agent:acme_dev, action: moved, note: in_progress}
+---
+
+## Goal
+## Acceptance criteria
+## Progress
+## Result
+```
+
+- **One owner.** `owner` is the single principal responsible: whoever filed the ticket, unless
+  the filing named someone else. There is no separate "initiator" — who filed it is the
+  `created` entry of `history`. Handing work over is `penguin org ticket assign <id> --owner
+  agent:<employee>`, and nothing else.
+- **`## Progress` is prose.** Plain sentences saying what was done and where. No ids, no
+  timestamps, no principal — the server writes the `history` entry that records who and when.
+- **The operator is known from your environment.** Every `penguin org` command already carries
+  your Agent id and your session, so there is nothing to pass and nothing to sign; a write from
+  your session is recorded as you.
+- **Ids are `<yyyy-mm-dd>-<slug>`**, the slug lowercase English words joined by hyphens
+  (`2026-09-14-launch-the-marketing-site`). A title with no English words in it cannot yield
+  one, so pass `--slug launch-the-site` on `create` when the server asks for it.
+
 ## The ticket session: do the work, write it back
 
 A ticket session works in the desk's workspace (or the `--workspace` sub-directory the starter chose) with the ticket as its first message. Read `## Goal` and `## Acceptance criteria`, do the work, and before your final answer:
 
-- `penguin org ticket progress <ticket_id> -m "<one line: what was done, where it is>"` — the session id is attached automatically; every session that contributed leaves at least one line, and every file it names is named by its full path (absolute, or `<app_data_dir>/…`).
+- `penguin org ticket progress <ticket_id> -m "<one line: what was done, where it is>"` — a plain sentence and nothing else: no ids, no timestamps, no name of your own. The server records who wrote it and when in the ticket's `history`, and books your session onto the ticket. Every session that contributed leaves at least one line, and every file it names is named by its full path (absolute, or `<app_data_dir>/…`).
 - `penguin org ticket move <ticket_id> --to review` when the criteria are met and the handbook wants a review, `--to done` when it allows finishing directly. Write the conclusion into the ticket's `## Result` with your file tools (the ticket is an intent file the server never overwrites) so the reviewer does not have to read your transcript; `## Result` lists every deliverable by its full path, so a colleague can open it without asking where it is.
 - If you cannot finish, say why in a progress line and block the ticket (below). Leave the ticket honest, never "almost done".
 
@@ -137,12 +175,12 @@ penguin org calendar update <name> [--agent-id <id>] [<same field flags>] [--ena
 penguin org calendar rm <name> [--agent-id <id>]
 penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
 penguin org ticket show <ticket_id> [--json]
-penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--initiator <principal>] [--owner <principal>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
+penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--owner <principal>] [--slug <words>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
 penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # moving into rejected requires a reason
 penguin org ticket assign <ticket_id> --owner <principal>
 penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # writes Blocked / Blocked-by; the ticket stays in its column
 penguin org ticket unblock <ticket_id>                          # clears the block
-penguin org ticket progress <ticket_id> -m <text>               # appends one progress line, tagged with the current session
+penguin org ticket progress <ticket_id> -m <text>               # appends one plain progress sentence; the server records who and when
 penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--agent-id <id>] [--json]   # opens a new ticket session contributing to the ticket (repeatable); only on a ticket you own, --agent-id enlists a colleague on it; runs in the background and prints the session id
 penguin org ticket attach <ticket_id> [--session <session_id>]   # attaches an existing session as a contributing session; defaults to the current one
 penguin org channel ls [--json]                                 # the channels you are in, with unread counts
@@ -161,8 +199,8 @@ penguin org finance [--period <YYYY-MM>] [--json]               # spend (cumulat
 
 - A calendar event you add for yourself or a colleague goes at its own hour with a role-appropriate period (daily for owners of daily work, 2–3 days for reviewers, weekly for finance); never `--start-at now` for a recurring event, never a second daily sweep for the same employee. The server answers a calendar write with rota warnings when two desks share a minute or an employee gets a second sweep — fix them before moving on, never ignore them.
 
-- **Facts are the server's.** `desks.toml`, a ticket's `Sessions` line and the channels' message files are written by the server; for everything else you would edit by hand, the CLI is the writer.
-- **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the `Status` line together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. Ticket ids are `<yyyy-mm-dd>-<slug>` and stay in their creation month's directory; moving columns never changes the month.
+- **Facts are the server's.** `desks.toml`, a ticket's `sessions` and `history` fields and the channels' message files are written by the server; for everything else you would edit by hand, the CLI is the writer.
+- **A moved file must carry its status.** `penguin org ticket move` changes the column directory and the frontmatter's `status` together; a hand move that changes one and not the other marks the ticket invalid on the board until it is fixed. Ticket ids are `<yyyy-mm-dd>-<slug>`, the slug lowercase English words joined by hyphens, and stay in their creation month's directory; moving columns never changes the month.
 - **Unattended means unattended.** Desk and ticket sessions run under the organization's approval mode with nobody watching; do not plan on a human approving a step mid-run — block the ticket and say what you need.
 - **Your own scheduled tasks are not calendar events.** `penguin schedule …` writes `agent_state/schedule/` and fires regardless of the organization; schedule organization work with `penguin org calendar …`, which respects the organization's status and budgets.
 - **Never mention yourself and never schedule at your own session to "check back".** Every automated conversation must terminate; the calendar is the only recurring driver.

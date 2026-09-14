@@ -564,32 +564,35 @@ describe("penguin org ticket (writes carry the calling session)", () => {
       priority: "P0",
       due: "2026-09-10",
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketCreated("2026-09-02-build-the-site", "proposed")}\n`);
-    // The file records the session's employee as the initiator, not the token's user.
+    // The file records the session's employee, not the token's user; the owner it was filed
+    // for is the one it names, and filing for someone else is an `assigned` history entry.
     expect(org().tickets.get("2026-09-02-build-the-site")).toMatchObject({
-      initiator: "agent:dev1",
+      owner: "agent:dev1",
     });
+    expect(
+      (org().tickets.get("2026-09-02-build-the-site")!.history as Array<{ by: string }>)[0],
+    ).toMatchObject({ by: "agent:dev1", action: "created" });
   });
 
-  it("create files the ticket in the --initiator's name", async () => {
+  it("create names the ticket id's words with --slug when the title carries none", async () => {
     expect(
       await cli([
         "org",
         "ticket",
         "create",
         "--title",
-        "Audit the calendar",
+        "上线站点",
         "--goal",
-        "One event per employee",
-        "--initiator",
-        "acme_hr",
+        "把站点发出去",
+        "--slug",
+        "launch-the-site",
       ]),
     ).toBe(0);
-    expect(lastRequest("POST", "/tickets")?.body).toMatchObject({ initiator: "acme_hr" });
-    expect(org().tickets.get("2026-09-02-audit-the-calendar")).toMatchObject({
-      initiator: "acme_hr",
-    });
+    expect(lastRequest("POST", "/tickets")?.body).toMatchObject({ slug: "launch-the-site" });
+    expect(org().tickets.has("2026-09-02-launch-the-site")).toBe(true);
   });
 
   it("create takes the whole body from --body-file; --goal with it, --criteria without it and a bad priority are refused", async () => {
@@ -615,12 +618,13 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     }
   });
 
-  it("move / assign / block / unblock / progress send their bodies with the session id", async () => {
+  it("move / assign / block / unblock / progress send their bodies with the caller's identity", async () => {
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site", owner: "agent:dev1" });
     expect(await cli(["org", "ticket", "move", "2026-09-02-site", "--to", "in_progress"])).toBe(0);
     expect(lastRequest("POST", "/tickets/2026-09-02-site/move")?.body).toEqual({
       status: "in_progress",
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketMoved("2026-09-02-site", "in_progress")}\n`);
     expect(await cli(["org", "ticket", "move", "2026-09-02-site", "--to", "bogus"])).toBe(1);
@@ -636,6 +640,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     expect(lastRequest("PUT", "/tickets/2026-09-02-site")?.body).toEqual({
       owner: "agent:ceo",
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketAssigned("2026-09-02-site", "agent:ceo")}\n`);
 
@@ -656,6 +661,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
       reason: "waiting for keys",
       by: "user:admin",
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketBlocked("2026-09-02-site")}\n`);
     expect(org().tickets.get("2026-09-02-site")).toMatchObject({
@@ -667,6 +673,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     expect(await cli(["org", "ticket", "unblock", "2026-09-02-site"])).toBe(0);
     expect(lastRequest("POST", "/tickets/2026-09-02-site/unblock")?.body).toEqual({
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(org().tickets.get("2026-09-02-site")!.blocked).toBeUndefined();
     expect(out()).toBe(`${t.org.ticketUnblocked("2026-09-02-site")}\n`);
@@ -676,15 +683,19 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     expect(lastRequest("POST", "/tickets/2026-09-02-site/progress")?.body).toEqual({
       text: "half done",
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.progressRecorded("2026-09-02-site")}\n`);
-    expect(org().tickets.get("2026-09-02-site")!.progress).toEqual([
-      expect.objectContaining({ by: "agent:dev1", text: "half done", sessionId: DESK_SESSION }),
-    ]);
+    // The section is prose; who wrote it is the history entry beside it.
+    expect(org().tickets.get("2026-09-02-site")!.progress).toEqual(["half done"]);
+    expect(
+      (org().tickets.get("2026-09-02-site")!.history as Array<{ by: string }>).at(-1),
+    ).toMatchObject({ by: "agent:dev1", action: "progress", note: "half done" });
   });
 
-  it("outside a session the writes carry no session id", async () => {
+  it("outside a session and outside an Agent the writes carry no identity", async () => {
     delete process.env.PENGUIN_SESSION_ID;
+    delete process.env.PENGUIN_AGENT_ID;
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site" });
     expect(await cli(["org", "ticket", "progress", "2026-09-02-site", "-m", "note"])).toBe(0);
     expect(lastRequest("POST", "/tickets/2026-09-02-site/progress")?.body).toEqual({
@@ -743,8 +754,10 @@ describe("penguin org ticket (writes carry the calling session)", () => {
   it("attach defaults to the calling session, resolves a fragment, and needs one of the two", async () => {
     server.addTicket("acme", { ticketId: "2026-09-02-site", title: "Site" });
     expect(await cli(["org", "ticket", "attach", "2026-09-02-site"])).toBe(0);
+    // `sessionId` is the Session to attach; the Agent id is what says who attached it.
     expect(lastRequest("POST", "/tickets/2026-09-02-site/attach")?.body).toEqual({
       sessionId: DESK_SESSION,
+      agentId: "dev1",
     });
     expect(out()).toBe(`${t.org.ticketAttached("2026-09-02-site", DESK_SESSION)}\n`);
 
@@ -754,6 +767,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     );
     expect(lastRequest("POST", "/tickets/2026-09-02-site/attach")?.body).toEqual({
       sessionId: "session-2026-09-02-10-00-00-abcd0002",
+      agentId: "dev1",
     });
     expect(org().tickets.get("2026-09-02-site")!.sessions).toEqual([
       DESK_SESSION,
@@ -765,7 +779,7 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     expect(err()).toContain("--session");
   });
 
-  it("ls filters locally by column, owner and blocked state; show prints the figures, then the file", async () => {
+  it("ls filters locally by column, owner and blocked state; show prints fields, prose and history", async () => {
     server.addTicket("acme", {
       ticketId: "2026-09-02-site",
       title: "Site",
@@ -773,6 +787,8 @@ describe("penguin org ticket (writes carry the calling session)", () => {
       owner: "agent:dev1",
       priority: "P0",
       sessions: [DESK_SESSION],
+      history: [{ at: "2026-09-02T10:00:00Z", by: "agent:dev1", action: "created" }],
+      progress: ["scaffolded the site"],
       running: true,
       cost: 0.12,
       rolledUpCost: 0.3,
@@ -813,15 +829,17 @@ describe("penguin org ticket (writes carry the calling session)", () => {
     text = out();
     expect(text).toContain(t.org.ticketHead("2026-09-02-site", "in_progress", true, undefined));
     expect(text).toContain(t.org.ticketFigures("$0.1200", "$0.3000", 1, 0));
-    expect(text).toContain("# Ticket: Site");
-    expect(text).toContain("Owner: agent:dev1");
+    expect(text).toContain(`${t.org.ticketFields().title}: Site`);
+    expect(text).toContain(`${t.org.ticketFields().owner}: agent:dev1`);
+    expect(text).toContain("## Progress\n- scaffolded the site");
+    expect(text).toContain(`${t.org.ticketHistory()}\n2026-09-02T10:00:00Z agent:dev1 created`);
 
     stdout.length = 0;
     expect(await cli(["org", "ticket", "show", "2026-09-02-site", "--json"])).toBe(0);
     expect(JSON.parse(out())).toMatchObject({
       ticketId: "2026-09-02-site",
       running: true,
-      body: expect.stringContaining("# Ticket: Site") as string,
+      body: expect.stringContaining("---\ntitle: Site") as string,
     });
     expect(await cli(["org", "ticket", "show", "2026-09-02-nope"])).toBe(1);
     expect(err()).toContain("ticket_not_found");

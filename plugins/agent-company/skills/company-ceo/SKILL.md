@@ -16,7 +16,7 @@ If the message only names this skill without a concrete request, ask what the CE
 A ticket is the organization's unit of collective work; the mission becomes a tree of tickets, and the tree is what the board reads.
 
 - One **parent ticket per project-level goal**: `--goal` the outcome, `--criteria` how the board will know it is reached, `--due` when the mission has a date. Its owner is you or the employee who leads that stream. `--goal` names the inputs it relies on — specs, data, prior deliverables — by full path, and `--criteria` names the deliverables it expects by full path, so nobody has to ask where a file is.
-- Filing on behalf of the board or of an employee: pass `--initiator <principal>` (an Agent id, or `agent:`/`user:` for the principal it is filed for), so the ticket records who asked for it rather than who typed the command.
+- **One owner per ticket.** `--owner <principal>` (an Agent id, or `agent:`/`user:`) names the one principal responsible; without it the ticket is yours. Who filed it is not a field — it is the `created` entry of the ticket's `history`, written from the environment your command ran in, so there is nothing to pass.
 - **Child tickets per stream of work** (`--parent <parent_id>`), each small enough for one ticket session to finish, each with acceptance criteria a reviewer can check without reading a transcript. `--priority P0` for what blocks everything else; `P2` is the default.
 - New tickets land in `proposed`. Accepting one (`move --to in_progress`) is a decision — yours, the owner's superior's or a human's. Assign the owner when you accept: their desk hears about it in its next sweep's Since-your-last-sweep list and picks the ticket up there.
 - **You file and assign; the owner's desk starts the work.** An employee may open a ticket session only on a ticket it owns — the server answers `403 not_ticket_owner` otherwise — so hand work over with `penguin org ticket assign <ticket_id> --owner agent:<employee>` and let that desk start the session in its next sweep, or sooner if you @-mention it in a channel. Run `penguin org ticket start` only for the tickets you own yourself.
@@ -28,9 +28,11 @@ penguin org ticket create --title "Launch the marketing site" --goal "A public s
 penguin org ticket create --title "Site: content" --goal "Copy for every page" --criteria "Reviewed by the CEO" \
   --parent 2026-09-01-launch-the-marketing-site --owner agent:<org_id>_writer
 penguin org ticket move 2026-09-01-site-content --to in_progress
+# A title with no English words in it yields no slug; name the id yourself:
+penguin org ticket create --title "上线站点" --goal "…" --slug launch-the-site
 ```
 
-A ticket's cost is the cost of its contributing sessions, rolled up along `Parent`; `penguin org finance` shows each parent's total, so the tree is also the budget's structure.
+A ticket's cost is the cost of its contributing sessions, rolled up along `parent`; `penguin org finance` shows each parent's total, so the tree is also the budget's structure.
 
 ## Hiring
 
@@ -107,10 +109,10 @@ penguin org calendar add finance-weekly --agent-id <org_id>_finance --prompt "Ru
 
 `review` is where owners put finished work. Review against `## Acceptance criteria` and the artifacts in the workspace, then:
 
-- `penguin org ticket move <id> --to done` when the criteria hold — the `Notify` list and the initiator hear about it;
+- `penguin org ticket move <id> --to done` when the criteria hold — the `notify` list and the owner hear about it in their own next sweep; nothing is posted in a channel, because the board is read from the board;
 - `penguin org ticket move <id> --to rejected --reason "<what is missing>"` when they do not; the reason lands in `## Result`. Work worth retrying gets a new child ticket, or the owner writes a progress line and moves the ticket back to `in_progress`;
 - a ticket that has sat `in_progress` without a progress line for days is either blocked (ask the owner to `block` it with a reason) or abandoned (reassign it);
-- a ticket moved to `review` with an empty `Sessions` line was done at somebody's desk: send it back with a progress line asking for a ticket session, because no work belongs at a desk.
+- a ticket moved to `review` with an empty `sessions` list was done at somebody's desk: send it back with a progress line asking for a ticket session, because no work belongs at a desk. The ticket's `history` is where you read who did what and when — `penguin org ticket show <id>` prints it under `History:`.
 
 Use `penguin org show` for the board counts and the budget before every sweep; a growing `review` column means you are the bottleneck.
 

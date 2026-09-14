@@ -328,12 +328,13 @@ export interface Messages {
     ownerFilter: string;
     blockedFilter: string;
     ticketTitle: string;
-    /** create's --initiator: file the ticket in another principal's name. */
-    ticketInitiator: string;
+    /** create's --slug: the words of the ticket id, for a title that yields none. */
+    ticketSlug: string;
     goal: string;
     criteria: string;
     /** --body-file: the whole Markdown body from a file (XOR --goal). */
     bodyFile: string;
+    /** --owner: the ONE responsible principal; defaults to the caller on `create`. */
     owner: string;
     parent: string;
     /** --notify: principals told when the ticket ends, comma-separated. */
@@ -459,6 +460,21 @@ export interface Messages {
       blocked: string | undefined,
     ): string;
     ticketFigures(cost: string, rolledUp: string, sessions: number, children: number): string;
+    /** `ticket show`: the labels of the ticket's frontmatter fields, above the prose sections. */
+    ticketFields(): Record<
+      | "title"
+      | "owner"
+      | "parent"
+      | "notify"
+      | "priority"
+      | "due"
+      | "blocked"
+      | "blockedBy"
+      | "sessions",
+      string
+    >;
+    /** `ticket show`: the heading above the operation history; the actions themselves stay in English. */
+    ticketHistory(): string;
     /**
      * A `system` line rendered from its structured notice, in the reader's language; a kind
      * this build does not know falls back to the message's English `text`.
@@ -1119,11 +1135,11 @@ const en: Messages = {
     ownerFilter: "Only tickets owned by this principal (agent:<id> / user:<id>)",
     blockedFilter: "Only blocked tickets",
     ticketTitle: "Ticket title",
-    ticketInitiator: "File the ticket as this employee (an Agent id, or an agent:/user: principal)",
+    ticketSlug: "The ticket id's words: lowercase English words joined by hyphens",
     goal: "The goal, naming every input it relies on by full path (mutually exclusive with --body-file)",
     criteria: "Acceptance criteria, naming the expected deliverables by full path (with --goal)",
     bodyFile: "Read the whole Markdown body from this file (the header is still generated)",
-    owner: "Owner principal (agent:<id> / user:<id>)",
+    owner: "The responsible principal (agent:<id> / user:<id>); defaults to you on create",
     parent: "Parent ticket id",
     notify: "Principals notified when the ticket ends, comma-separated",
     priority: "Priority: P0, P1 or P2",
@@ -1223,6 +1239,18 @@ const en: Messages = {
       `Ticket ${ticketId}: ${status}${running ? ", running" : ""}${blocked !== undefined ? `, blocked (${blocked})` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `Cost ${cost} (rolled up ${rolledUp}), ${sessions} sessions, ${children} child tickets`,
+    ticketFields: () => ({
+      title: "Title",
+      owner: "Owner",
+      parent: "Parent",
+      notify: "Notify",
+      priority: "Priority",
+      due: "Due",
+      blocked: "Blocked",
+      blockedBy: "Blocked by",
+      sessions: "Sessions",
+    }),
+    ticketHistory: () => "History:",
     notices: {
       employee_joined: (p) => `${p.agent} joined as ${p.title}, reporting to ${p.reportsTo}.`,
       employee_left: (p) => `${p.agent} left the organization; reports now go to ${p.reportsTo}.`,
@@ -1863,11 +1891,11 @@ const zh: Messages = {
     ownerFilter: "只看该负责人的工单（agent:<id> / user:<id>）",
     blockedFilter: "只看被阻塞的工单",
     ticketTitle: "工单标题",
-    ticketInitiator: "以该员工（Agent id 或 agent:/user: 主体）名义创建工单",
+    ticketSlug: "工单 id 的词：小写英文单词，用连字符连接",
     goal: "目标，所依赖的输入一律写完整路径（与 --body-file 互斥）",
     criteria: "验收标准，预期交付物一律写完整路径（与 --goal 配合）",
     bodyFile: "从文件读取整个 Markdown 正文（头部仍由服务端生成）",
-    owner: "负责人（agent:<id> / user:<id>）",
+    owner: "负责人（agent:<id> / user:<id>）；create 时缺省为调用方",
     parent: "父工单 id",
     notify: "工单结束时通知的对象，逗号分隔",
     priority: "优先级：P0、P1 或 P2",
@@ -1962,6 +1990,18 @@ const zh: Messages = {
       `工单 ${ticketId}：${status}${running ? "，运行中" : ""}${blocked !== undefined ? `，已阻塞（${blocked}）` : ""}`,
     ticketFigures: (cost, rolledUp, sessions, children) =>
       `成本 ${cost}（含子工单 ${rolledUp}），贡献会话 ${sessions} 个，子工单 ${children} 个`,
+    ticketFields: () => ({
+      title: "标题",
+      owner: "负责人",
+      parent: "父工单",
+      notify: "通知",
+      priority: "优先级",
+      due: "截止",
+      blocked: "阻塞原因",
+      blockedBy: "阻塞于",
+      sessions: "贡献会话",
+    }),
+    ticketHistory: () => "操作历史：",
     notices: {
       employee_joined: (p) => `${p.agent} 加入，职位 ${p.title}，汇报给 ${p.reportsTo}。`,
       employee_left: (p) => `${p.agent} 已离开组织，其汇报关系转由 ${p.reportsTo} 承接。`,
