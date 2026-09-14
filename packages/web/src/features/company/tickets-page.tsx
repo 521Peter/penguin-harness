@@ -5,10 +5,12 @@
  * and a blocked-only switch, drag-and-drop between columns that confirms the move (a move
  * into rejected asks for a one-line reason) before posting it, the detail drawer, the create
  * form, and the tickets and files the server could not accept.
- * A card is the drag handle and nothing else: the detail opens from the card's own corner
- * button, so a click always says where it lands. What a card deliberately does not carry is
- * the session count, the cost and any live session status — those are the drawer's, and a
- * ticket is not the place to watch a session run.
+ * The whole card is the drag handle, and its title is the one click target: the title is a
+ * text button that opens the detail, the rest of the card is inert, and a drag never fires a
+ * click — so dragging anywhere (the title included) moves the ticket while clicking the title
+ * opens it. What a card deliberately does not carry is the session count, the cost and any
+ * live session status — those are the drawer's, and a ticket is not the place to watch a
+ * session run.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
  * as drop zones — with a one-line note above them while the organization has no tickets at
  * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
@@ -49,9 +51,9 @@ import { OrgPage, useOrg } from "./org-layout";
 import {
   BlockedBadge,
   INVALID_ICON,
-  JumpButton,
   PrincipalChip,
   PriorityBadge,
+  TitleButton,
   principalLabel,
 } from "./shared";
 import {
@@ -209,7 +211,7 @@ export function TicketsPage() {
     },
   });
 
-  /** A card: the title first, then what decides its urgency, then where it hangs and who holds it. */
+  /** A card: the title first (the button that opens it), then what decides its urgency, then where it hangs and who holds it. */
   const card = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
     return (
@@ -233,20 +235,19 @@ export function TicketsPage() {
         } ${drag?.ticketId === t.ticketId ? "opacity-50" : ""}`}
       >
         <div className="flex items-start gap-1.5">
-          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+          <TitleButton
+            title={S.company.tickets.openTicket}
+            className="line-clamp-2 flex-1 text-[13px] font-medium leading-snug text-gray-900 dark:text-gray-100"
+            onClick={() => openTicket(t.ticketId)}
+          >
             {t.title}
-          </span>
+          </TitleButton>
           {t.invalid !== undefined && (
             <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} title={t.invalid}>
               <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
           )}
-          <JumpButton
-            label={S.company.tickets.open}
-            className="mt-0.5"
-            onClick={() => openTicket(t.ticketId)}
-          />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
           <PriorityBadge priority={t.priority} />
@@ -421,12 +422,14 @@ export function TicketsPage() {
               </p>
               <ul className="mb-2 space-y-0.5">
                 {invalids.map((t) => (
-                  <li key={t.ticketId} className="flex items-baseline gap-1.5">
-                    <span className="font-mono">{t.ticketId}</span>
-                    <JumpButton
-                      label={S.company.tickets.openTicket}
+                  <li key={t.ticketId} className="flex items-baseline">
+                    <TitleButton
+                      title={S.company.tickets.openTicket}
+                      className="shrink-0 font-mono"
                       onClick={() => openTicket(t.ticketId)}
-                    />
+                    >
+                      {t.ticketId}
+                    </TitleButton>
                     <span className="min-w-0">: {t.invalid}</span>
                   </li>
                 ))}

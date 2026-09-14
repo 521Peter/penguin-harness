@@ -1,11 +1,13 @@
 /**
  * The company pages carry no whole-area click targets.
  *
- * A card, a row, a heading or a panel is never itself the link. Navigation is an explicit
- * control — a small icon button or a text button at the end of the row, named for where it goes —
- * because a silently clickable surface swallows the controls that live inside it and leaves a
- * reader guessing what a click will do. The rule came out of the company pages, where a whole
- * card, a whole row and a bare heading had each grown a click of its own.
+ * A card, a row, a heading or a panel is never itself the link — but a row's or a card's *title*
+ * is: the title renders as a text button that opens what it names, and the surface around it
+ * stays inert (on the ticket board it stays the drag handle). A row with no title of its own
+ * carries a small named icon button instead. What the rule rules out is the silently clickable
+ * surface, which swallows the controls living inside it and leaves a reader guessing what a
+ * click will do. It came out of the company pages, where a whole card, a whole row and a bare
+ * heading had each grown a click of its own.
  *
  * The three shapes that smell of it and are mechanically visible: an `onClick` on a host element
  * that is not a control, a `role="button"` / `role="link"` on a container, and a `cursor-pointer`
@@ -14,9 +16,10 @@
  * remembered, with the TypeScript parser, since whether the handler sits on the `<div>` or on the
  * `<button>` inside it is a question a regex over the file cannot answer.
  *
- * Out of the check's reach, and still on the rule: a `<button>` that wraps a whole row (nothing in
- * the syntax says how much of the row it covers), and a click handler passed down as a prop. Those
- * are on the reviewer.
+ * A `<button>` around a title is a control host and passes, which is the point — the check is
+ * about where the handler sits, not about whether a surface navigates at all. Out of its reach,
+ * and still on the rule: a `<button>` that wraps a whole row (nothing in the syntax says how much
+ * of the row it covers), and a click handler passed down as a prop. Those are on the reviewer.
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";

@@ -2,8 +2,9 @@
  * Small pieces every organization page shares: the organization's status pill and dot, the
  * budget bar and ring, the budget field and the two marks a budget box wears (its unit, and
  * what a converted amount will be stored as), the ticket status and priority pills, the
- * blocked badge, the failed-refresh line, the button that jumps from a summary card or row to
- * what it summarizes, the labelled value and the bordered KPI tile, and principal naming.
+ * blocked badge, the failed-refresh line, the two ways out of a summary — the title that
+ * opens what it names, and the corner button a titleless card or row uses instead — the
+ * labelled value and the bordered KPI tile, and principal naming.
  * Every status colour here is a tone from lib/tone.ts, picked by meaning.
  */
 import { useId } from "react";
@@ -39,14 +40,16 @@ export const INVALID_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v4m0 4h.0
 const JUMP_ICON = "M7 7h10v10M7 17 17 7";
 
 /**
- * The one explicit way out of a summary: a flat glyph button that opens the page, the ticket or
- * the session the thing beside it stands for, named for its destination ("Open the org chart",
- * 「查看工单」). It sits in a summary card's corner and at the end of a summary row.
+ * The way out of a card or a row that has no title to click: a flat glyph button that opens the
+ * page, the session or the ticket the thing beside it stands for, named for its destination
+ * ("Open the org chart", 「查看工单」). It sits in a KPI card's corner and at the end of a
+ * titleless row.
  *
  * Neither the card nor the row is itself the link. A whole-area click swallows the controls
  * living inside it and leaves a reader guessing where the click would land, so the surface stays
  * inert and the navigation is this button — always drawn, never revealed on hover, since a
- * control that appears only under a pointer cannot be reached by touch at all.
+ * control that appears only under a pointer cannot be reached by touch at all. Where the thing
+ * does have a title, TitleButton carries the jump instead and this button is not drawn at all.
  */
 export function JumpButton({
   label,
@@ -67,6 +70,40 @@ export function JumpButton({
       className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${className}`}
     >
       <GlyphIcon d={JUMP_ICON} size={ICON_SIZE.inlineGlyph} />
+    </button>
+  );
+}
+
+/**
+ * A title that opens what it names: the click target of a card or a row that has one. The
+ * title is the one part of a surface that already says where a click would land, so it is the
+ * link — a real button, focusable and underlined on hover — while the rest of the surface stays
+ * inert (or, on the ticket board, stays the drag handle). Where a row has no natural title,
+ * JumpButton is the way out instead.
+ *
+ * The visible text is the accessible name; `title` carries the destination as the tooltip, so
+ * the name is still the thing the reader sees.
+ */
+export function TitleButton({
+  onClick,
+  title,
+  className = "",
+  children,
+}: {
+  onClick: () => void;
+  /** The tooltip: what a click opens, e.g. 「打开工单」. */
+  title?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      {...(title !== undefined ? { title } : {})}
+      className={`min-w-0 text-left hover:underline focus-visible:underline ${className}`}
+    >
+      {children}
     </button>
   );
 }

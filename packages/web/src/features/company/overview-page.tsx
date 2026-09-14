@@ -7,9 +7,10 @@
  * what is stuck and what has landed, newest first), today's timeline with each instance's
  * outcome, and the budget alerts. Each reading is stated once: the spend lives in its KPI cell
  * alone, and nothing on this page is clickable as a whole — no card, no row, no heading. Every
- * jump is a named button: the corner button of a KPI cell, the JumpButton at the end of an
- * inbox / timeline / alert row, the counts under the board bar. The controls inside a card
- * stay clickable, and the destination is read rather than guessed.
+ * jump is a named control: in the three lists the row's title is the link (a text button, the
+ * rest of the row inert), and where there is no title to click — a KPI cell, the counts under
+ * the board bar — a named corner button carries it. The controls inside a card stay clickable,
+ * and the destination is read rather than guessed.
  * A brand-new organization (nobody hired, empty board) gets the three-step guide in place of
  * the sections, and the header then drops its "open the CEO's desk" button: the guide's first
  * step is that same call to action, and one screen carries a control once.
@@ -57,6 +58,7 @@ import {
   OrgStatusPill,
   PrincipalChip,
   SpendRing,
+  TitleButton,
   principalLabel,
 } from "./shared";
 import { agentPrincipal } from "./principals";
@@ -98,8 +100,8 @@ const INBOX_ICON: Record<InboxCategory, string> = {
 
 /**
  * A row of a section: full width, the content decides the rest. The row is inert — it carries
- * no click of its own and no hover wash that would imply one; where it leads somewhere, the
- * JumpButton at its end is the only thing that goes there.
+ * no click of its own and no hover wash that would imply one; where it leads somewhere, its
+ * title is the only thing that goes there.
  */
 const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm";
 
@@ -721,7 +723,17 @@ export function OverviewPage() {
                       </span>
                     </span>
                     <InboxDot row={row} />
-                    <span className="min-w-0 flex-1 truncate">{row.title}</span>
+                    <TitleButton
+                      className="flex-1 truncate"
+                      title={
+                        row.target.kind === "ticket"
+                          ? S.company.overview.openTicket
+                          : S.company.overview.openChannel
+                      }
+                      onClick={() => openInboxRow(row.target)}
+                    >
+                      {row.title}
+                    </TitleButton>
                     {row.detail !== undefined && (
                       <span className="hidden max-w-40 shrink-0 truncate text-xs text-gray-500 sm:inline dark:text-gray-400">
                         {row.detail}
@@ -733,14 +745,6 @@ export function OverviewPage() {
                     >
                       {row.time === null ? "—" : formatRelativeShort(row.time, locale)}
                     </span>
-                    <JumpButton
-                      label={
-                        row.target.kind === "ticket"
-                          ? S.company.overview.openTicket
-                          : S.company.overview.openChannel
-                      }
-                      onClick={() => openInboxRow(row.target)}
-                    />
                   </li>
                 ))}
               </ul>
@@ -749,7 +753,7 @@ export function OverviewPage() {
 
           {/* Today's timeline: a dot per instance on a rule, in the tone of its outcome. */}
           {/* No jump of its own: the KPI cell above carries the one button to the calendar,
-              and every row here opens it too. */}
+              and every row's title opens it too. */}
           <OrgSection title={S.company.overview.today} count={today.total} className="mt-8">
             {today.entries.length === 0 ? (
               <OrgEmptyLine>{S.company.overview.todayEmpty}</OrgEmptyLine>
@@ -767,17 +771,19 @@ export function OverviewPage() {
                         <span className="w-11 shrink-0 font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400">
                           {entry.at === null ? "—" : timeLabel(entry.at)}
                         </span>
-                        <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+                        <TitleButton
+                          className="flex-1 truncate"
+                          title={S.company.overview.openCalendar}
+                          onClick={() => page("calendar")}
+                        >
+                          {entry.title}
+                        </TitleButton>
                         <span className="hidden shrink-0 text-xs text-gray-500 sm:inline-flex dark:text-gray-400">
                           <PrincipalChip principal={agentPrincipal(entry.agentId)} names={names} />
                         </span>
                         <span className={`shrink-0 text-xs ${toneInk[tone]}`}>
                           {markLabel(entry.mark)}
                         </span>
-                        <JumpButton
-                          label={S.company.overview.openCalendar}
-                          onClick={() => page("calendar")}
-                        />
                       </div>
                     </li>
                   );
@@ -803,9 +809,13 @@ export function OverviewPage() {
               <ul className="space-y-0.5">
                 {detail.alerts.map((a) => (
                   <li key={`${a.agentId}/${a.period}`} className={rowClass}>
-                    <span className="min-w-0 flex-1 truncate">
+                    <TitleButton
+                      className="flex-1 truncate"
+                      title={S.company.overview.openFinance}
+                      onClick={() => page("finance")}
+                    >
                       <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
-                    </span>
+                    </TitleButton>
                     {a.pausedAt !== undefined ? (
                       <Badge tone="red">{S.company.finance.paused}</Badge>
                     ) : (
@@ -814,10 +824,6 @@ export function OverviewPage() {
                     <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                       {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}
                     </span>
-                    <JumpButton
-                      label={S.company.overview.openFinance}
-                      onClick={() => page("finance")}
-                    />
                   </li>
                 ))}
               </ul>

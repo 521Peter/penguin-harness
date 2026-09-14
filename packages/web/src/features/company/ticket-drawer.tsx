@@ -293,6 +293,12 @@ export function TicketDrawer({
       </div>
     );
 
+  /**
+   * One field of the summary grid. Every row is exactly one line tall, so labels and values
+   * line up down the column: anything taller than the line — the parent's jump button is the
+   * only such thing — pulls its own box back in with a negative margin rather than growing
+   * the row and pushing its label off the others' baseline.
+   */
   const row = (label: string, value: ReactNode) => (
     <>
       <dt className="whitespace-nowrap text-gray-500 dark:text-gray-400">{label}</dt>
@@ -378,8 +384,8 @@ export function TicketDrawer({
                     {detail.blocked}
                   </span>
                   {detail.blockedBy !== undefined && (
-                    <span className="inline-flex items-center gap-1">
-                      {S.company.tickets.blockedBy}:{" "}
+                    <span className="inline-flex items-center gap-1.5">
+                      <span>{S.company.tickets.blockedBy}:</span>
                       <PrincipalChip principal={detail.blockedBy} names={names} />
                     </span>
                   )}
@@ -473,6 +479,7 @@ export function TicketDrawer({
                           </span>
                           <JumpButton
                             label={S.company.tickets.openTicket}
+                            className="-my-1"
                             onClick={() => onOpenTicket(detail.parent!)}
                           />
                         </>
@@ -487,7 +494,7 @@ export function TicketDrawer({
                       detail.notify.length === 0 ? (
                         <span className="text-gray-400 dark:text-gray-500">{S.common.none}</span>
                       ) : (
-                        <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+                        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                           {detail.notify.map((p) => (
                             <PrincipalChip key={p} principal={p} names={names} />
                           ))}
