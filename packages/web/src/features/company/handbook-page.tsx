@@ -1,9 +1,10 @@
 /**
  * The organization handbook — `handbook/` in the organization directory, the company's
- * knowledge base — as two panes. Left, an explorer tree of the directory (handbook-explorer.tsx):
- * the index (`README.md`, the page every trigger makes the employee read first) pinned at the
- * top, then folders and documents nested as they are on disk, with one button that collapses
- * them all. Right, the selected document rendered as Markdown (anything else preformatted),
+ * knowledge base — as two panes. Left, the app's shared file tree over the directory
+ * (handbook-explorer.tsx, the same tree the Workspace panel and the plugin browser draw): the
+ * index (`README.md`, the page every trigger makes the employee read first) leading the rows,
+ * then folders and documents nested as they are on disk, with one button that collapses them
+ * all. Right, the selected document rendered as Markdown (anything else preformatted),
  * edited in place through a monospace textarea with save and cancel, and — for every document
  * but the index — deleted behind the shared confirmation. The new-document dialog refuses a
  * path the server would, starts from the selected document's own folder so a document lands
@@ -33,6 +34,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
+import type { TreeToggle } from "../../components/ui/file-tree";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { OrgEmptyLine, OrgPage, OrgSection, useOrg } from "./org-layout";
@@ -43,6 +45,7 @@ import {
   ancestorFolders,
   buildHandbookTree,
   completeHandbookPath,
+  handbookTreeRows,
   isHandbookPath,
   isMarkdownPath,
   newDocumentBody,
@@ -64,6 +67,8 @@ export function HandbookPage() {
   const [selected, setSelected] = useState(HANDBOOK_INDEX);
   /** The open folders of the tree, by path: a folder starts closed and is opened by hand. */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>());
+  /** The folder last opened or closed, so the tree animates that subtree and no other. */
+  const [toggled, setToggled] = useState<TreeToggle | null>(null);
   const [doc, setDoc] = useState<OrgHandbookFileResponse | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   /** Bumped to re-read the selected document (its retry) without changing the selection. */
@@ -81,6 +86,7 @@ export function HandbookPage() {
     setListError(null);
     setSelected(HANDBOOK_INDEX);
     setExpanded(new Set<string>());
+    setToggled(null);
     setEditing(false);
   }, [projectId, orgId]);
 
@@ -140,12 +146,19 @@ export function HandbookPage() {
     });
   }, [selected]);
 
-  const toggleFolder = (path: string) =>
+  const toggleFolder = (path: string) => {
+    // The serial makes toggling the same folder again a new event for the tree to animate.
+    setToggled((last) => ({
+      dir: path,
+      open: !expanded.has(path),
+      serial: (last?.serial ?? 0) + 1,
+    }));
     setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(path)) next.add(path);
       return next;
     });
+  };
 
   /** A write's effect on the listing, ahead of the re-read that confirms it. */
   const upsertFile = (file: OrgHandbookFile) =>
@@ -231,6 +244,10 @@ export function HandbookPage() {
   };
 
   const tree = useMemo(() => (files === null ? null : buildHandbookTree(files)), [files]);
+  const rows = useMemo(
+    () => (tree === null ? [] : handbookTreeRows(tree, expanded)),
+    [tree, expanded],
+  );
   const existing = useMemo(() => new Set((files ?? []).map((f) => f.path)), [files]);
   const selectedFile = files?.find((f) => f.path === selected) ?? null;
   const isIndex = selected === HANDBOOK_INDEX;
@@ -281,7 +298,11 @@ export function HandbookPage() {
                 title={S.company.handbook.collapseAll}
                 aria-label={S.company.handbook.collapseAll}
                 disabled={expanded.size === 0}
-                onClick={() => setExpanded(new Set<string>())}
+                onClick={() => {
+                  // Every folder at once is not one subtree shrinking: nothing to animate.
+                  setToggled(null);
+                  setExpanded(new Set<string>());
+                }}
                 className="inline-flex items-center justify-center rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
               >
                 <GlyphIcon d={COLLAPSE_ALL_ICON} size={ICON_SIZE.groupHeaderAction} />
@@ -293,11 +314,10 @@ export function HandbookPage() {
           }
         >
           <HandbookExplorer
-            index={tree.index}
-            nodes={tree.nodes}
+            rows={rows}
             selected={selected}
-            expanded={expanded}
             locale={locale}
+            toggled={toggled}
             onSelect={setSelected}
             onToggle={toggleFolder}
           />

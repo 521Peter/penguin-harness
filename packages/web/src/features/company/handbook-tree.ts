@@ -1,12 +1,14 @@
 /**
  * The handbook page's pure model (unit tested): the file listing shaped into the pinned index
- * and an explorer tree of folders and documents, with the walking a keyboard-driven tree needs
- * — the folders above a document, the rows an expanded set makes visible, how many documents a
- * subtree holds; the path rule the server enforces, mirrored so the new-document dialog refuses
- * a bad path before the request; the body a new document starts with; and how a relative link
- * inside one document resolves to another document of the handbook.
+ * and an explorer tree of folders and documents, then flattened into the shared file tree's
+ * rows (`lib/file-tree.ts`) for an expanded set — the index leading, a collapsed folder
+ * contributing one row and no children — plus the folders above a document and how many
+ * documents a subtree holds; the path rule the server enforces, mirrored so the new-document
+ * dialog refuses a bad path before the request; the body a new document starts with; and how a
+ * relative link inside one document resolves to another document of the handbook.
  */
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
+import type { FileTreeRow } from "../../lib/file-tree";
 
 /** The index, `handbook/README.md`: pinned first in the list, and the one file that cannot be deleted. */
 export const HANDBOOK_INDEX = "README.md";
@@ -130,29 +132,68 @@ export function ancestorFolders(path: string): string[] {
   return out;
 }
 
-/** One visible row: the node and how deep it sits, the top level being 0. */
-export interface HandbookRow {
-  node: HandbookNode;
-  depth: number;
+/** One rendered row: a shared file-tree row plus what the handbook shows beside a name. */
+export interface HandbookRow extends FileTreeRow {
+  /** The listing entry a document row stands for; null on a folder row. */
+  file: OrgHandbookFile | null;
+  /** Documents in a folder's subtree, however deep; 0 on a document row. */
+  docs: number;
+  /** The pinned index, which belongs to no folder and leads the list. */
+  isIndex: boolean;
 }
 
 /**
- * The rows in render order for a set of expanded folder paths — what the arrow keys walk. A
- * collapsed folder is one row and its children are none.
+ * The rows the explorer draws, top to bottom: the index first — it is the page every trigger
+ * makes the employee read, so it leads the top level rather than sorting into it — then a
+ * depth-first walk into every expanded folder. A collapsed folder is one row and its children
+ * are none, which is what lets a deep handbook cost nothing to render while it is closed.
+ *
+ * Nothing here is fetched per folder: the whole listing arrived in one response, so every
+ * folder row is loaded.
  */
-export function flattenVisible(
-  nodes: readonly HandbookNode[],
-  expanded: ReadonlySet<string>,
-  depth = 0,
-): HandbookRow[] {
-  const out: HandbookRow[] = [];
-  for (const node of nodes) {
-    out.push({ node, depth });
-    if (node.kind === "folder" && expanded.has(node.path)) {
-      out.push(...flattenVisible(node.children, expanded, depth + 1));
-    }
+export function handbookTreeRows(tree: HandbookTree, expanded: ReadonlySet<string>): HandbookRow[] {
+  const rows: HandbookRow[] = [];
+  // The index shares the top level with the first folders and documents, so it counts in that
+  // level's set: a flat run of treeitems has to state its own position and size.
+  const topSize = tree.nodes.length + (tree.index === null ? 0 : 1);
+  if (tree.index !== null) {
+    rows.push({
+      path: HANDBOOK_INDEX,
+      name: HANDBOOK_INDEX,
+      kind: "file",
+      depth: 0,
+      posInSet: 1,
+      setSize: topSize,
+      expanded: false,
+      loaded: true,
+      empty: false,
+      file: tree.index,
+      docs: 0,
+      isIndex: true,
+    });
   }
-  return out;
+  const walk = (nodes: readonly HandbookNode[], depth: number, offset: number): void => {
+    for (const [index, node] of nodes.entries()) {
+      const open = node.kind === "folder" && expanded.has(node.path);
+      rows.push({
+        path: node.path,
+        name: node.name,
+        kind: node.kind === "folder" ? "dir" : "file",
+        depth,
+        posInSet: offset + index + 1,
+        setSize: depth === 0 ? topSize : nodes.length,
+        expanded: open,
+        loaded: true,
+        empty: node.kind === "folder" && node.children.length === 0,
+        file: node.kind === "file" ? node.file : null,
+        docs: node.kind === "folder" ? countDocuments(node.children) : 0,
+        isIndex: false,
+      });
+      if (open && node.kind === "folder") walk(node.children, depth + 1, 0);
+    }
+  };
+  walk(tree.nodes, 0, tree.index === null ? 0 : 1);
+  return rows;
 }
 
 /** How many documents a set of nodes holds, however deep — what a folder row counts. */

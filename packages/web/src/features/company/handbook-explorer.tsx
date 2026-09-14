@@ -1,262 +1,80 @@
 /**
- * The handbook's file list as an explorer tree, the shape every editor's sidebar uses: the
- * index pinned at the top, then folders before documents at every level, each row indented by
- * its depth with a guide line back to its parent. A folder row toggles; a document row selects
- * and the pane beside it follows. Folders start collapsed — the page opens on the index, not on
- * the whole directory — and the ones above the selected document are expanded for it, so a link
- * followed inside a document reveals where that document lives.
+ * The handbook's file list, drawn by the app's shared `FileTree` — the same tree the
+ * conversation page's Workspace panel and the plugin library's file browser draw, so a reader
+ * who knows one knows this one: the same row height and indent, the same chevrons and folder /
+ * document glyphs, the same selection treatment, the same WAI-ARIA keyboard walk with one
+ * roving tab stop, and the same subtree animation on open and close.
  *
- * The tree is one tab stop with roving focus (`role="tree"`, one `treeitem` per row): the arrows
- * walk the rows that are actually visible, Right opens a folder or steps into it, Left closes it
- * or steps out to its parent, and Enter acts on the focused row. The rows are a flat run of
- * `treeitem`s carrying `aria-level`, which is what lets a collapsed folder cost nothing to render
- * and keeps the DOM order the reading order.
+ * What this file adds is the handbook's own semantics, which is all that is left once the
+ * drawing is shared: the index (`README.md`, the page every trigger makes the employee read
+ * first) leads the rows rather than sorting into them, and it is the one row whose accessible
+ * name says why — its visible text is only a file name. Beside a document's name sits how long
+ * ago it was written, beside a folder's how many documents it holds, and the whole path, the
+ * exact time and the size ride in the tooltip: a second line under one row's name would cost
+ * every row the same height for a fact about that one.
+ *
+ * The rows themselves are `handbook-tree.ts`'s (`handbookTreeRows`); folders start collapsed and
+ * the page expands the ones above the selected document.
  */
-import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { formatBytes, formatDateTime, formatRelativeShort } from "../../lib/format";
-import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import type { Locale } from "../../state/locale";
-import { Chevron } from "../../components/ui/chevron";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { FOLDER_ICON, FOLDER_OPEN_ICON } from "../../components/ui/group-list";
-import { FILE_ICON, NAV_ICONS } from "../../components/ui/icons";
-import { HANDBOOK_INDEX, ancestorFolders, countDocuments, flattenVisible } from "./handbook-tree";
-import type { HandbookNode } from "./handbook-tree";
+import { FileTree } from "../../components/ui/file-tree";
+import type { TreeToggle } from "../../components/ui/file-tree";
+import type { HandbookRow } from "./handbook-tree";
 
 /** Collapse-all mark (lucide chevrons-down-up): two chevrons closing on each other. */
 export const COLLAPSE_ALL_ICON = "m7 20 5-5 5 5M7 4l5 5 5-5";
 
-/** The row's left padding at depth 0, and how much one level adds. */
-const ROOT_INDENT = 8;
-const INDENT_STEP = 14;
-
-/** One rendered row: a node of the tree, or the pinned index, which belongs to no folder. */
-interface ExplorerRow {
-  path: string;
-  depth: number;
-  node: HandbookNode | null;
+/** How a row's tooltip spells "written then, this big"; empty for a row the listing has lost. */
+function writtenAt(file: OrgHandbookFile | null): string[] {
+  if (file === null) return [];
+  return [S.company.handbook.updatedAt(formatDateTime(file.updatedAt), formatBytes(file.size))];
 }
 
 export function HandbookExplorer({
-  index,
-  nodes,
+  rows,
   selected,
-  expanded,
   locale,
+  toggled,
   onSelect,
   onToggle,
 }: {
-  /** The index's listing entry, or null while the listing lacks it. */
-  index: OrgHandbookFile | null;
-  nodes: readonly HandbookNode[];
+  rows: readonly HandbookRow[];
   selected: string;
-  expanded: ReadonlySet<string>;
   locale: Locale;
+  /** The folder last opened or closed, whose subtree animates. Null: nothing to animate. */
+  toggled: TreeToggle | null;
   onSelect: (path: string) => void;
   onToggle: (path: string) => void;
 }) {
-  const rows: ExplorerRow[] = [
-    { path: HANDBOOK_INDEX, depth: 0, node: null },
-    ...flattenVisible(nodes, expanded).map((r) => ({
-      path: r.node.path,
-      depth: r.depth,
-      node: r.node,
-    })),
-  ];
-  // Roving focus: exactly one row is tabbable, and the arrows move it. It follows the selection
-  // so that tabbing into the tree lands on the document on screen rather than at the top.
-  const [active, setActive] = useState(selected);
-  useEffect(() => setActive(selected), [selected]);
-  const refs = useRef(new Map<string, HTMLButtonElement>());
-  const focused = rows.some((r) => r.path === active) ? active : (rows[0]?.path ?? HANDBOOK_INDEX);
-
-  const focus = (path: string) => {
-    setActive(path);
-    refs.current.get(path)?.focus();
-  };
-  const step = (delta: number) => {
-    const at = rows.findIndex((r) => r.path === focused);
-    const next = rows[Math.min(rows.length - 1, Math.max(0, at + delta))];
-    if (next !== undefined) focus(next.path);
-  };
-
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-    const row = rows.find((r) => r.path === focused);
-    if (row === undefined) return;
-    const folder = row.node !== null && row.node.kind === "folder" ? row.node : null;
-    const open = folder !== null && expanded.has(folder.path);
-    switch (e.key) {
-      case "ArrowDown":
-        step(1);
-        break;
-      case "ArrowUp":
-        step(-1);
-        break;
-      case "Home":
-        focus(rows[0]!.path);
-        break;
-      case "End":
-        focus(rows[rows.length - 1]!.path);
-        break;
-      case "ArrowRight":
-        if (folder === null) return;
-        if (open) step(1);
-        else onToggle(folder.path);
-        break;
-      case "ArrowLeft": {
-        if (open) {
-          onToggle(folder.path);
-          break;
-        }
-        const parents = ancestorFolders(row.path);
-        const parent = parents[parents.length - 1];
-        if (parent === undefined) return;
-        focus(parent);
-        break;
-      }
-      case "Enter":
-      case " ":
-        if (folder !== null) onToggle(folder.path);
-        else onSelect(row.path);
-        break;
-      default:
-        return;
-    }
-    e.preventDefault();
-  };
+  const tooltip = (row: HandbookRow): string =>
+    (row.kind === "dir"
+      ? [row.path, S.company.handbook.documentsInFolder(row.docs)]
+      : [row.path, ...(row.isIndex ? [S.company.handbook.indexLabel] : []), ...writtenAt(row.file)]
+    ).join(" · ");
 
   return (
-    <div role="tree" aria-label={S.company.handbook.documents} onKeyDown={onKeyDown}>
-      {rows.map((row) => (
-        <ExplorerRowButton
-          key={row.path}
-          row={row}
-          index={index}
-          selected={selected === row.path}
-          expanded={row.node?.kind === "folder" && expanded.has(row.path)}
-          tabbable={focused === row.path}
-          locale={locale}
-          register={(el) => {
-            if (el === null) refs.current.delete(row.path);
-            else refs.current.set(row.path, el);
-          }}
-          onActivate={() => {
-            setActive(row.path);
-            if (row.node?.kind === "folder") onToggle(row.path);
-            else onSelect(row.path);
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-/**
- * One row: the indent guides of the levels above it, its twisty (folders only), its glyph, its
- * name and, on the right, how long ago a document was written or how many documents a folder
- * holds. The whole path, the exact time and the size ride in the tooltip — and so does the
- * index's reason for being pinned, which the index row also carries in its accessible name: a
- * second line under one row's name costs every row the same height for a fact about that one,
- * and the same sentence is already visible in the pane beside it.
- */
-function ExplorerRowButton({
-  row,
-  index,
-  selected,
-  expanded,
-  tabbable,
-  locale,
-  register,
-  onActivate,
-}: {
-  row: ExplorerRow;
-  index: OrgHandbookFile | null;
-  selected: boolean;
-  expanded: boolean;
-  tabbable: boolean;
-  locale: Locale;
-  register: (el: HTMLButtonElement | null) => void;
-  onActivate: () => void;
-}) {
-  const node = row.node;
-  const folder = node !== null && node.kind === "folder" ? node : null;
-  const file = node === null ? index : node.kind === "file" ? node.file : null;
-  const name = node === null ? HANDBOOK_INDEX : node.name;
-  const style: CSSProperties = { paddingLeft: ROOT_INDENT + row.depth * INDENT_STEP };
-  const glyph =
-    folder !== null
-      ? expanded
-        ? FOLDER_OPEN_ICON
-        : FOLDER_ICON
-      : node === null
-        ? NAV_ICONS.orgHandbook
-        : FILE_ICON;
-  // The index row alone overrides its accessible name: its visible name is only a file name, and
-  // why that file is pinned above the tree is the part a screen reader would otherwise never
-  // reach now that it is a tooltip. Every other row says on screen everything it has to say.
-  const tooltip = (
-    folder !== null
-      ? [row.path, S.company.handbook.documentsInFolder(countDocuments(folder.children))]
-      : [
-          row.path,
-          ...(node === null ? [S.company.handbook.indexLabel] : []),
-          ...(file === null
-            ? []
-            : [
-                S.company.handbook.updatedAt(
-                  formatDateTime(file.updatedAt),
-                  formatBytes(file.size),
-                ),
-              ]),
-        ]
-  ).join(" · ");
-  return (
-    <button
-      type="button"
-      ref={register}
-      role="treeitem"
-      aria-level={row.depth + 1}
-      aria-selected={selected}
-      {...(folder !== null ? { "aria-expanded": expanded } : {})}
-      {...(node === null ? { "aria-label": tooltip } : {})}
-      tabIndex={tabbable ? 0 : -1}
-      title={tooltip}
-      onClick={onActivate}
-      style={style}
-      className={`relative flex w-full items-center ${ICON_GAP.row} rounded-md py-1.5 pr-2 text-left text-sm transition-colors duration-150 ${
-        selected
-          ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-          : "hover:bg-gray-100 dark:hover:bg-gray-800"
-      }`}
-    >
-      {/* The indent guides: one hairline per level above this row, at that level's twisty. */}
-      {Array.from({ length: row.depth }, (_, i) => (
-        <span
-          key={i}
-          aria-hidden
-          style={{ left: ROOT_INDENT + i * INDENT_STEP + 6 }}
-          className="absolute bottom-0 top-0 w-px bg-gray-200 dark:bg-gray-800"
-        />
-      ))}
-      <span className="flex w-3 shrink-0 justify-center text-gray-400 dark:text-gray-500">
-        {folder !== null && <Chevron open={expanded} size={ICON_SIZE.chevronDense} />}
-      </span>
-      <span
-        className={`shrink-0 ${selected ? "text-gray-700 dark:text-gray-200" : "text-gray-400 dark:text-gray-500"}`}
-      >
-        <GlyphIcon d={glyph} size={ICON_SIZE.rowLead} />
-      </span>
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      <span className="shrink-0 text-[11px] font-normal tabular-nums text-gray-400 dark:text-gray-500">
-        {folder !== null
-          ? countDocuments(folder.children)
-          : file === null
-            ? ""
-            : formatRelativeShort(file.updatedAt, locale)}
-      </span>
-    </button>
+    <FileTree
+      rows={rows}
+      label={S.company.handbook.documents}
+      selectedPath={selected}
+      toggled={toggled}
+      rowTitle={tooltip}
+      // Only the index overrides its name: every other row says on screen everything it means.
+      rowLabel={(row) => (row.isIndex ? tooltip(row) : undefined)}
+      rowTrailing={(row) => (
+        <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+          {row.kind === "dir"
+            ? row.docs
+            : row.file === null
+              ? ""
+              : formatRelativeShort(row.file.updatedAt, locale)}
+        </span>
+      )}
+      onToggleDir={onToggle}
+      onOpenFile={onSelect}
+    />
   );
 }

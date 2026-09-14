@@ -1,10 +1,10 @@
 /**
  * handbook-tree.ts unit tests: the listing shaped into the pinned index and a nested explorer
  * tree (folders before files at every level, each group ordered case-insensitively, the index
- * apart); the walking the tree view does — the folders above a document, the rows an expanded
- * set makes visible, how many documents a subtree holds; the path rule mirrored from the
- * server; what the new-document dialog sends for what was typed; the body a new document
- * starts with; and how a relative link inside a document resolves to another document.
+ * apart); the walking the tree view does — the folders above a document, the shared file-tree
+ * rows an expanded set makes visible, how many documents a subtree holds; the path rule
+ * mirrored from the server; what the new-document dialog sends for what was typed; the body a
+ * new document starts with; and how a relative link inside a document resolves to another.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgHandbookFile } from "@prismshadow/penguin-server/api";
@@ -15,7 +15,7 @@ import {
   completeHandbookPath,
   countDocuments,
   fileName,
-  flattenVisible,
+  handbookTreeRows,
   isHandbookPath,
   isMarkdownPath,
   newDocumentBody,
@@ -106,23 +106,34 @@ describe("ancestorFolders", () => {
   });
 });
 
-describe("flattenVisible", () => {
+describe("handbookTreeRows", () => {
   const tree = buildHandbookTree(MIXED);
 
-  it("shows only the top level while everything is collapsed", () => {
-    const rows = flattenVisible(tree.nodes, new Set());
-    expect(rows.map((r) => r.node.path)).toEqual([
+  it("leads with the index and shows only the top level while everything is collapsed", () => {
+    const rows = handbookTreeRows(tree, new Set());
+    expect(rows.map((r) => r.path)).toEqual([
+      HANDBOOK_INDEX,
       "decisions",
       "roles",
       "Brand.md",
       "conventions.md",
     ]);
     expect(rows.every((r) => r.depth === 0)).toBe(true);
+    // The index shares the top level, so it counts in that level\'s set.
+    expect(rows.map((r) => `${r.posInSet}/${r.setSize}`)).toEqual([
+      "1/5",
+      "2/5",
+      "3/5",
+      "4/5",
+      "5/5",
+    ]);
+    expect(rows.filter((r) => r.isIndex).map((r) => r.path)).toEqual([HANDBOOK_INDEX]);
   });
 
-  it("walks an expanded folder's children in place, one level deeper", () => {
-    const rows = flattenVisible(tree.nodes, new Set(["decisions", "decisions/2026"]));
-    expect(rows.map((r) => `${r.depth} ${r.node.path}`)).toEqual([
+  it("walks an expanded folder\'s children in place, one level deeper", () => {
+    const rows = handbookTreeRows(tree, new Set(["decisions", "decisions/2026"]));
+    expect(rows.map((r) => `${r.depth} ${r.path}`)).toEqual([
+      `0 ${HANDBOOK_INDEX}`,
       "0 decisions",
       "1 decisions/2026",
       "2 decisions/2026/09",
@@ -132,16 +143,46 @@ describe("flattenVisible", () => {
       "0 Brand.md",
       "0 conventions.md",
     ]);
+    // A nested level states its own size, and only the expanded folders report themselves open.
+    const nested = rows.find((r) => r.path === "decisions/2026")!;
+    expect(`${nested.posInSet}/${nested.setSize}`).toBe("1/3");
+    expect(rows.filter((r) => r.expanded).map((r) => r.path)).toEqual([
+      "decisions",
+      "decisions/2026",
+    ]);
   });
 
-  it("keeps a folder's children hidden while the folder above it is closed", () => {
-    const rows = flattenVisible(tree.nodes, new Set(["decisions/2026"]));
-    expect(rows.map((r) => r.node.path)).toEqual([
+  it("keeps a folder\'s children hidden while the folder above it is closed", () => {
+    const rows = handbookTreeRows(tree, new Set(["decisions/2026"]));
+    expect(rows.map((r) => r.path)).toEqual([
+      HANDBOOK_INDEX,
       "decisions",
       "roles",
       "Brand.md",
       "conventions.md",
     ]);
+  });
+
+  it("tells a folder row from a document row, and hands each what it shows beside its name", () => {
+    const rows = handbookTreeRows(tree, new Set(["decisions"]));
+    const decisions = rows.find((r) => r.path === "decisions")!;
+    expect(decisions.kind).toBe("dir");
+    expect(decisions.docs).toBe(3);
+    expect(decisions.file).toBeNull();
+    const doc = rows.find((r) => r.path === "conventions.md")!;
+    expect(doc.kind).toBe("file");
+    expect(doc.docs).toBe(0);
+    expect(doc.file?.path).toBe("conventions.md");
+    // The whole listing arrived in one response: no folder is ever still loading, and one
+    // built out of the paths of documents is never empty.
+    expect(rows.every((r) => r.loaded && !r.empty)).toBe(true);
+  });
+
+  it("draws no index row for a handbook whose index is gone", () => {
+    const rows = handbookTreeRows(buildHandbookTree([file("conventions.md")]), new Set());
+    expect(rows.map((r) => r.path)).toEqual(["conventions.md"]);
+    expect(rows[0]!.setSize).toBe(1);
+    expect(rows.some((r) => r.isIndex)).toBe(false);
   });
 });
 
