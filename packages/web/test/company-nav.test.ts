@@ -3,7 +3,8 @@
  * in rendered order, each with a zh label, an en label and a glyph — the sidebar, the rail
  * and the router all derive their rows from it), the `<projectId>/<orgId>` key, the
  * `/org/:projectId/:orgId/<page>` and `…/channels/:channelId` grammars, where `/org` lands
- * without an organization and where a freshly created one opens, the switcher's grouping by
+ * without an organization, where a freshly created one opens and which key the shell becomes
+ * current at when it does, the switcher's grouping by
  * Project, and the localStorage mirrors of the mode and the last organization (injectable
  * storage, forgettable, degrading to the defaults on anything unexpected).
  */
@@ -14,6 +15,7 @@ import {
   isOrgRoute,
   orgChannelPath,
   orgCreatedPath,
+  orgCreatedTarget,
   orgKey,
   orgPagePath,
   parseOrgKey,
@@ -124,6 +126,29 @@ describe("org keys and paths", () => {
       "/chat/s-1",
     );
     expect(orgCreatedPath({ projectId: "p1", orgId: "acme" })).toBe("/org/p1/acme/overview");
+  });
+
+  // The desk session is NOT one of the organization's own routes, so nothing on the way there
+  // would tell the shell which organization it is now inside: the key travels with the path.
+  it("names the organization the shell becomes current at beside the path it opens", () => {
+    expect(orgCreatedTarget({ projectId: "p1", orgId: "acme", ceoDeskSessionId: "s-1" })).toEqual({
+      key: "p1/acme",
+      path: "/chat/s-1",
+    });
+    expect(orgCreatedTarget({ projectId: "p1", orgId: "acme" })).toEqual({
+      key: "p1/acme",
+      path: "/org/p1/acme/overview",
+    });
+  });
+
+  // The key is the shell's own grammar, not the path's: a Project or an organization whose id
+  // needs escaping in a URL is still keyed by its plain ids, which is what parseOrgKey reads
+  // back and what the organization list is searched by.
+  it("keys the created organization by its plain ids while the path escapes them", () => {
+    const target = orgCreatedTarget({ projectId: "alice proj", orgId: "acme" });
+    expect(target.key).toBe("alice proj/acme");
+    expect(parseOrgKey(target.key)).toEqual({ projectId: "alice proj", orgId: "acme" });
+    expect(target.path).toBe("/org/alice%20proj/acme/overview");
   });
 
   it("tells organization routes from the shared chat route", () => {

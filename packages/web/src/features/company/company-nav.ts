@@ -2,7 +2,8 @@
  * Company mode's navigation manifest and route grammar (pure, unit tested): the six page
  * entries in rendered order, the `/org/:projectId/:orgId/<page>` paths they lead to, the
  * `/channels/:channelId` path of a channel, the `<projectId>/<orgId>` key the shell remembers
- * an organization by, and which organization `/org` resolves to when it is opened without
+ * an organization by, where a freshly created one opens and which key the shell becomes
+ * current at when it does, and which organization `/org` resolves to when it is opened without
  * naming one (the page it then opens is the overview, the first entry below). The sidebar,
  * the collapsed rail and the router all derive their rows from this file, so the covered
  * range is pinned here (and in the unit tests) rather than duplicated.
@@ -80,6 +81,23 @@ export function orgCreatedPath(created: {
   return created.ceoDeskSessionId !== undefined
     ? `/chat/${created.ceoDeskSessionId}`
     : orgPagePath(created.projectId, created.orgId, "overview");
+}
+
+/**
+ * What the shell adopts when an organization has just been created: the
+ * `<projectId>/<orgId>` key it becomes current at, and the path it opens. The two travel
+ * together because a creation lands in the CEO's desk session, which lives at
+ * `/chat/:sessionId` — not one of the organization's own routes, and those routes are the
+ * only thing that otherwise announces which organization the shell is inside. Without the
+ * key the sidebar would keep listing the previous organization's channels around the
+ * conversation the new one just opened.
+ */
+export function orgCreatedTarget(created: {
+  projectId: string;
+  orgId: string;
+  ceoDeskSessionId?: string;
+}): { key: string; path: string } {
+  return { key: orgKey(created.projectId, created.orgId), path: orgCreatedPath(created) };
 }
 
 /** Whether a location is inside company mode's own routes (a Session's own page is shared by both modes and is not). */

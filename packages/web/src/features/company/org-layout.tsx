@@ -31,8 +31,8 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { COMPANY_MODE_ICON } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
-import { orgCreatedPath, orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
-import { CreateOrganizationDialog } from "./org-dialogs";
+import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
+import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";
 
 export interface OrgContextValue {
@@ -116,8 +116,8 @@ export function OrgIndexRedirect() {
  * tallest card's.
  */
 function OrgEmptyLanding() {
-  const navigate = useNavigate();
   const company = useCompany();
+  const onOrgCreated = useOrganizationCreated();
   const [createOpen, setCreateOpen] = useState(false);
   /** The proposal the dialog opens filled in with; null when the plain create button opened it. */
   const [picked, setPicked] = useState<{ name: string; mission: string } | null>(null);
@@ -174,8 +174,7 @@ function OrgEmptyLanding() {
         onCreated={(detail) => {
           setCreateOpen(false);
           company.setWorkMode("company");
-          void company.reloadOrganizations();
-          navigate(orgCreatedPath(detail));
+          void onOrgCreated(detail);
         }}
       />
     </OrgCenteredFrame>
@@ -190,7 +189,7 @@ function OrgEmptyLanding() {
  */
 function OrgGone() {
   const navigate = useNavigate();
-  const company = useCompany();
+  const onOrgCreated = useOrganizationCreated();
   const [createOpen, setCreateOpen] = useState(false);
   return (
     <OrgCenteredFrame>
@@ -213,8 +212,7 @@ function OrgGone() {
         onClose={() => setCreateOpen(false)}
         onCreated={(detail) => {
           setCreateOpen(false);
-          void company.reloadOrganizations();
-          navigate(orgCreatedPath(detail));
+          void onOrgCreated(detail);
         }}
       />
     </OrgCenteredFrame>

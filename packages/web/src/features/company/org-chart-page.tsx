@@ -1,10 +1,13 @@
 /**
  * The org chart: the reporting line as a top-down tree with the CEO at the top centre
- * (layout in org-chart-tree.ts), each node an employee card (chart-card.tsx). The card
- * itself is inert: the kebab in its top-right corner is the one way in — it opens the desk
- * session, and holds the personnel actions below that: hire a subordinate, set budget,
- * change the reporting line, renew the desk (a fresh desk session, and the workspace it runs
- * in), leave. Every one of the personnel actions confirms before it writes the chart file.
+ * (layout in org-chart-tree.ts), each node an employee card (chart-card.tsx). The card has
+ * one menu and no other action: it opens the desk session, and holds the personnel actions
+ * below that — hire a subordinate, set budget, change the reporting line, renew the desk (a
+ * fresh desk session, and the workspace it runs in), leave. Every one of the personnel actions
+ * confirms before it writes the chart file. The card owns when that menu is open (three
+ * gestures reach it — see chart-card.tsx); this page only supplies the rows, against the
+ * panel's own close, and bumps `viewEpoch` whenever the canvas moves the cards out from under
+ * an open one.
  *
  * A card's state dot is NOT the chart's own `state`: that snapshot is re-read on organization
  * events, and a run ending publishes none of them, so an employee that finished would keep its
@@ -117,7 +120,6 @@ export function OrgChartPage() {
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.chart}` : S.nav.org.chart);
   const [chart, setChart] = useState<OrgChartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [hireFor, setHireFor] = useState<OrgEmployeeItem | null>(null);
   const [editFor, setEditFor] = useState<{ employee: OrgEmployeeItem; edit: EmployeeEdit } | null>(
     null,
@@ -127,6 +129,12 @@ export function OrgChartPage() {
   const [busy, setBusy] = useState(false);
   /** The view the reader moved to; null follows the fit, which is what the chart opens at. */
   const [view, setView] = useState<CanvasView | null>(null);
+  /**
+   * Bumped by every move of the view. A card's menu is anchored at a viewport point, and a
+   * pan or a zoom slides the card out from under it — neither a scroll nor a resize, so the
+   * panel cannot notice on its own; the cards close theirs when this moves.
+   */
+  const [viewEpoch, setViewEpoch] = useState(0);
   const [frame, setFrame] = useState<CanvasSize>({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   /** The canvas frame, held as state rather than in a ref: it mounts only once the chart has arrived, and the listeners below attach to it. */
@@ -178,7 +186,7 @@ export function OrgChartPage() {
 
   /** Every move of the view goes through here, so none of them can push the drawing off the frame. */
   const applyView = useCallback((next: CanvasView) => {
-    setMenuFor(null);
+    setViewEpoch((n) => n + 1);
     setView(clampView(next, live.current.frame, live.current.drawing));
   }, []);
 
@@ -272,7 +280,7 @@ export function OrgChartPage() {
         zoomStep(-1);
         break;
       case "0":
-        setMenuFor(null);
+        setViewEpoch((n) => n + 1);
         setView(null);
         break;
       case "ArrowLeft":
@@ -345,6 +353,7 @@ export function OrgChartPage() {
   const byId = new Map(chart.employees.map((e) => [e.agentId, e]));
 
   const menuRow = (
+    close: () => void,
     icon: string,
     label: string,
     onClick: () => void,
@@ -356,7 +365,7 @@ export function OrgChartPage() {
       className={danger ? overflowMenuDangerClass : overflowMenuRowClass}
       disabled={disabled}
       onClick={() => {
-        setMenuFor(null);
+        close();
         onClick();
       }}
     >
@@ -372,27 +381,28 @@ export function OrgChartPage() {
   );
 
   /* Opening the desk sits first and apart: it is where the reader goes, while everything
-     below it rewrites the chart file. */
-  const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean) => (
+     below it rewrites the chart file. `close` is the card's own panel dismissal — the card
+     owns the menu, since only it sees the gesture that opened one. */
+  const nodeMenu = (employee: OrgEmployeeItem, isCeo: boolean, close: () => void) => (
     <>
-      {menuRow(MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
+      {menuRow(close, MENU_ICONS.openDesk, S.company.openDesk, () => void openDesk(employee))}
       <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
-      {menuRow(MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
-      {menuRow(MENU_ICONS.budget, S.company.chart.setBudget, () =>
+      {menuRow(close, MENU_ICONS.hire, S.company.chart.hire, () => setHireFor(employee))}
+      {menuRow(close, MENU_ICONS.budget, S.company.chart.setBudget, () =>
         setEditFor({ employee, edit: "budget" }),
       )}
       {!isCeo &&
-        menuRow(MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
+        menuRow(close, MENU_ICONS.reportsTo, S.company.chart.changeReportsTo, () =>
           setEditFor({ employee, edit: "reportsTo" }),
         )}
-      {menuRow(MENU_ICONS.renewDesk, S.company.chart.renewDesk, () => setRenewFor(employee))}
+      {menuRow(close, MENU_ICONS.renewDesk, S.company.chart.renewDesk, () => setRenewFor(employee))}
       <div className="my-1 border-t border-gray-100 dark:border-gray-800" />
       {isCeo ? (
         <span className="block px-2.5 py-1.5 text-xs text-gray-400 dark:text-gray-500">
           {S.company.chart.ceoCannotLeave}
         </span>
       ) : (
-        menuRow(MENU_ICONS.leave, S.company.chart.leave, () => setLeaveFor(employee), true)
+        menuRow(close, MENU_ICONS.leave, S.company.chart.leave, () => setLeaveFor(employee), true)
       )}
     </>
   );
@@ -414,7 +424,7 @@ export function OrgChartPage() {
         title={S.company.chart.zoomFit}
         aria-label={`${S.company.chart.zoomFit} · ${percent}%`}
         onClick={() => {
-          setMenuFor(null);
+          setViewEpoch((n) => n + 1);
           setView(null);
         }}
         className="min-w-11 rounded-md px-1 py-1 text-center text-xs text-gray-600 tabular-nums transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
@@ -528,9 +538,8 @@ export function OrgChartPage() {
                     x={node.x}
                     y={node.y}
                     detached={node.detached}
-                    menuOpen={menuFor === node.id}
-                    setMenuOpen={(open) => setMenuFor(open ? node.id : null)}
-                    menu={nodeMenu(employee, isCeo)}
+                    viewEpoch={viewEpoch}
+                    menu={(close) => nodeMenu(employee, isCeo, close)}
                   />
                 );
               })}

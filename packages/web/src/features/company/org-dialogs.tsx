@@ -21,8 +21,13 @@
  * Failures stay inside the dialog: a rejected id lands under the id field, anything else in
  * a strip above the footer, and a settings load that fails offers its retry in place — the
  * fields never sit disabled behind a toast that has already gone.
+ *
+ * `useOrganizationCreated` is the other half of creating one: what every host of the create
+ * dialog does once it succeeds — adopt the organization as the shell's current one, then open
+ * where the creation leads.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 import type {
   ModelRefDto,
   ModelsResponse,
@@ -39,6 +44,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
+import { useCompany } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
@@ -49,10 +55,11 @@ import { Modal } from "../../components/ui/modal";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { ICON_GAP } from "../../lib/icon-scale";
-import { modelLabel } from "../chat/model-select";
+import { ModelSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
+import { orgCreatedTarget } from "./company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { ORG_EXAMPLES } from "./org-examples";
 import { SemanticIdField } from "./semantic-id-field";
@@ -111,10 +118,16 @@ function useProjectModels(projectId: string, open: boolean) {
 }
 
 /**
- * The model field: "Project default" (named after the default when the list says which it
- * is) or one of the configured models. Options carry the row's index so the paired reference
- * is never flattened into one string; a stored model that is no longer configured is kept as
- * its own row rather than silently replaced.
+ * The model field: the App's own model picker (ModelSelect in its form shape — the same
+ * searchable, grouped, key-configured-first panel the chat composer and the Project's
+ * default-model setting open), with this field's two extra states around it.
+ *
+ * Empty is a choice here, not a gap: it means "follow the Project's default", named after
+ * that default when the list says which model it is. The panel offers models only, so the
+ * way back to empty is the field's own control, which stands where the hint that describes
+ * it otherwise stands. A stored model that is no longer configured is kept rather than
+ * silently replaced — the trigger names the id as stored, with a line underneath saying the
+ * Project no longer lists it.
  */
 function ModelField({
   models,
@@ -130,8 +143,9 @@ function ModelField({
   disabled: boolean;
 }) {
   const list = models?.models ?? [];
-  const index = value === null ? -1 : list.findIndex((m) => sameModelRef(m, value));
-  const stale = value !== null && index === -1;
+  // Only once the list has actually arrived: an empty list is also what "still loading" and
+  // "could not be read" look like, and neither is evidence that the stored model is gone.
+  const stale = models !== null && value !== null && !list.some((m) => sameModelRef(m, value));
   const defaultInfo =
     models?.defaultModel === undefined
       ? undefined
@@ -143,37 +157,39 @@ function ModelField({
   const loading = models === null && loadError === null;
   return (
     <div>
-      {/* The "?" sits beside the field's own title (Select carries no info slot). */}
+      {/* The "?" sits beside the field's own title (the picker carries no info slot). */}
       <span className="mb-1 flex items-center gap-1">
         <FieldLabel block={false}>{S.company.modelField}</FieldLabel>
         <InfoPopover label={S.company.modelField}>{S.company.modelInfo}</InfoPopover>
       </span>
-      <Select
-        size="sm"
-        aria-label={S.company.modelField}
-        value={stale ? "stale" : index >= 0 ? String(index) : ""}
+      <ModelSelect
+        models={list}
+        value={value}
+        {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
+        onChange={onChange}
         disabled={disabled || loading}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v === "stale") return;
-          const picked = v === "" ? undefined : list[Number(v)];
-          onChange(
-            picked === undefined ? null : { provider: picked.provider, modelId: picked.modelId },
-          );
-        }}
-      >
-        <option value="">{loading ? S.common.loading : defaultLabel}</option>
-        {stale && <option value="stale">{value.modelId}</option>}
-        {list.map((m, i) => (
-          <option key={`${m.provider}:${m.modelId}`} value={String(i)}>
-            {modelLabel(m)}
-          </option>
-        ))}
-      </Select>
+        variant="form"
+        emptyLabel={loading ? S.common.loading : defaultLabel}
+      />
       {loadError !== null ? (
         <FieldError>{S.company.modelsLoadFailed}</FieldError>
-      ) : (
+      ) : value === null ? (
         <FieldHint>{S.company.modelHint}</FieldHint>
+      ) : (
+        <span className="mt-1 flex flex-wrap items-baseline gap-x-2">
+          {stale && (
+            <span className="text-xs text-gray-500 dark:text-gray-500">{S.company.modelStale}</span>
+          )}
+          {/* The hint's instruction, as the action that carries it out. */}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(null)}
+            className="text-xs text-gray-500 underline decoration-gray-300 underline-offset-2 transition-colors duration-150 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            {S.company.modelClear}
+          </button>
+        </span>
       )}
     </div>
   );
@@ -247,6 +263,37 @@ function MissionExamples({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * What a host of the create dialog does with a creation, in one place because all four of
+ * them — the switcher's menu, the empty sidebar, the empty landing and the "organization is
+ * gone" page — owe the shell the same two things.
+ *
+ * The new organization becomes the shell's current one BEFORE the navigation: creation opens
+ * the CEO's desk session, which lives at `/chat/:sessionId` and is therefore not one of the
+ * organization's own routes — and those routes are the only other thing that announces which
+ * organization the shell is inside. Without this the sidebar would go on listing the previous
+ * organization's channels and desks around the conversation the new one just opened.
+ *
+ * The organization list is refreshed first, and awaited: `setCurrentOrg` only says which key
+ * is open, and the switcher's label, the status dot and the page header all read the summary
+ * out of that list. A key the list does not hold yet would leave the shell naming nothing for
+ * as long as the refresh takes, and the settled-list check that forgets deleted organizations
+ * reads the same list.
+ */
+export function useOrganizationCreated(): (detail: OrganizationDetail) => Promise<void> {
+  const navigate = useNavigate();
+  const { reloadOrganizations, setCurrentOrg } = useCompany();
+  return useCallback(
+    async (detail: OrganizationDetail) => {
+      await reloadOrganizations();
+      const target = orgCreatedTarget(detail);
+      setCurrentOrg(target.key);
+      navigate(target.path);
+    },
+    [navigate, reloadOrganizations, setCurrentOrg],
   );
 }
 

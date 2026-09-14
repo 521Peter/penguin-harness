@@ -2522,6 +2522,8 @@ Scenarios:
     modelInfo:
       "The model desk and ticket sessions run on by default; an employee given its own model in the org chart uses that instead. Takes effect from the next work round.",
     modelHint: "Leave empty to use the Project's default model",
+    modelClear: "Back to the Project default",
+    modelStale: "This model is no longer in the Project's model list",
     modelProjectDefault: "Project default",
     modelProjectDefaultNamed: (name: string): string => `Project default (${name})`,
     modelsLoadFailed:
@@ -3068,6 +3070,7 @@ Scenarios:
         "The all-hands channel is created with the organization: everyone in the organization is here — every employee, every Project member, and you, reading along — nobody can leave it and it cannot be archived. System notices — budget alerts and the like — are posted here.",
       channelInfo:
         "An invitation-only channel: an employee joins only when a member invites it, and an @ delivers within the channel's membership. People may join any channel themselves, and can read every channel.",
+      allHandsNoArchive: "The all-hands channel cannot be archived",
       createTitle: "New channel",
       creating: "Creating…",
       created: "Channel created",

@@ -10,7 +10,8 @@
  * person, who is a Project member and therefore may join, archive and unarchive — and may
  * invite once it is in the channel itself. The all-hands channel is the one exception the UI
  * itself enforces — it cannot be left, archived, or have its membership edited, so those
- * controls are simply absent.
+ * controls are simply absent, the missing archive row named by one muted line in the menu.
+ * What that channel is stays in the header's "?", said once.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -518,9 +519,12 @@ export function ChannelHeader({
                   {S.company.channels.archive}
                 </button>
               ))}
+            {/* The all-hands channel simply has no archive row; one short line says why it is
+                missing. What that channel IS belongs to the header's "?", and repeating the
+                whole paragraph here made a menu out of an explanation. */}
             {allHands && detail.archived === false && (
               <p className="px-2.5 py-1.5 text-[11px] text-gray-400 dark:text-gray-500">
-                {S.company.channels.allHandsInfo}
+                {S.company.channels.allHandsNoArchive}
               </p>
             )}
           </Dropdown>
