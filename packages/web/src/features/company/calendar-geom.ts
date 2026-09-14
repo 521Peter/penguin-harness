@@ -3,7 +3,8 @@
  * the seven days of a week, the visible range of each view, stepping the anchor date, the
  * expansion of each event's `startAt` / `period` / `endAt` into the instances that fall in a
  * range, where an instance sits in a day column and which lane it takes when instances
- * overlap, and the cadence an event's `period` reads as in the legend. Everything is computed
+ * overlap, the cadence an event's `period` reads as in the legend, and how a legend entry
+ * draws under the employee filter. Everything is computed
  * on local calendar days through the Date API's local accessors, so a test built with
  * `new Date(y, m, d)` reads the same in every timezone.
  */
@@ -301,4 +302,18 @@ export function chipLanes<T extends { atMs: number; key: string }>(
   flush();
   out.sort((a, b) => a.item.atMs - b.item.atMs || a.item.key.localeCompare(b.item.key));
   return out;
+}
+
+/**
+ * How a legend entry draws under the employee filter. The legend doubles as the filter, so the
+ * state it is in has to be legible without hovering it: the employee being shown alone is
+ * pressed, and every other one is struck through, which is what says the others were switched
+ * off rather than simply not picked. With no filter nobody is struck — an unfiltered calendar
+ * shows every employee, and striking them all would say the opposite.
+ */
+export type LegendState = "pressed" | "struck" | "plain";
+
+export function legendState(filter: string, agentId: string): LegendState {
+  if (filter === "") return "plain";
+  return filter === agentId ? "pressed" : "struck";
 }
