@@ -26,7 +26,6 @@ import { AppearanceSection } from "./appearance-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
-import { SandboxSection } from "./sandbox-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -46,8 +45,6 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
-  /** Shield: confinement. */
-  sandbox: "M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z",
   /** Puzzle piece: plugins. */
   plugins:
     "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
@@ -94,7 +91,6 @@ export function SettingsDialog({
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
-    sandbox: S.settings.sandboxTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -107,7 +103,6 @@ export function SettingsDialog({
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
-    sandbox: S.settings.sandboxInfo,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -141,7 +136,6 @@ export function SettingsDialog({
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
-      {current === "sandbox" && <SandboxSection />}
       {current === "plugins" && <PluginsSection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
