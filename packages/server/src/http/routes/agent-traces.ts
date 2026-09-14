@@ -43,6 +43,7 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "active",
   "subagent",
   "schedule",
+  "benchmark",
   "archived",
 ];
 

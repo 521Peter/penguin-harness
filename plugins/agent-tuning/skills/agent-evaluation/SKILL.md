@@ -69,8 +69,11 @@ export PENGUIN_HOME
 penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
-  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" --approve allow-all
+  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" \
+  --approve allow-all --source benchmark
 ```
+
+`--source benchmark` files the Test Session under the Evaluations folder of the Web App's session list rather than the Test Agent's active conversations; never omit it.
 
 Use the exact requested Agent, Project, absolute Workspace path, and model pair. Never omit either model flag and never fall back to a Project default. If a launch fails, retry only when unchanged Workspace and Trace evidence proves that the Test Agent did not start. Every retry must follow a new diagnosis and apply a specific correction; never repeat an unchanged launch. Do not impose a numeric retry limit while distinct safe repairs remain. Return `evaluation_failed` when no new repair remains, external configuration is required, or it is unclear whether the Test Agent started.
 

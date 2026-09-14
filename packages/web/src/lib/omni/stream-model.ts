@@ -453,8 +453,8 @@ export interface NestedSessionMeta {
   agentId: string | null;
   provider: string;
   modelId: string;
-  /** Session origin as recorded by core (subagent / schedule); absent = user-created. */
-  source?: "subagent" | "schedule";
+  /** Session origin as recorded by core (subagent / schedule / benchmark); absent = user-created. */
+  source?: "subagent" | "schedule" | "benchmark";
 }
 
 export interface StreamModel {

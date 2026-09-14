@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   fork_count    INTEGER NOT NULL DEFAULT 0,          -- monotonically allocated child-fork number for this source Session; never decremented when a fork is deleted
   last_active_at TEXT,                               -- last activity this server drove for the session (ISO; stamped once when a run starts and once when it ends, initialized to created_at); monotonic, never moves backwards; NULL only before openDatabase's one-time backfill
   created_at    TEXT NOT NULL
-);                                            -- the schedule/subagent SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)
+);                                            -- the subagent/schedule/benchmark SOURCE is NOT stored: session_meta in the Trace is the single source of truth (see runtime/session-sources.ts); "client" is a different, DB-only axis (who created the row)
 CREATE INDEX IF NOT EXISTS idx_sessions_agent_created ON sessions(project_id, agent_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS usage_records (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,7 +174,7 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   session_id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,
-  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | NULL = user-created (or head not yet readable)
+  source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | 'benchmark' | NULL = user-created (or head not yet readable)
   workspace  TEXT NOT NULL DEFAULT '',
   title      TEXT,                           -- first-prompt fallback title (sessions.title always wins when present)
   provider   TEXT,                           -- model reference from session_meta (CLI adoption reads it from here; NULL = meta unreadable / legacy without provider)

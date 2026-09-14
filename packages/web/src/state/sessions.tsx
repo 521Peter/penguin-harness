@@ -4,8 +4,8 @@
  * the chat page shares this same data for status sync / title events / self-healing reload.
  *
  * **Paged per (Agent, category)**: the default load fetches only the **active** category
- * (user-created, non-archived) plus per-category totals — archived / subagent / schedule
- * Sessions are not loaded until their collapsed folder is opened. Each pair fetches
+ * (user-created, non-archived) plus per-category totals — archived / subagent / schedule /
+ * benchmark Sessions are not loaded until their collapsed folder is opened. Each pair fetches
  * SIDEBAR_PAGE_SIZE sessions per page (requesting one extra to detect "has more" — see
  * splitPage); `loadMoreFor` fetches a pair's first page when unloaded and the next page
  * otherwise (deduplicated by sessionId — new sessions shift server offsets), so every
@@ -229,7 +229,13 @@ export function createSessionsStore() {
       const workspaceCounts = get().workspaceCountsByAgent;
       const wsCur = workspaceCounts.get(agentId);
       if (wsCur) {
-        const ws = wsCur[workspace] ?? { active: 0, subagent: 0, schedule: 0, archived: 0 };
+        const ws = wsCur[workspace] ?? {
+          active: 0,
+          subagent: 0,
+          schedule: 0,
+          benchmark: 0,
+          archived: 0,
+        };
         const next = new Map(workspaceCounts);
         next.set(agentId, {
           ...wsCur,

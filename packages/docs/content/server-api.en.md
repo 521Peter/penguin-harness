@@ -255,7 +255,7 @@ Benchmarks hang off the Project, not off an Agent: one Benchmark evaluates as ma
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | List Sessions (including run state); every row is listed whichever client created it |
-| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter |
+| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter; `source` accepts only `"benchmark"` (a Benchmark evaluation or optimization), since `subagent` and `schedule` are set by the server itself |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
 On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.

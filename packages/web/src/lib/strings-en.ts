@@ -2140,6 +2140,7 @@ Scenarios:
     folderGroups: {
       subagent: (n: number) => `Subagents (${n})`,
       schedule: (n: number) => `Scheduled (${n})`,
+      benchmark: (n: number) => `Evaluations (${n})`,
       archived: (n: number) => `Archived (${n})`,
     },
     skillsBanner: (names: string[]): string =>

@@ -41,8 +41,8 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session. */
-export type SessionSource = "schedule" | "subagent";
+/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
+export type SessionSource = "schedule" | "subagent" | "benchmark";
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -1332,7 +1332,7 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * Session list category, the sidebar's five-way split applied server-side: archived wins
  * regardless of origin (archiving is an explicit user action), then the origin's bucket,
  * and a Session with no (or an unknown) source is `active` — user-created rows.
  */
@@ -1408,6 +1408,13 @@ export interface SessionCreateRequest {
    * serve every row regardless of client.
    */
   client?: "web" | "cli";
+  /**
+   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
+   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
+   * this value is accepted from a client: `subagent` and `schedule` are written by the server
+   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   */
+  source?: "benchmark";
 }
 
 export interface SessionCreateResponse {

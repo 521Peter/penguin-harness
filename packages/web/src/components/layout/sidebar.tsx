@@ -288,9 +288,9 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
 }
 
 /**
- * Open-state key of a collapsed folder (subagent / scheduled / archived) inside a group:
- * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
- * the composite never collides across groups or with plain group keys.
+ * Open-state key of a collapsed folder (subagent / scheduled / evaluations / archived) inside
+ * a group: each folder has its own state. "\0" never appears in Agent ids or Workspace paths,
+ * so the composite never collides across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
 
@@ -470,7 +470,7 @@ export function Sidebar({
     setGroupCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
-  /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  /** Expanded folders (subagent / scheduled / evaluations / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
@@ -683,6 +683,7 @@ export function Sidebar({
     active: rows,
     subagent: [],
     schedule: [],
+    benchmark: [],
     archived: [],
   });
 
@@ -1261,9 +1262,9 @@ export function Sidebar({
             scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
-            // archived) are ordered chronologically inside their folder and never pass
-            // through orderSessionRows, so a pin there would write an id, light the
-            // glyph, move nothing — and then shift the active list's drag partition.
+            // evaluations / archived) are ordered chronologically inside their folder and
+            // never pass through orderSessionRows, so a pin there would write an id, light
+            // the glyph, move nothing — and then shift the active list's drag partition.
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
@@ -1290,8 +1291,8 @@ export function Sidebar({
   );
 
   /**
-   * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
-   * fetched until the first expand, and once open the folder pages independently with
+   * Collapsed-by-default lazy folder (subagent / scheduled / evaluations / archived): nothing
+   * is fetched until the first expand, and once open the folder pages independently with
    * its own "More" row. Everything is driven by the group's **own** exact server share
    * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
    * mode): the folder exists only while its share is non-zero, the label shows that
@@ -1375,9 +1376,9 @@ export function Sidebar({
   /**
    * Expanded group body shared by both modes: active user rows (display-capped; "More"
    * reveals and loads further **active-only** pages — the folders below never feed it) +
-   * the collapsed-by-default subagent / scheduled / archived folders, each loading on
-   * first expand and paging on its own. `totals` / `agentsFor` carry the group's exact
-   * server share and its fetch fan-out set per category.
+   * the collapsed-by-default subagent / scheduled / evaluations / archived folders, each
+   * loading on first expand and paging on its own. `totals` / `agentsFor` carry the group's
+   * exact server share and its fetch fan-out set per category.
    */
   const renderGroupBody = (
     groupKey: string,
@@ -1480,8 +1481,8 @@ export function Sidebar({
         )}
 
         {/* Folders (collapsed by default): subagent first — spawned from the conversations
-            at hand — then scheduled background runs, then archived (archived wins over the
-            origin folders). */}
+            at hand — then scheduled background runs, then the Evaluation Center's runs, then
+            archived (archived wins over the origin folders). */}
         {folders}
       </>
     );

@@ -1,29 +1,27 @@
 /**
  * Plugin detail Modal — opened by clicking a library card (the model library's card-detail
- * pattern): the plugin's icon, full description, metadata line and hook points, then a file
- * browser over everything it ships — the shared `FileTree` on the left (one directory per
- * skill and one for the hook package, any number open at once) and a preview on the right.
- * The header and the tree never leave: opening a file fills the preview pane instead of
- * replacing the view, so the summary and the other files stay in sight while reading. The
- * files arrive in one request (GET /api/plugins/:plugin/files) when the Modal opens; a
- * markdown file renders through the chat markdown component with its frontmatter stripped,
- * anything else as a code block.
+ * pattern): the plugin's icon, full description, metadata line and hook points, then the
+ * shared read-only file browser over everything the plugin ships — one directory per skill
+ * and one for the hook package, any number open at once, and a preview on the right. The
+ * header and the tree never leave: opening a file fills the preview pane instead of replacing
+ * the view, so the summary and the other files stay in sight while reading. The files arrive
+ * in one request (GET /api/plugins/:plugin/files) when the Modal opens, so the whole tree is
+ * on hand at once and nothing here is fetched per directory.
  */
 import { useEffect, useState } from "react";
 import { Modal } from "../../components/ui/modal";
 import { Badge } from "../../components/ui/badge";
-import { FileTree } from "../../components/ui/file-tree";
+import { FileBrowser } from "../../components/ui/file-browser";
+import type { FileBrowserPreview } from "../../components/ui/file-browser";
 import type { TreeToggle } from "../../components/ui/file-tree";
 import type { FileTreeRow } from "../../lib/file-tree";
 import { PLUGIN_ICON } from "../../components/ui/icons";
-import { SkeletonList } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { baseName } from "../../lib/workspace-tree";
 import { useLocale } from "../../state/locale";
 import { getPluginFiles } from "../../api/endpoints";
 import type { PluginItem } from "@prismshadow/penguin-server/api";
-import { CodeBlock } from "../chat/code-block";
-import { Md } from "../chat/md";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedText } from "../chat/skill-use";
 
@@ -35,32 +33,16 @@ interface FileGroup {
   paths: string[];
 }
 
-/** SKILL.md carries its frontmatter; the reader shows the body only. */
-function stripFrontmatter(content: string): string {
-  return content.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
-}
-
-/** Highlighter language for a non-markdown file, by extension; plain text for the rest. */
-function languageFor(path: string): string {
-  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  return (
-    {
-      js: "javascript",
-      mjs: "javascript",
-      cjs: "javascript",
-      ts: "typescript",
-      json: "json",
-      yaml: "yaml",
-      yml: "yaml",
-      toml: "toml",
-      sh: "shellscript",
-      py: "python",
-      html: "html",
-      css: "css",
-      svg: "xml",
-      xml: "xml",
-    }[ext] ?? "text"
-  );
+/** The preview of one file, whose text the files response already carries. */
+function filePreview(path: string, text: string): FileBrowserPreview {
+  return {
+    path,
+    name: baseName(path),
+    // Everything a plugin ships is text here — the response is a path-to-content map — so the
+    // only question is whether it reads as a document or as source.
+    kind: path.endsWith(".md") ? "md" : "text",
+    content: text,
+  };
 }
 
 /**
@@ -209,6 +191,7 @@ export function PluginDetailModal({
   // auto-preview), so the pane is never empty while there is something to read.
   const current = selected ?? groups[0]?.paths[0] ?? null;
   const text = current !== null && files !== null ? files[current] : undefined;
+  const preview = current !== null && text !== undefined ? filePreview(current, text) : null;
 
   const toggleDir = (dir: string): void => {
     const open = collapsed.has(dir);
@@ -249,48 +232,24 @@ export function PluginDetailModal({
         </div>
       </div>
 
-      {/* The browser: tree left, preview right (stacked on narrow screens). Both panes scroll on
-          their own inside fixed heights, so the header above stays put. */}
-      <div className="mt-4 grid grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[220px_minmax(0,1fr)] dark:border-gray-800">
-        <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
-          <div className="max-h-40 overflow-y-auto md:max-h-[50vh]">
-            {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
-            {files === null && !error && <SkeletonList rows={3} />}
-            {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
-                when it failed or held nothing, the aside carries the skeleton or the error and
-                no tree at all. */}
-            {rows.length > 0 && (
-              <FileTree
-                rows={rows}
-                label={S.files.treeLabel}
-                selectedPath={current}
-                toggled={toggled}
-                onToggleDir={toggleDir}
-                onOpenFile={setSelected}
-              />
-            )}
-          </div>
-        </aside>
-
-        <section className="min-w-0">
-          <div className="flex min-h-9 items-center border-b border-gray-200 px-3 py-1.5 dark:border-gray-800">
-            <p className="truncate font-mono text-xs text-gray-500">{current ?? plugin.name}</p>
-          </div>
-          <div className="max-h-[50vh] min-h-[50vh] overflow-auto p-3">
-            {files === null && !error ? (
-              <SkeletonList rows={8} />
-            ) : current === null || text === undefined ? (
-              <p className="text-sm text-gray-400">{error ?? S.common.none}</p>
-            ) : current.endsWith(".md") ? (
-              <div className="md-body text-sm text-gray-800 dark:text-gray-100">
-                <Md text={stripFrontmatter(text)} />
-              </div>
-            ) : (
-              <CodeBlock language={languageFor(current)} code={text} />
-            )}
-          </div>
-        </section>
-      </div>
+      {/* The browser: tree left, preview right (stacked on narrow screens) — the same one the
+          Benchmark case dialog draws. SKILL.md shows its body, with the frontmatter the card
+          above already states dropped. */}
+      <FileBrowser
+        className="mt-4"
+        rows={rows}
+        treeLabel={S.files.treeLabel}
+        selectedPath={current}
+        toggled={toggled}
+        treeLoading={files === null}
+        treeError={error}
+        headerFallback={plugin.name}
+        preview={preview}
+        emptyPreview={error ?? S.common.none}
+        stripFrontmatter
+        onToggleDir={toggleDir}
+        onOpenFile={setSelected}
+      />
     </Modal>
   );
 }

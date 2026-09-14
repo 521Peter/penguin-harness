@@ -188,6 +188,7 @@ const SESSION_CATEGORIES: readonly SessionCategory[] = [
   "active",
   "subagent",
   "schedule",
+  "benchmark",
   "archived",
 ];
 
@@ -483,6 +484,9 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // Creating-client hint stored on the row ("cli" from the CLI; default "web").
     // Informational provenance only — lists serve every row regardless.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
+    // The only origin a client may set: `subagent` and `schedule` are written by the server
+    // itself, so anything but `benchmark` is a 400 rather than a silently ignored field.
+    const source = optionalEnum(body, "source", ["benchmark"] as const);
     let workspace = optionalString(body, "workspace", { minLen: 1, label: "workspace" });
     if (workspace !== undefined) {
       // An explicitly specified Workspace must be an existing directory (never auto-created); reachability is determined by file permissions.
@@ -496,6 +500,7 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
       ...(client !== undefined ? { client } : {}),
+      ...(source !== undefined ? { source } : {}),
     });
     return c.json({ session } satisfies SessionCreateResponse, 201);
   });

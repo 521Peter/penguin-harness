@@ -2113,6 +2113,7 @@ Benchmark：
     folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,
       schedule: (n: number) => `定时任务（${n}）`,
+      benchmark: (n: number) => `评估任务（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
     },
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,

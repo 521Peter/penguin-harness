@@ -175,6 +175,9 @@ export function UseBenchmarkModal({
       agentId: runnerId,
       text,
       ...(ref !== undefined ? { modelRef: ref } : {}),
+      // An evaluation / optimization run, not a conversation of the user's own: the session
+      // list files it, and the Test Sessions it launches, under the Evaluations folder.
+      source: "benchmark",
     });
     onClose();
   };

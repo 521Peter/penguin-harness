@@ -117,11 +117,18 @@ describe("agent-trace-detail", () => {
     ]);
     expect(paged.sessions![0]!.category).toBe("active");
     expect(paged.sessions![0]!.workspace).toBe("/tmp/w");
-    expect(paged.counts).toEqual({ active: 1, subagent: 0, schedule: 0, archived: 0 });
+    expect(paged.counts).toEqual({
+      active: 1,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    });
     expect(paged.workspaceCounts!["/tmp/w"]).toEqual({
       active: 1,
       subagent: 0,
       schedule: 0,
+      benchmark: 0,
       archived: 0,
     });
 

@@ -14,7 +14,7 @@ PenguinHarness 中的自我进化由 Skill 编排普通的 Agent 机制完成：
 | Evaluator | `run_subagent` 创建的叶子 Worker，执行并评分一次 Benchmark Case 运行 |
 | Optimizer | 新顶层 Agent，直接执行 `agent-optimization` |
 
-Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。Evaluator 通过 `run_subagent` 创建，遵循 `agent-evaluation`，并通过 Penguin CLI 在绝对路径的隔离 Workspace 中启动指定的 Target Agent。Penguin CLI 在每次请求中启动 Target Agent 完成对应的 Case Run。
+Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。Evaluator 通过 `run_subagent` 创建，遵循 `agent-evaluation`，并通过 Penguin CLI 在绝对路径的隔离 Workspace 中启动指定的 Target Agent。Penguin CLI 在每次请求中启动 Target Agent 完成对应的 Case Run。启动时传入 `--source benchmark`，因此每个 Test Session 都会落到 Web App 会话列表的「评估任务」子夹，而不是留在 Test Agent 的活跃对话中。
 
 ## 两个独立步骤
 

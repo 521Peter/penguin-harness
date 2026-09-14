@@ -14,7 +14,7 @@ Self-improvement in PenguinHarness uses Skills to orchestrate the ordinary Agent
 | Evaluator | Leaf worker created through `run_subagent`; runs and scores one Benchmark Case run |
 | Optimizer | New top-level Agent that directly follows `agent-optimization` |
 
-The Builder and Optimizer directly follow their Skills in their own top-level Sessions. Evaluators are created through `run_subagent`; each follows `agent-evaluation` and uses the Penguin CLI to launch the specified Target Agent in an isolated Workspace identified by an absolute path. The Penguin CLI launches the Target Agent for the requested Case run.
+The Builder and Optimizer directly follow their Skills in their own top-level Sessions. Evaluators are created through `run_subagent`; each follows `agent-evaluation` and uses the Penguin CLI to launch the specified Target Agent in an isolated Workspace identified by an absolute path. The Penguin CLI launches the Target Agent for the requested Case run. The launch passes `--source benchmark`, so every Test Session lands in the Evaluations folder of the Web App's session list instead of the Test Agent's active conversations.
 
 ## Two independent steps
 

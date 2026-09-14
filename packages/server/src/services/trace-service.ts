@@ -1501,7 +1501,7 @@ export class TraceService {
     const category: SessionCategory =
       (row?.archivedAt ?? null) !== null
         ? "archived"
-        : source === "subagent" || source === "schedule"
+        : source === "subagent" || source === "schedule" || source === "benchmark"
           ? source
           : "active";
     return { category, workspace: row?.workspace ?? facts?.workspace ?? "" };
@@ -1533,7 +1533,13 @@ export class TraceService {
     // Classify every group once; the same result drives the category filter, the
     // counts AND the returned fields, so a row can never appear in a bucket its own
     // `category` denies. Every Session is listed whichever client created it.
-    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const counts: SessionCategoryCounts = {
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const factsById = new Map<string, TraceSessionFacts>();
     const visible: string[] = [];
@@ -1546,6 +1552,7 @@ export class TraceService {
         active: 0,
         subagent: 0,
         schedule: 0,
+        benchmark: 0,
         archived: 0,
       });
       ws[facts.category] += 1;
