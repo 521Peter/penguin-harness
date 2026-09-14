@@ -56,40 +56,23 @@ function deltaTone(delta: number | null): string {
 }
 
 /**
- * The two standing lines under the title: the order to walk the loop in, then where the three
- * Skills come from. It does not collapse and cannot be dismissed — evaluating an agent is
- * something a user does a few times a year, and a disclosure that has to be found again every
- * time is worse than two calm lines.
- */
-function GuideIntro() {
-  return (
-    <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
-      <p className="leading-relaxed">{S.benchmark.guideHowTo}</p>
-      <p className="mt-1 leading-relaxed">{S.benchmark.guideNote}</p>
-    </div>
-  );
-}
-
-/**
  * The three steps of the loop, a card each: three across from `md` up, stacked below. Every card
- * names its step, the Skill that step rests on and what it does. Nothing is drawn between the
- * cards — the numbers already carry the order, and an arrow would only survive one of the two
- * layouts.
+ * names its step and what it does — nothing else stands above or beside them: the maintainer
+ * wants the three stages alone, without a how-to line or the Skill names in grey. Nothing is
+ * drawn between the cards — the numbers already carry the order, and an arrow would only
+ * survive one of the two layouts.
  */
 function GuideSteps() {
   return (
     <div className="mt-3 grid md:grid-cols-3 gap-3">
       {S.benchmark.guideFlow.map((step, i) => (
         <div
-          key={step.skill}
+          key={step.title}
           className="min-w-0 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400"
         >
           <span className="flex flex-wrap items-baseline gap-x-1.5">
             <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">{i + 1}</span>
             <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
-            <code className="min-w-0 truncate font-mono text-gray-400 dark:text-gray-500">
-              {step.skill}
-            </code>
           </span>
           <p className="mt-1 leading-relaxed">{step.text}</p>
         </div>
@@ -427,7 +410,6 @@ export function BenchmarkPage() {
               <CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />
             </div>
           </div>
-          <GuideIntro />
           <GuideSteps />
         </div>
 

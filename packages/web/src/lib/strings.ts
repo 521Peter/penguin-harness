@@ -2671,25 +2671,17 @@ Benchmark：
     guideFlow: [
       {
         title: "出题",
-        skill: "benchmark-design",
         text: "让 AI 为某个智能体出一套题，agent-evaluation 在隔离的 Workspace 里逐题试测、校准难度，定稿即取得基线分。",
       },
       {
         title: "评估",
-        skill: "agent-evaluation",
         text: "把任一智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，结果作为一条带标签的评估追加进记分。",
       },
       {
         title: "优化",
-        skill: "agent-optimization",
         text: "针对这套 Benchmark 改进智能体，每轮只做一个可证伪的改动，分数严格提升才保留新版本。",
       },
     ],
-    /** The intro block's first line: the order a first-timer walks the three steps in. */
-    guideHowTo:
-      "怎么用：先用 AI 出题或手动创建 → 在 Benchmark 上按「使用」发起评估或优化 → 在分数曲线上按标签对比系列。",
-    guideNote:
-      "三个技能都在 agent-tuning 插件里，默认智能体已自带；新建的智能体可以在插件库里安装。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
     /** The chip shown when the address filters the list to one Agent's Benchmarks. */

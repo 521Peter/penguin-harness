@@ -2716,24 +2716,17 @@ Scenarios:
     guideFlow: [
       {
         title: "Create",
-        skill: "benchmark-design",
         text: "Let AI write a set of cases for an agent; agent-evaluation trial-runs each one in an isolated Workspace to calibrate difficulty, and the frozen set arrives with a baseline score.",
       },
       {
         title: "Evaluate",
-        skill: "agent-evaluation",
         text: "Put any agent on that Benchmark for the full Case × runs matrix; the result is appended to the scoreboard as one labelled evaluation.",
       },
       {
         title: "Optimize",
-        skill: "agent-optimization",
         text: "Improve an agent against that Benchmark, one falsifiable change per round; a new version is kept only when the score strictly improves.",
       },
     ],
-    guideHowTo:
-      "How to use: create a Benchmark with AI or by hand → press Use on a Benchmark to evaluate or optimize → compare series by label on the score chart.",
-    guideNote:
-      "All three skills ship in the agent-tuning plugin; the default agent already has them, and a new agent can install them from the plugin library.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
     filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
