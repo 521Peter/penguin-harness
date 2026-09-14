@@ -1,10 +1,14 @@
 /**
  * The ticket board: five columns in lifecycle order (shaping in ticket-board.ts), each with
  * its colour bar and count, a card per ticket — title, priority, due date (danger once
- * passed), parent, owner, contributing sessions with a running mark, cost, the blocked
- * badge — a search box and a blocked-only switch, drag-and-drop between columns that
- * confirms the move (a move into rejected asks for a one-line reason) before posting it, the
- * detail drawer, the create form, and the tickets and files the server could not accept.
+ * passed), the blocked badge, a muted line naming its parent, and its owner — a search box
+ * and a blocked-only switch, drag-and-drop between columns that confirms the move (a move
+ * into rejected asks for a one-line reason) before posting it, the detail drawer, the create
+ * form, and the tickets and files the server could not accept.
+ * A card is the drag handle and nothing else: the detail opens from the card's own corner
+ * button, so a click always says where it lands. What a card deliberately does not carry is
+ * the session count, the cost and any live session status — those are the drawer's, and a
+ * ticket is not the place to watch a session run.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
  * as drop zones — with a one-line note above them while the organization has no tickets at
  * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
@@ -12,7 +16,7 @@
  * `?column=` / `?blocked=1` / `?ticket=` deep links arrive from the overview.
  */
 import { useCallback, useEffect, useState } from "react";
-import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { DragEvent as ReactDragEvent } from "react";
 import { useSearchParams } from "react-router";
 import type {
   OrgChartResponse,
@@ -24,13 +28,11 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { formatMoney } from "../../lib/format";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { useCompany } from "../../state/company";
-import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
 import { Segmented } from "../../components/ui/segmented";
@@ -42,10 +44,16 @@ import { FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { OrgPage, useOrg } from "./org-layout";
-import { BlockedBadge, INVALID_ICON, PrincipalChip, PriorityBadge, principalLabel } from "./shared";
+import {
+  BlockedBadge,
+  INVALID_ICON,
+  JumpButton,
+  PrincipalChip,
+  PriorityBadge,
+  principalLabel,
+} from "./shared";
 import {
   TICKET_COLUMNS,
   allTickets,
@@ -69,8 +77,6 @@ const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
 
 /** Clock face (lucide): the due-date mark on a card. */
 const DUE_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-14v5l3 2";
-/** Up-right corner arrow: the card's link to its parent ticket. */
-const PARENT_ICON = "M9 21V9l-6 6m6-6h12";
 
 /**
  * The colour bar atop each column. Proposed is neutral, in-progress takes the accent (it is
@@ -92,7 +98,6 @@ export function TicketsPage() {
   const { projectId, orgId, org } = useOrg();
   const company = useCompany();
   const { user } = useAuth();
-  const { currency } = useTheme();
   const [params, setParams] = useSearchParams();
   useDocumentTitle(org ? `${org.name} · ${S.nav.org.tickets}` : S.nav.org.tickets);
   const [board, setBoard] = useState<OrgTicketsResponse | null>(null);
@@ -204,20 +209,12 @@ export function TicketsPage() {
     },
   });
 
-  /** A card: the title first, then what decides its urgency, then who holds it and what it has cost. */
+  /** A card: the title first, then what decides its urgency, then where it hangs and who holds it. */
   const card = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
-    const onKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openTicket(t.ticketId);
-      }
-    };
     return (
       <div
         key={t.ticketId}
-        role="button"
-        tabIndex={0}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(TICKET_DRAG_MIME, t.ticketId);
@@ -228,10 +225,8 @@ export function TicketsPage() {
           setDrag(null);
           setDropOver(null);
         }}
-        onClick={() => openTicket(t.ticketId)}
-        onKeyDown={onKey}
         title={`${t.title} · ${t.ticketId} · ${S.company.tickets.dragHint}`}
-        className={`block w-full cursor-grab rounded-md border bg-white p-2.5 text-left text-xs transition-colors duration-150 hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)]/40 dark:bg-gray-900 dark:hover:border-gray-600 ${
+        className={`block w-full cursor-grab rounded-md border bg-white p-2.5 text-left text-xs transition-colors duration-150 hover:border-gray-300 dark:bg-gray-900 dark:hover:border-gray-600 ${
           t.invalid !== undefined
             ? "border-red-300 dark:border-red-800"
             : "border-gray-200 dark:border-gray-800"
@@ -247,6 +242,11 @@ export function TicketsPage() {
               <span className="sr-only">{S.company.tickets.invalid}</span>
             </span>
           )}
+          <JumpButton
+            label={S.company.tickets.open}
+            className="mt-0.5"
+            onClick={() => openTicket(t.ticketId)}
+          />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
           <PriorityBadge priority={t.priority} />
@@ -260,20 +260,6 @@ export function TicketsPage() {
               {overdue && <span className="sr-only">{S.company.tickets.overdue}</span>}
             </span>
           )}
-          {t.parent !== undefined && (
-            <button
-              type="button"
-              className="inline-flex min-w-0 max-w-full items-center gap-0.5 text-gray-500 hover:text-gray-800 hover:underline dark:text-gray-400 dark:hover:text-gray-200"
-              title={`${S.company.tickets.parent} ${t.parent}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                openTicket(t.parent!);
-              }}
-            >
-              <GlyphIcon d={PARENT_ICON} size={ICON_SIZE.inlineGlyph} />
-              <span className="truncate">{titles.get(t.parent) ?? t.parent}</span>
-            </button>
-          )}
           {isBlocked(t) && (
             <span className="ml-auto">
               <BlockedBadge
@@ -283,19 +269,20 @@ export function TicketsPage() {
             </span>
           )}
         </div>
+        {t.parent !== undefined && (
+          <p
+            className="mt-2 truncate text-[11px] text-gray-400 dark:text-gray-500"
+            title={t.parent}
+          >
+            {S.company.tickets.parentLine(titles.get(t.parent) ?? t.parent)}
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500 dark:text-gray-400">
           <span
-            className="min-w-0 text-gray-700 dark:text-gray-200"
+            className="flex min-w-0 text-gray-700 dark:text-gray-200"
             title={`${S.company.tickets.owner} ${principalLabel(t.owner, names)}`}
           >
             <PrincipalChip principal={t.owner} names={names} size={ICON_SIZE.rowLead} />
-          </span>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-2 tabular-nums">
-            <span className="inline-flex items-center gap-1">
-              {S.company.tickets.sessionsCount(t.sessions.length)}
-              {t.running && <SessionActivityIcon activity="running" />}
-            </span>
-            <span>{formatMoney(t.cost, currency)}</span>
           </span>
         </div>
       </div>
@@ -434,15 +421,13 @@ export function TicketsPage() {
               </p>
               <ul className="mb-2 space-y-0.5">
                 {invalids.map((t) => (
-                  <li key={t.ticketId}>
-                    <button
-                      type="button"
-                      className="font-mono underline"
+                  <li key={t.ticketId} className="flex items-baseline gap-1.5">
+                    <span className="font-mono">{t.ticketId}</span>
+                    <JumpButton
+                      label={S.company.tickets.openTicket}
                       onClick={() => openTicket(t.ticketId)}
-                    >
-                      {t.ticketId}
-                    </button>
-                    : {t.invalid}
+                    />
+                    <span className="min-w-0">: {t.invalid}</span>
                   </li>
                 ))}
               </ul>

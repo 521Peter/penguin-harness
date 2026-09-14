@@ -1,13 +1,17 @@
 /**
  * A ticket's detail, in a right-hand drawer over the board. The header names the ticket
- * (status, priority, id with a copy button, cost); the blocked strip says why and on whom
- * it waits; then the sections in reading order — the header fields (the one owner, parent,
- * notify, due, created), the goal, the acceptance criteria, the progress prose with its
- * one-line append, the result, and under them two disclosures folded on every visit: the
- * summary (child tickets with the rolled-up cost, contributing sessions with the start and
- * attach controls) and the operation history, newest first. Each editable section edits in
- * place with its own save / cancel; the footer holds the block / unblock and move actions.
- * Saves confirm first, like every organization write.
+ * (status, priority, id with a copy button, this ticket's cost and the total); the blocked
+ * strip says why and on whom it waits; then the sections in reading order — the header
+ * fields (the one owner, parent, notify, due, created), the goal, the acceptance criteria,
+ * the progress prose with its one-line append, the result, and under them three disclosures
+ * folded on every visit: the child tickets with the total cost, the ticket's own sessions,
+ * and the operation history, newest first. Each editable section edits in place with its own
+ * save / cancel; the footer holds the block / unblock and move actions. Saves confirm first,
+ * like every organization write.
+ *
+ * Nothing here is a whole-row link: a child, a session and the parent are opened by their own
+ * small corner button, so a click always says where it lands. A session's live status is not
+ * drawn — a ticket reports its own work, not what a session is doing this second.
  */
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
@@ -27,7 +31,6 @@ import { formatDateTime, formatMoney } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
-import { useSessions } from "../../state/sessions";
 import { useTheme } from "../../state/theme";
 import { Drawer } from "../../components/ui/drawer";
 import { Button } from "../../components/ui/button";
@@ -40,22 +43,20 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
-import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
 import { OrgSection } from "./org-layout";
 import {
   BlockedBadge,
+  JumpButton,
   PrincipalChip,
   PriorityBadge,
   TicketStatusBadge,
   principalLabel,
 } from "./shared";
 import { agentPrincipal, splitPrincipalList } from "./principals";
-import { orgRowActivity } from "./org-sessions";
 import { TICKET_COLUMNS, isBlocked, isOverdue, ticketCreatedDate } from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
-import type { TicketHistoryNote } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
 
 const PRIORITIES: readonly OrgTicketPriority[] = ["P0", "P1", "P2"];
@@ -103,7 +104,6 @@ export function TicketDrawer({
   const navigate = useNavigate();
   const { currency } = useTheme();
   const { user } = useAuth();
-  const { sessions } = useSessions();
   const me = user?.userId ?? null;
   const [detail, setDetail] = useState<OrgTicketDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,13 +111,11 @@ export function TicketDrawer({
   const [summaryDraft, setSummaryDraft] = useState<SummaryDraft | null>(null);
   const [textDraft, setTextDraft] = useState("");
   const [pendingSave, setPendingSave] = useState<OrgTicketUpdateRequest | null>(null);
-  const [confirmStart, setConfirmStart] = useState(false);
   const [confirmUnblock, setConfirmUnblock] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [blockReason, setBlockReason] = useState("");
   const [blockBy, setBlockBy] = useState("");
   const [progressText, setProgressText] = useState("");
-  const [attachId, setAttachId] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
   const [busy, setBusy] = useState(false);
   const names = new Map(employees.map((e) => [e.agentId, e.name]));
@@ -230,7 +228,6 @@ export function TicketDrawer({
     });
   };
 
-  const attachable = sessions.filter((s) => !(detail?.sessions ?? []).includes(s.sessionId));
   const children = (detail?.children ?? []).map(
     (id) => tickets.find((t) => t.ticketId === id) ?? { ticketId: id, title: id },
   );
@@ -239,9 +236,6 @@ export function TicketDrawer({
   const created = detail === null ? null : ticketCreatedDate(detail.ticketId);
   const counts = detail === null ? null : ticketSummaryCounts(detail);
   const history = detail === null ? [] : ticketHistoryRows(detail.history);
-  const sessionTitles = new Map(
-    (detail?.sessionItems ?? []).map((s) => [s.sessionId, s.title ?? s.sessionId]),
-  );
   /** A history line's principal: the employee's name, "you" for the reader, else the user id. */
   const historyPrincipal = (principal: string) =>
     me !== null && principal === `user:${me}`
@@ -257,35 +251,6 @@ export function TicketDrawer({
       ? [{ value: detail.owner, label: principalLabel(detail.owner, names) }]
       : []),
   ];
-
-  /** A history note, drawn by what the action wrote there. */
-  const noteNode = (note: TicketHistoryNote): ReactNode => {
-    switch (note.kind) {
-      case "none":
-        return null;
-      case "principal":
-        return <span className="min-w-0">{historyPrincipal(note.principal)}</span>;
-      case "session":
-        return (
-          <button
-            type="button"
-            className={`min-w-0 truncate ${toneInk.busy} hover:underline`}
-            onClick={() => navigate(`/chat/${note.sessionId}`)}
-          >
-            {sessionTitles.get(note.sessionId) ?? note.sessionId}
-          </button>
-        );
-      case "column":
-        return (
-          <span className="min-w-0">
-            {S.company.tickets.columns[note.status] ?? note.status}
-            {note.reason !== undefined && ` · ${note.reason}`}
-          </span>
-        );
-      default:
-        return <span className="min-w-0">{note.text}</span>;
-    }
-  };
 
   /** A section's trailing controls: an edit button at rest, cancel / save while it is open. */
   const sectionActions = (section: Section) =>
@@ -330,8 +295,10 @@ export function TicketDrawer({
 
   const row = (label: string, value: ReactNode) => (
     <>
-      <dt className="text-gray-500 dark:text-gray-400">{label}</dt>
-      <dd className="min-w-0 text-gray-800 dark:text-gray-100">{value}</dd>
+      <dt className="whitespace-nowrap text-gray-500 dark:text-gray-400">{label}</dt>
+      <dd className="flex min-w-0 items-center gap-1.5 text-gray-800 dark:text-gray-100">
+        {value}
+      </dd>
     </>
   );
 
@@ -500,14 +467,15 @@ export function TicketDrawer({
                     {row(
                       S.company.tickets.parent,
                       detail.parent !== undefined ? (
-                        <button
-                          type="button"
-                          className="text-left hover:underline"
-                          title={detail.parent}
-                          onClick={() => onOpenTicket(detail.parent!)}
-                        >
-                          {titles.get(detail.parent) ?? detail.parent}
-                        </button>
+                        <>
+                          <span className="min-w-0 truncate" title={detail.parent}>
+                            {titles.get(detail.parent) ?? detail.parent}
+                          </span>
+                          <JumpButton
+                            label={S.company.tickets.openTicket}
+                            onClick={() => onOpenTicket(detail.parent!)}
+                          />
+                        </>
                       ) : (
                         <span className="text-gray-400 dark:text-gray-500">
                           {S.company.tickets.noParent}
@@ -519,7 +487,7 @@ export function TicketDrawer({
                       detail.notify.length === 0 ? (
                         <span className="text-gray-400 dark:text-gray-500">{S.common.none}</span>
                       ) : (
-                        <span className="flex flex-wrap gap-x-3 gap-y-1">
+                        <span className="flex min-w-0 flex-wrap gap-x-3 gap-y-1">
                           {detail.notify.map((p) => (
                             <PrincipalChip key={p} principal={p} names={names} />
                           ))}
@@ -614,117 +582,84 @@ export function TicketDrawer({
                 {textSection("result", detail.result, S.company.tickets.noResult)}
               </OrgSection>
 
-              {/* What hangs off the ticket rather than describing it: the children and the
-                  sessions, folded together under one row so the prose above stays the page. */}
+              {/* The child tickets, folded: a plain list, each row opened by its own button. */}
               <Fold
-                title={S.company.tickets.summaryFold}
+                title={S.company.tickets.children}
                 summary={
-                  counts === null || counts.empty
+                  counts === null || counts.childrenEmpty
                     ? S.common.none
-                    : S.company.tickets.summaryCounts(counts.children, counts.sessions)
+                    : `${counts.children} · ${S.company.tickets.rolledUpCost} ${formatMoney(detail.rolledUpCost, currency)}`
                 }
               >
-                <FoldBlock
-                  title={`${S.company.tickets.children} · ${S.company.tickets.rolledUpCost} ${formatMoney(detail.rolledUpCost, currency)}`}
-                >
-                  {children.length === 0 ? (
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      {S.company.tickets.childrenEmpty}
-                    </p>
-                  ) : (
-                    <ul className="space-y-0.5">
-                      {children.map((c) => (
-                        <li key={c.ticketId}>
-                          <button
-                            type="button"
-                            onClick={() => onOpenTicket(c.ticketId)}
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
+                {children.length === 0 ? (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {S.company.tickets.childrenEmpty}
+                  </p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {children.map((c) => (
+                      <li key={c.ticketId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                        <span className="min-w-0 flex-1 truncate" title={c.ticketId}>
+                          {c.title}
+                        </span>
+                        {"status" in c && <TicketStatusBadge status={c.status} />}
+                        {"owner" in c && (
+                          <span className="shrink-0 text-xs text-gray-600 dark:text-gray-300">
+                            <PrincipalChip principal={c.owner} names={names} />
+                          </span>
+                        )}
+                        {"cost" in c && (
+                          <span
+                            className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500"
+                            title={S.company.tickets.cost}
                           >
-                            <span className="min-w-0 flex-1 truncate">{c.title}</span>
-                            {"priority" in c && <PriorityBadge priority={c.priority} />}
-                            {"status" in c && <TicketStatusBadge status={c.status} />}
-                            {"cost" in c && (
-                              <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-                                {formatMoney(c.cost, currency)}
-                              </span>
-                            )}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </FoldBlock>
+                            {formatMoney(c.cost, currency)}
+                          </span>
+                        )}
+                        <JumpButton
+                          label={S.company.tickets.openTicket}
+                          onClick={() => onOpenTicket(c.ticketId)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Fold>
 
-                {/* Contributing sessions: open one, start another, attach an existing one. */}
-                <FoldBlock
-                  title={`${S.company.tickets.sessions} · ${S.company.tickets.sessionsCount(detail.sessionItems.length)}`}
-                  actions={
-                    <Button size="sm" disabled={busy} onClick={() => setConfirmStart(true)}>
-                      {S.company.tickets.startSession}
-                    </Button>
-                  }
-                >
-                  {detail.sessionItems.length === 0 ? (
-                    <p className="text-xs text-gray-400 dark:text-gray-500">{S.common.none}</p>
-                  ) : (
-                    <ul className="space-y-0.5">
-                      {detail.sessionItems.map((s) => {
-                        const activity = orgRowActivity(s.status);
-                        return (
-                          <li key={s.sessionId}>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/chat/${s.sessionId}`)}
-                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800"
-                            >
-                              <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
-                              <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">
-                                {s.title ?? s.sessionId}
-                              </span>
-                              {activity !== null && <SessionActivityIcon activity={activity} />}
-                              {s.lastActiveAt !== undefined && (
-                                <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
-                                  {formatDateTime(s.lastActiveAt)}
-                                </span>
-                              )}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <Select
-                        size="sm"
-                        aria-label={S.company.tickets.attachSession}
-                        value={attachId}
-                        onChange={(e) => setAttachId(e.target.value)}
-                      >
-                        <option value="">{S.company.tickets.attachPick}</option>
-                        {attachable.map((s) => (
-                          <option key={s.sessionId} value={s.sessionId}>
-                            {(s.title ?? S.company.sessionList.untitledSession) + ` · ${s.agentId}`}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <Button
-                      size="sm"
-                      disabled={busy || attachId === ""}
-                      onClick={() =>
-                        void run(async () => {
-                          await api.attachOrgTicket(projectId, orgId, detail.ticketId, {
-                            sessionId: attachId,
-                          });
-                          setAttachId("");
-                        }, S.company.tickets.attached)
-                      }
-                    >
-                      {S.company.tickets.attachSession}
-                    </Button>
-                  </div>
-                </FoldBlock>
+              {/* The sessions this ticket was worked in, folded. They are opened from here and
+                  nowhere else: starting one and attaching one belong to the owner's desk and to
+                  the CLI, not to a reader of the board. */}
+              <Fold
+                title={S.company.tickets.sessions}
+                summary={
+                  counts === null || counts.sessionsEmpty
+                    ? S.common.none
+                    : S.company.tickets.sessionsCount(counts.sessions)
+                }
+              >
+                {detail.sessionItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 dark:text-gray-500">{S.common.none}</p>
+                ) : (
+                  <ul className="space-y-0.5">
+                    {detail.sessionItems.map((s) => (
+                      <li key={s.sessionId} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                        <PrincipalChip principal={agentPrincipal(s.agentId)} names={names} />
+                        <span className="min-w-0 flex-1 truncate text-gray-600 dark:text-gray-300">
+                          {s.title ?? s.sessionId}
+                        </span>
+                        {s.lastActiveAt !== undefined && (
+                          <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                            {formatDateTime(s.lastActiveAt)}
+                          </span>
+                        )}
+                        <JumpButton
+                          label={S.company.tickets.openSession}
+                          onClick={() => navigate(`/chat/${s.sessionId}`)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Fold>
 
               {/* Every write the ticket file recorded, newest first. */}
@@ -739,7 +674,6 @@ export function TicketDrawer({
                 ) : (
                   <ol className="space-y-1.5 text-xs">
                     {history.map((h) => {
-                      const note = noteNode(h.note);
                       const parts: ReactNode[] = [
                         // A ticket converted from the format that predates the history has no
                         // time on its first entry; the line then starts with who did it.
@@ -760,7 +694,6 @@ export function TicketDrawer({
                         <span key="action" className="text-gray-500 dark:text-gray-400">
                           {S.company.tickets.historyActions[h.action] ?? h.action}
                         </span>,
-                        ...(note === null ? [] : [<Fragment key="note">{note}</Fragment>]),
                       ];
                       return (
                         <li
@@ -845,26 +778,6 @@ export function TicketDrawer({
         </p>
       </ConfirmModal>
       <ConfirmModal
-        open={confirmStart}
-        title={S.company.tickets.startSession}
-        tone="primary"
-        confirmLabel={S.common.confirm}
-        busy={busy}
-        onClose={() => (busy ? undefined : setConfirmStart(false))}
-        onConfirm={() => {
-          if (detail === null) return;
-          setConfirmStart(false);
-          void run(async () => {
-            const res = await api.startOrgTicket(projectId, orgId, detail.ticketId);
-            navigate(`/chat/${res.sessionId}`);
-          }, S.company.tickets.started);
-        }}
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          {S.company.tickets.startSessionConfirm(detail?.title ?? "")}
-        </p>
-      </ConfirmModal>
-      <ConfirmModal
         open={confirmUnblock}
         title={S.company.tickets.unblock}
         tone="primary"
@@ -940,10 +853,11 @@ export function TicketDrawer({
 
 /**
  * A section of the drawer that is folded on every visit: the ruled header of `OrgSection`
- * with the app's one collapse chevron in front of it, and the counts it holds after it, so a
- * reader decides from the closed row whether to open it. The panel stays in the DOM and is
- * `hidden` while collapsed — the WAI-ARIA disclosure pattern, so `aria-controls` always
- * resolves — and nothing is persisted: what hangs off a ticket is looked up, not tracked.
+ * with the app's one collapse chevron in front of it, and what it holds after it — a count,
+ * a count and a cost — so a reader decides from the closed row whether to open it. The panel
+ * stays in the DOM and is `hidden` while collapsed — the WAI-ARIA disclosure pattern, so
+ * `aria-controls` always resolves — and nothing is persisted: what hangs off a ticket is
+ * looked up, not tracked.
  */
 function Fold({
   title,
@@ -976,30 +890,5 @@ function Fold({
         {children}
       </div>
     </section>
-  );
-}
-
-/** One block inside a fold: a plain label row (the fold already owns the rule) and its body. */
-function FoldBlock({
-  title,
-  actions,
-  children,
-}: {
-  title: string;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          {title}
-        </p>
-        {actions !== undefined && (
-          <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
-        )}
-      </div>
-      {children}
-    </div>
   );
 }

@@ -3162,7 +3162,7 @@ Benchmark：
     },
     tickets: {
       title: "工单",
-      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片看详情；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
+      info: "五列看板即工单的生命周期：提议 → 进行中 → 审核中 → 已完成 / 已拒绝。拖拽卡片移列，点卡片右上角的「打开」看详情；被阻塞的工单留在原列并带角标。工单是组织的工作单位：点右上角「新建工单」建一张并指定负责人，它的工位会话会为这张工单发起工单会话。",
       columns: {
         proposed: "提议",
         in_progress: "进行中",
@@ -3207,26 +3207,23 @@ Benchmark：
       blockTitle: "标记阻塞",
       blockReasonHint: "一句话说明卡在哪里",
       blockByHint: "等哪张工单或哪位主体",
-      sessions: "贡献会话",
+      sessions: "关联工单会话",
       sessionsCount: (n: number): string => `${n} 个会话`,
-      running: "运行中",
-      startSession: "再发起一个工单会话",
-      startSessionConfirm: (title: string): string =>
-        `为「${title}」再发起一个工单会话？由负责人执行。`,
-      started: "工单会话已发起",
-      attachSession: "挂接既有会话",
-      attachPick: "选择会话…",
-      attachNoMatch: "无匹配的会话",
-      attached: "已挂接",
       openSession: "打开会话",
+      /** The row action of a child ticket, and of a ticket named in the invalid list. */
+      openTicket: "打开工单",
+      /** The card's own corner action: the card is the drag handle, this opens the detail. */
+      open: "打开",
       progress: "进度",
       progressEmpty: "还没有进度记录",
       addProgress: "追加进度",
       progressPlaceholder: "一句话记下进展…",
       children: "子工单",
       childrenEmpty: "没有子工单",
-      cost: "成本",
-      rolledUpCost: "上卷成本",
+      cost: "本单成本",
+      rolledUpCost: "总成本",
+      /** The card's muted parent line; the drawer names the parent in a labelled field instead. */
+      parentLine: (title: string): string => `父工单：${title}`,
       moveTitle: "移动工单",
       moveConfirm: (title: string, column: string): string => `将「${title}」移到「${column}」？`,
       rejectReason: "拒绝理由",
@@ -3245,13 +3242,9 @@ Benchmark：
       dropHere: "拖到这里",
       overdue: "已逾期",
       summary: "基本信息",
-      /** The folded section under the body: the child tickets and the contributing sessions. */
-      summaryFold: "摘要",
-      summaryCounts: (children: number, sessions: number): string =>
-        `子工单 ${children} · 会话 ${sessions}`,
       history: "操作历史",
       historyEmpty: "还没有操作记录",
-      /** The frontmatter's history actions; the note beside one says what it acted on. */
+      /** The frontmatter's history actions; a history line names one and nothing else. */
       historyActions: {
         created: "创建",
         assigned: "指派给",
