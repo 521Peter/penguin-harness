@@ -43,6 +43,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   ThinkingLevelName,
+  ToolDetachResult,
   ToolPermission,
 } from "./interfaces/index.js";
 import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js";
@@ -102,6 +103,8 @@ export interface SessionConfig {
   createBareLLM?: () => LLMInterface;
   /** The first context's compaction settings (defaults are filled in by the composition layer); only takes effect when provided together with `openNextContext`, and a context that one opens brings its own. */
   compaction?: CompactionSettings;
+  /** Live compaction settings, re-read at every compaction checkpoint (see ContextEngineDeps.readCompaction): what lets a threshold, mode or prompt edited on disk reach the conversation that is running. Session-lifetime, so a rotation does not replace it. */
+  readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
   /** Session resume: `session_meta` is already in the original Trace file, so it isn't written again on the first run (avoids duplication). */
   metaAlreadyWritten?: boolean;
   /** Session resume: the engine's initial state derived from Trace replay (carry-over / accumulated stats, etc.). */
@@ -111,7 +114,7 @@ export interface SessionConfig {
   /**
    * This Session's scratchpad directory: where an input image is saved when it becomes an
    * `[attached image: <path>]` line instead of riding the request as an image. The model
-   * reads it back with describe_image / read_image, and the Web turns the path into a
+   * reads it back with read_file, and the Web turns the path into a
    * thumbnail again. Always set — each input path decides on its own whether to use it.
    */
   imagesDir: string;
@@ -350,6 +353,7 @@ export class Session {
           }
         : {}),
       ...(config.compaction ? { compaction: config.compaction } : {}),
+      ...(config.readCompaction ? { readCompaction: config.readCompaction } : {}),
       ...(config.initialEngineState ? { initialState: config.initialEngineState } : {}),
       // The engine assembles one input of its own — a steering message with images — and folds
       // it through the same converter `runTask` uses, failures included: a scratchpad that
@@ -878,6 +882,16 @@ export class Session {
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
+  }
+
+  /**
+   * Asks one of this Session's EXECUTING tool calls to continue as a background task, so the
+   * turn can close (see EnvironmentInterface.detachToolCall). Not an abort: the call ends
+   * `completed` with a registry handle and its work keeps running. An environment without the
+   * method has no call to detach.
+   */
+  detachToolCall(toolCallId: string): ToolDetachResult {
+    return this.environment.detachToolCall?.(toolCallId) ?? "not_running";
   }
 
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */

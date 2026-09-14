@@ -16,8 +16,8 @@ import { useEffect, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
 import { isFilePathLike, toWorkspaceRelative } from "../../lib/file-path";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { Chevron } from "../../components/ui/chevron";
 import { FILE_ICON } from "../../components/ui/icons";
+import { Chevron } from "../../components/ui/chevron";
 import { ICON_SIZE } from "../../lib/icon-scale";
 
 const MAX_VISIBLE = 3;

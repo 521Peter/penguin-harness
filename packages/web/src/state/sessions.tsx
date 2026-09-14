@@ -46,6 +46,7 @@ import {
   workspaceGroupKey,
   workspaceGroupQuery,
 } from "../lib/session-grouping";
+import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -57,6 +58,8 @@ interface SessionsContextValue {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   /** agentId → the same totals broken down by Workspace path (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded. */
+  workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /**
    * Whether a pair's first page has been fetched (false = the folder shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
@@ -173,6 +176,7 @@ interface SessionsStoreState {
   pageState: ReadonlyMap<string, PagePosition>;
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   loading: boolean;
 
   reload: () => Promise<void>;
@@ -245,6 +249,7 @@ export function createSessionsStore() {
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
+      workspaceLatestByAgent: new Map(),
       loading: true,
 
       reload: async () => {
@@ -287,6 +292,7 @@ export function createSessionsStore() {
                       scope,
                       counts: res.counts,
                       workspaceCounts: res.workspaceCounts,
+                      workspaceLatest: res.workspaceLatest,
                       ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
                     };
                   }),
@@ -307,6 +313,7 @@ export function createSessionsStore() {
             string,
             Readonly<Record<string, SessionCategoryCounts>>
           >();
+          const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
           for (const r of results) {
             for (const p of r.pages) {
               nextPageState.set(pageKey(r.agentId, p.category, p.scope), {
@@ -315,6 +322,7 @@ export function createSessionsStore() {
               });
               if (p.counts) nextCounts.set(r.agentId, p.counts);
               if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
+              if (p.workspaceLatest) nextWorkspaceLatest.set(r.agentId, p.workspaceLatest);
               for (const s of p.items) {
                 if (!seen.has(s.sessionId)) {
                   seen.add(s.sessionId);
@@ -328,6 +336,7 @@ export function createSessionsStore() {
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
+            workspaceLatestByAgent: nextWorkspaceLatest,
           });
         } finally {
           if (g === gen) set({ loading: false });
@@ -648,6 +657,15 @@ export function applyUserEvent(
   // A scheduled task firing may have created a new Session (new-session mode); reload the list
   // so it appears immediately. schedule_queued doesn't change the list (the target Session
   // already exists), so it is ignored, as is every other Session-scoped event.
+  // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
+  // one-off going done — so the conversation's schedule list is stale from here. The store
+  // decides for itself whether the agent is the one on screen.
+  if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
+    noteScheduleEvent(ev.projectId, ev.agentId);
+  }
+  // A scheduled task firing may also have created a new Session (new-session mode); reload the
+  // list so it appears immediately. schedule_queued doesn't change the list (the target Session
+  // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
   // The event carries projectId: a trigger from another Project is unrelated to the current list.
   if (ev.projectId === store.getState().projectId) void store.getState().reload();
@@ -678,6 +696,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
+      workspaceLatestByAgent: new Map(),
       // The pages were just cleared, so the list is loading from this instant — including
       // the window where the Agent set itself is still being refetched (a Project switch
       // empties it, which makes reload() below return without fetching or clearing the
@@ -756,6 +775,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       byAgent,
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
+      workspaceLatestByAgent: state.workspaceLatestByAgent,
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,

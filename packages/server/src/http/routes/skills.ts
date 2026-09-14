@@ -38,15 +38,15 @@ import {
   unzipBounded,
 } from "../../services/skill-import-limits.js";
 
-/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). */
-const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
+/** Decoded zip cap: aligned with the Agent snapshot import (stays within the 20MB body limit after base64). Shared with the hooks archive routes. */
+export const MAX_ARCHIVE_BYTES = 14 * 1024 * 1024;
 
 /**
  * Validates one zip entry path (zip-slip guard): rejects absolute paths (leading "/" or a
  * drive letter), backslashes and any ".." segment — a malicious archive must never write
- * outside the target Skill directory.
+ * outside the target Skill directory. Shared with the hooks archive routes.
  */
-function assertSafeEntryPath(name: string): void {
+export function assertSafeEntryPath(name: string): void {
   if (name.includes("\\")) throw badRequest(`Invalid zip entry path (backslash): ${name}`);
   if (name.startsWith("/") || /^[A-Za-z]:/.test(name)) {
     throw badRequest(`Invalid zip entry path (absolute): ${name}`);
@@ -158,9 +158,10 @@ async function collectSkillArchive(dir: string, name: string): Promise<Record<st
 }
 
 /**
- * Version for the export filename: only a frontmatter `version:` that is a real
- * `YYYY-MM-DD.N` yields a `-v<version>` filename suffix — a missing or malformed field (the
- * parser reads either as "") must not be baked into a filename as if declared.
+ * Version for the export filename: only a frontmatter `version:` that is a real version
+ * (`YYYY.MM.DD.N`, or the legacy spelling an older installed copy carries) yields a
+ * `-v<version>` filename suffix — a missing or malformed field (the parser reads either as "")
+ * must not be baked into a filename as if declared.
  */
 function explicitSkillVersion(skillMd: string): string | null {
   return parseSkillFrontmatter(skillMd)?.version || null;

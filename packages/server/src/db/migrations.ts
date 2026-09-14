@@ -221,6 +221,31 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 5,
+    name: "user-profile",
+    // Two nullable columns on `users`, no default and nothing existing rewritten: a platform
+    // rolled back to a predecessor that does not know them never selects or writes them, and
+    // every existing account simply reads NULL — no profile yet.
+    swapSafe: true,
+    up(db) {
+      // Frozen copy of the DDL as of the user-profile feature; do not re-derive from schema.ts.
+      // SQLite has no ADD COLUMN IF NOT EXISTS, and the declarative track may already have
+      // added both (ADOPTION), so each one goes through the same table_info guard the
+      // declarative track uses.
+      ensureColumn(db, "users", "display_name", "TEXT");
+      ensureColumn(db, "users", "avatar", "TEXT");
+    },
+    // LOSES every stored nickname and avatar: both live entirely in the two columns this
+    // drops, and nothing else on disk holds a copy. Dropped in reverse order for symmetry
+    // with `up`; neither column is indexed, which is what lets SQLite drop them at all.
+    down(db) {
+      const cols = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+      const has = (name: string): boolean => cols.some((c) => c.name === name);
+      if (has("avatar")) db.exec("ALTER TABLE users DROP COLUMN avatar");
+      if (has("display_name")) db.exec("ALTER TABLE users DROP COLUMN display_name");
+    },
+  },
+  {
+    version: 6,
     name: "company-mode-org-caches",
     // Additive: seven new tables for company mode (organizations of Agents), no change to any
     // existing table. Every row is either rebuildable from the organization's files (desks.toml,
@@ -317,7 +342,7 @@ export const MIGRATIONS: readonly Migration[] = [
     },
   },
   {
-    version: 6,
+    version: 7,
     name: "company-mode-channels",
     // The organization's single group chat became channels: a message lives in
     // `channels/<channel_id>/<date>.jsonl`, so the tail-scan cursor and each user's read
@@ -351,7 +376,7 @@ export const MIGRATIONS: readonly Migration[] = [
         );
       `);
     },
-    // Recreates the two tables under their old names, exactly as migration 5 declared them —
+    // Recreates the two tables under their old names, exactly as migration 6 declared them —
     // EMPTY. LOSES every scan cursor (re-derived by the next pass, which republishes the
     // messages it re-reads) and every read cursor (users see the recent days as unread once).
     down(db) {
@@ -376,7 +401,7 @@ export const MIGRATIONS: readonly Migration[] = [
     },
   },
   {
-    version: 7,
+    version: 8,
     name: "company-mode-desk-notices",
     // Additive: one new table and its index. A ticket change no longer starts a work run at
     // the owner's desk; it is queued here and delivered inside the body of that employee's
@@ -398,7 +423,7 @@ export const MIGRATIONS: readonly Migration[] = [
       `);
     },
     // LOSES every queued notice: the ticket changes an employee has not been told about yet.
-    // The change itself is in the ticket file and in the all-hands channel either way; what
+    // The change itself is in the ticket file and its history either way; what
     // goes is the "Since your last sweep" line that would have named it.
     down(db) {
       db.exec(`

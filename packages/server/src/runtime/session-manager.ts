@@ -48,12 +48,14 @@ import type {
   ControlEnvContext,
   OmniMessage,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SessionMetaPayload,
   SessionTitleResult,
   SubagentMessageOptions,
   SubagentMessageOutcome,
   TextPayload,
   ThinkingLevelName,
+  ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type {
   PendingFollowUpInfo,
@@ -179,6 +181,8 @@ export interface RuntimeSession {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process (core `Session.killBackgroundCommand`); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /** Hands one EXECUTING tool call back as a background task (core `Session.detachToolCall`). Optional: test fakes may omit it, reading as "not_running". */
+  detachToolCall?(toolCallId: string): ToolDetachResult;
   /** Whether a background subagent is mid-round (core `Session.hasRunningBackgroundSubagents`); pins the entry against idle eviction. Optional, like listBackgroundCommands. */
   hasRunningBackgroundSubagents?(): boolean;
   /** All live subagent child sessions of the Session's environment (core `Session.listBackgroundSubagents`). Optional, like listBackgroundCommands. */
@@ -233,6 +237,7 @@ export function createCoreSessionLoader(
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
+    confineSpawn?: () => SpawnConfiner | null;
   } = {},
 ): SessionLoader {
   return {
@@ -244,6 +249,7 @@ export function createCoreSessionLoader(
         ...(opts.proxyEnv ? { proxyEnv: opts.proxyEnv } : {}),
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
+        ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -1408,6 +1414,20 @@ export class SessionManager {
    */
   async probeProcessServices(sessionId: string): Promise<void> {
     await this.entries.get(sessionId)?.session.probeBackgroundCommandServices?.();
+  }
+
+  /**
+   * Hands one EXECUTING tool call of a loaded session back as a background task (core
+   * `Session.detachToolCall`): the call closes with a registry handle, its work keeps
+   * running, and the turn carries on. An unloaded session has nothing executing, so it
+   * answers "not_running" like an unknown id.
+   */
+  detachToolCall(sessionId: string, toolCallId: string): ToolDetachResult {
+    const entry = this.entries.get(sessionId);
+    if (!entry) return "not_running";
+    const result = entry.session.detachToolCall?.(toolCallId) ?? "not_running";
+    if (result === "detached") entry.lastActivityMs = Date.now();
+    return result;
   }
 
   /** Kills one background command process of a loaded session; false when the session isn't loaded or the id is unknown. */

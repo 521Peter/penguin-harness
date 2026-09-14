@@ -40,7 +40,7 @@ const HR = "acme_hr";
 const T0 = Date.parse("2026-09-01T01:00:00Z");
 const DAY = 86_400_000;
 /** The version the fake plugin library offers; an employee set behind it is what a pass fixes. */
-const LIBRARY_VERSION = "2026-09-14.1";
+const LIBRARY_VERSION = "2026.09.14.1";
 
 /** The utility completion's three shapes, as the id proposals see them. */
 const NO_MODEL: UtilityCompletion = {
@@ -115,6 +115,8 @@ describe("organization runtime", () => {
       passwordHash: "x",
       isAdmin: false,
       passwordIsInitial: false,
+      displayName: null,
+      avatar: null,
       createdAt: "2026-08-01T00:00:00Z",
     });
     const projects = new ProjectsRepo(db);

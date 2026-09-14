@@ -75,7 +75,7 @@ export interface FakePlugins {
 }
 
 /** The version the fake library offers for every plugin an employee is hired with. */
-export const FAKE_LIBRARY_VERSION = "2026-09-14.1";
+export const FAKE_LIBRARY_VERSION = "2026.09.14.1";
 
 function textOf(input: OmniMessage[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
@@ -100,6 +100,8 @@ export async function makeOrgHarness(opts: {
     passwordHash: "x",
     isAdmin: false,
     passwordIsInitial: false,
+    displayName: null,
+    avatar: null,
     createdAt: "2026-08-01T00:00:00Z",
   });
   const projects = new ProjectsRepo(db);

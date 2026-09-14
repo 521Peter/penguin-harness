@@ -1,7 +1,8 @@
 /**
  * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, the
- * 0.2.9 → 0.2.10 drop that is its first restart-only one, and the channels migration that is
- * its first table recreation.
+ * 0.2.9 → 0.2.10 drop that is its first restart-only one, the additive column pair that
+ * the user profile added to `users`, and the channels migration that is its first table
+ * recreation.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -72,6 +73,10 @@ function open024(): DatabaseSync {
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
+  // No account had a profile before migration 5: the current declaration's two columns
+  // must come off, or a round trip through migration 5's down would land on a narrower
+  // `users` than this fixture and read as a rollback that lost something.
+  dropProfileColumns(db);
   db.exec(GOAL_STATE_DDL);
   return db;
 }
@@ -101,22 +106,22 @@ const PRE_CHANNEL_CHAT_DDL = `
 `;
 
 /** A database stamped at migration 5: company mode's caches, before chat became channels. */
-function open5(): DatabaseSync {
+function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec(PRE_CHANNEL_CHAT_DDL);
-  // SCHEMA_SQL declares the CURRENT shape; migration 7's queue came after 5.
+  // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
-  db.exec("PRAGMA user_version = 5");
+  db.exec("PRAGMA user_version = 6");
   return db;
 }
 
 /** A database stamped at migration 6: channels, and no desk-notice queue yet. */
-function open6(): DatabaseSync {
+function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
-  db.exec("PRAGMA user_version = 6");
+  db.exec("PRAGMA user_version = 7");
   return db;
 }
 
@@ -127,10 +132,57 @@ function open029(): DatabaseSync {
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
-  // migration 4 is what adds them. Without this the fixture is a database no release made.
+  // migration 4 is what adds them — and no profile columns, which migration 5 adds. Without
+  // both the fixture is a database no release made.
   db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
+  dropProfileColumns(db);
   db.exec("PRAGMA user_version = 2");
   return db;
+}
+
+/**
+ * A database from before the user profile: today's declaration minus exactly the two columns
+ * migration 5 adds, stamped at the version before it. Derived from SCHEMA_SQL for the reason
+ * open024 is — a hand-copied `users` table would fork from reality.
+ */
+function openPreProfile(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  dropProfileColumns(db);
+  // Version 4 predates company mode as well: its three migrations (6–8) come after the
+  // profile's, so a database at 4 has none of their tables.
+  dropCompanyTables(db);
+  db.exec("PRAGMA user_version = 4");
+  return db;
+}
+
+/** Takes everything migrations 6–8 create off a database built from the current declaration. */
+function dropCompanyTables(db: DatabaseSync): void {
+  db.exec(`
+    DROP INDEX IF EXISTS idx_org_desk_notices_agent;
+    DROP INDEX IF EXISTS idx_org_ticket_sessions_session;
+    DROP INDEX IF EXISTS idx_org_sessions_org;
+    DROP TABLE IF EXISTS org_desk_notices;
+    DROP TABLE IF EXISTS org_budget_state;
+    DROP TABLE IF EXISTS org_channel_reads;
+    DROP TABLE IF EXISTS org_channel_state;
+    DROP TABLE IF EXISTS org_ticket_state;
+    DROP TABLE IF EXISTS org_calendar_state;
+    DROP TABLE IF EXISTS org_ticket_sessions;
+    DROP TABLE IF EXISTS org_sessions;
+  `);
+}
+
+/** Takes migration 5's two columns off a database built from the current declaration. */
+function dropProfileColumns(db: DatabaseSync): void {
+  db.exec("ALTER TABLE users DROP COLUMN avatar");
+  db.exec("ALTER TABLE users DROP COLUMN display_name");
+}
+
+/** Column names of `users`, for the two cases that are about columns rather than whole shapes. */
+function userColumns(db: DatabaseSync): string[] {
+  const rows = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  return rows.map((r) => r.name);
 }
 
 /** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
@@ -330,9 +382,58 @@ describe("0.2.9 → current: drop-goal-state", () => {
   });
 });
 
-describe("migration 5 → current: company-mode-channels", () => {
+describe("pre-profile → current: user-profile", () => {
+  it("adds both columns, and a database that already has them migrates the same", () => {
+    const db = openPreProfile();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(userColumns(db)).not.toContain("display_name");
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 4).map((m) => m.name),
+      );
+      expect(userColumns(db)).toContain("display_name");
+      expect(userColumns(db)).toContain("avatar");
+      expect(shape(db)).toBe(shape(fresh));
+
+      // ADOPTION: on a database this build created, the declarative track already added both,
+      // so the migration must find its work done, add nothing twice, and stamp anyway.
+      fresh.exec("PRAGMA user_version = 4");
+      expect(migrate(fresh).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 4).map((m) => m.name),
+      );
+      expect(userColumns(fresh).filter((c) => c === "avatar")).toEqual(["avatar"]);
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down removes both columns, taking every nickname and avatar with them", () => {
+    const db = openPreProfile();
+    try {
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('bob', 'h', 0, '2026-01-01T00:00:00Z')",
+      );
+      const before = shape(db);
+      migrate(db);
+      db.exec("UPDATE users SET display_name = 'Bob', avatar = 'data:image/png;base64,AAAA'");
+
+      rollbackTo(db, 4);
+      expect(shape(db)).toBe(before);
+      expect(userColumns(db)).not.toContain("display_name");
+      expect(userColumns(db)).not.toContain("avatar");
+      // The account itself survives; only what the two columns held is gone.
+      expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "bob" }]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("migration 6 → current: company-mode-channels", () => {
   it("renames both chat tables and puts channel_id in their primary keys, recreating them empty", () => {
-    const db = open5();
+    const db = open6();
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
@@ -343,7 +444,7 @@ describe("migration 5 → current: company-mode-channels", () => {
       expect(shape(db)).not.toBe(shape(fresh));
 
       expect(migrate(db).applied).toEqual(
-        MIGRATIONS.filter((m) => m.version > 5).map((m) => m.name),
+        MIGRATIONS.filter((m) => m.version > 6).map((m) => m.name),
       );
       expect(shape(db)).toBe(shape(fresh));
       // Renamed and recreated, not altered: the old tables are gone, nothing is carried
@@ -368,30 +469,30 @@ describe("migration 5 → current: company-mode-channels", () => {
   });
 
   it("down puts the old tables and the single-chat shape back, empty", () => {
-    const db = open5();
-    const at5 = open5();
+    const db = open6();
+    const at6 = open6();
     try {
       migrate(db);
-      rollbackTo(db, 5);
-      expect(schemaVersion(db)).toBe(5);
-      expect(shape(db)).toBe(shape(at5));
+      rollbackTo(db, 6);
+      expect(schemaVersion(db)).toBe(6);
+      expect(shape(db)).toBe(shape(at6));
       expect(db.prepare("SELECT COUNT(*) AS n FROM org_chat_state").get()).toEqual({ n: 0 });
     } finally {
       db.close();
-      at5.close();
+      at6.close();
     }
   });
 });
 
-describe("migration 6 → current: company-mode-desk-notices", () => {
+describe("migration 7 → current: company-mode-desk-notices", () => {
   it("adds the queue a ticket change is delivered through, writable and indexed", () => {
-    const db = open6();
+    const db = open7();
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
       expect(shape(db)).not.toBe(shape(fresh));
       expect(migrate(db).applied).toEqual(
-        MIGRATIONS.filter((m) => m.version > 6).map((m) => m.name),
+        MIGRATIONS.filter((m) => m.version > 7).map((m) => m.name),
       );
       expect(shape(db)).toBe(shape(fresh));
       db.exec(
@@ -407,20 +508,20 @@ describe("migration 6 → current: company-mode-desk-notices", () => {
   });
 
   it("down drops the queue with the notices nobody has been told about yet", () => {
-    const db = open6();
-    const at6 = open6();
+    const db = open7();
+    const at7 = open7();
     try {
       migrate(db);
       db.exec(
         "INSERT INTO org_desk_notices (project_id, org_id, agent_id, ticket_id, change, at)" +
           " VALUES ('p1', 'acme', 'acme_hr', '2026-09-08-site', 'done', '2026-09-08T01:00:00Z')",
       );
-      rollbackTo(db, 6);
-      expect(schemaVersion(db)).toBe(6);
-      expect(shape(db)).toBe(shape(at6));
+      rollbackTo(db, 7);
+      expect(schemaVersion(db)).toBe(7);
+      expect(shape(db)).toBe(shape(at7));
     } finally {
       db.close();
-      at6.close();
+      at7.close();
     }
   });
 });
