@@ -19,7 +19,7 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 
 - **Web App**——组织切换器里的「新建组织」：显示名在前，id 字段旁的按钮请服务端据名称推导一个 id（Project 的缺省 Model 提出一个简短的英文 snake_case id，模型给不出时以名称的 ASCII slug 兜底，两条路都命名不了的名称则填入一个带日期的占位 id，并在字段下方说明原因、请你改成有含义的名字——按钮一定会在框里留下一个 id）；使命字段下另有四个示例，点一下即填入；
 - **CLI**——`penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`；
-- **通用 Agent**——让任何装有 `agent-development` 插件的 Agent 帮你开一家公司，它的 `company-setup` Skill 接手：一次只问一个问题（id、名称、使命、公共工作区、Model、CEO 预算），确认一屏摘要，然后执行上面这条命令。它到此为止——招募、排日程和开工单是 CEO 在董事会答复之后的事。
+- **通用 Agent**——让任何装有 `agent-company` 插件的 Agent 帮你开一家公司，它的 `company-setup` Skill 接手：一次只问一个问题（id、名称、使命、公共工作区、Model、CEO 预算），确认一屏摘要，然后执行上面这条命令。它到此为止——招募、排日程和开工单是 CEO 在董事会答复之后的事。该插件不预装，所以从未进过公司的 Agent 要先装上它——新建 Agent 对话框的「插件」字段，或 Project 里既有 Agent 的技能标签页；CEO 与员工自受雇之日起就带着它。
 
 id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定表明它命名的是什么：组织 id 以 `co_` 开头，频道 id 以 `ch_` 开头（`co_plugin_marketplace`、`ch_site`）。App 的 id 推导与 `company-setup` Skill 都会带上前缀；服务端并不强制，手工输入的 id 按原样接受，约定之前建立的 id 也继续有效。
 

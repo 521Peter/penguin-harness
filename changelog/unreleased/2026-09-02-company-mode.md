@@ -391,3 +391,15 @@ cursors, budget marks) and each user's read cursor per channel.
   A channel holds what people and employees say to each other, plus who joined and left and the
   budget alerts — a board that narrates itself buries the conversation. Lines already written
   still render; see the backward-compatibility entry.
+
+### company-setup joins the company plugin, and the master switch applies on the flip (2026-09-14)
+
+- **`company-setup` moved from `agent-development` to `agent-company`.** The skill that creates
+  an organization with the user now ships with the rest of company mode rather than with the
+  SDK and orchestration skills. `agent-company` is `preinstall: false`, so the consequence is
+  that `company-setup` is no longer on every Agent by default: an Agent gets it by installing
+  the company plugin — the Plugins field of the create-agent dialog, or the Skills tab of an
+  Agent already in the Project — while a CEO and its employees carry it from the day they are
+  hired, since hiring installs `agent-company`. `agent-development` is four skills again and
+  `agent-company` is six; the plugin's manifest, the Skills documentation, the company-mode
+  guide, the landing page's Skill list and the plugin library README follow.

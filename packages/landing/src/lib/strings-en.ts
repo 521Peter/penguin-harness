@@ -484,12 +484,12 @@ penguin run --message "Analyze data.csv and summarize quarterly sales"`,
           "benchmark-design",
           "agent-evaluation",
           "agent-optimization",
-          "company-setup",
         ],
       },
       {
         title: "Agent Company",
         skills: [
+          "company-setup",
           "company-employee",
           "company-ceo",
           "company-hr",
