@@ -19,7 +19,6 @@ import {
   assertValidId,
   assembleSystemPrompt,
   buildToolConfig,
-  PENGUIN_API_HUB_PROVIDER_ID,
   selectBuiltinToolsForModel,
   DEFAULT_COMPACTION_PROMPT,
   formatModelRef,
@@ -31,7 +30,6 @@ import {
   loadProjectConfig,
   listInstalledHooks,
   projectDir,
-  resolveProviderModelEnv,
   resolveSessionMemory,
   resolveModelRef,
   sessionScratchpadDir,
@@ -110,30 +108,6 @@ import type {
  * raise this constant to allow deeper nesting.
  */
 const MAX_SUBAGENT_DEPTH = 1;
-
-/**
- * The Hub mixes Google and OpenAI clients behind one relay. Never let either client read
- * its vendor env var for a Hub endpoint: resolve only the Hub-specific env key and pass it
- * explicitly, or fail before AgentHub can construct a client with the wrong credential.
- */
-function modelApiKey(entry: ModelEntry, explicit?: string): string | undefined {
-  const configured = explicit ?? entry.api_key;
-  if (configured !== undefined) return configured;
-  if (entry.provider !== PENGUIN_API_HUB_PROVIDER_ID) return undefined;
-  const envKey = resolveProviderModelEnv(entry.provider, entry.model_id, entry.client_type)?.envKey;
-  return envKey ? process.env[envKey]?.trim() || undefined : undefined;
-}
-
-function assertHubConnection(
-  entry: ModelEntry,
-  apiKey: string | undefined,
-  baseUrl: string | undefined,
-): void {
-  if (entry.provider !== PENGUIN_API_HUB_PROVIDER_ID) return;
-  if (apiKey === undefined) throw new Error("Missing API key for Penguin API Hub.");
-  // A relay key must never fall through to AgentHub's vendor default endpoint.
-  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin API Hub.");
-}
 
 export interface CreateAgentOptions {
   agentId?: string;
@@ -619,9 +593,8 @@ export class Agent {
     // Credentials are inlined on the model entry (single config file); an
     // explicit argument takes priority, falling back to AgentHub reading env vars
     // when both are absent.
-    const apiKey = modelApiKey(modelEntry, opts.apiKey);
+    const apiKey = opts.apiKey ?? modelEntry.api_key;
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
-    assertHubConnection(modelEntry, apiKey, baseUrl);
 
     // An explicit Workspace must already exist as a directory: if it
     // doesn't, throw rather than auto-create (to avoid a typo silently working in
@@ -737,9 +710,8 @@ export class Agent {
         `The original Session's Model is not in the Project config: ${formatModelRef(ref)}. Use \`penguin config model add\` to configure it again before resuming.`,
       );
     }
-    const apiKey = modelApiKey(modelEntry, opts.apiKey);
+    const apiKey = opts.apiKey ?? modelEntry.api_key;
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
-    assertHubConnection(modelEntry, apiKey, baseUrl);
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
@@ -1137,20 +1109,14 @@ export class Agent {
     if (modelEntry.vision === false) {
       const visionRef = this.projectConfig.vision_model;
       const visionEntry = visionRef ? getModel(this.projectConfig, visionRef) : undefined;
-      const visionApiKey = visionEntry ? modelApiKey(visionEntry) : undefined;
-      if (
-        visionEntry &&
-        visionEntry.vision !== false &&
-        (visionEntry.provider !== PENGUIN_API_HUB_PROVIDER_ID ||
-          (visionApiKey !== undefined && Boolean(visionEntry.base_url?.trim())))
-      ) {
+      if (visionEntry && visionEntry.vision !== false) {
         visionDescriber = {
           // The model attribution in the tool output matches the request's source: both are the entry's upstream model_id.
           modelId: visionEntry.model_id,
           createLLM: () =>
             new GenerativeModel({
               modelId: visionEntry.model_id,
-              ...(visionApiKey !== undefined ? { apiKey: visionApiKey } : {}),
+              ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
               ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
               ...(visionEntry.client_type !== undefined
                 ? { clientType: visionEntry.client_type }

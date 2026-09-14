@@ -122,51 +122,6 @@ describe("metaMaxTokens (meta-request budget tightened by the per-model cap)", (
 });
 
 describe("Agent.createSession workspace handling", () => {
-  it("never sends vendor environment keys to a Penguin API Hub endpoint", async () => {
-    const previous = process.env.PENGUIN_API_HUB_API_KEY;
-    delete process.env.PENGUIN_API_HUB_API_KEY;
-    try {
-      const agent = await createAgent();
-      const ws = path.join(tmpRoot, "ws-hub-key");
-      await fs.mkdir(ws, { recursive: true });
-      // stubProviderKeys has populated OPENAI_API_KEY and GEMINI_API_KEY. Neither may satisfy
-      // a Hub row: those credentials belong to direct vendors, not this relay endpoint.
-      await expect(
-        agent.createSession({
-          workspaceDir: ws,
-          provider: "penguin-api-hub",
-          modelId: "gemini-3.5-flash",
-        }),
-      ).rejects.toThrow(/Missing API key for Penguin API Hub/);
-
-      process.env.PENGUIN_API_HUB_API_KEY = "hub-specific-test-key";
-      const session = await agent.createSession({
-        workspaceDir: ws,
-        provider: "penguin-api-hub",
-        modelId: "gemini-3.5-flash",
-      });
-      session.dispose();
-
-      const config = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
-      const hub = config.models.find(
-        (model) => model.provider === "penguin-api-hub" && model.model_id === "gemini-3.5-flash",
-      )!;
-      delete hub.base_url;
-      await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, config);
-      const reloaded = await createAgent();
-      await expect(
-        reloaded.createSession({
-          workspaceDir: ws,
-          provider: "penguin-api-hub",
-          modelId: "gemini-3.5-flash",
-        }),
-      ).rejects.toThrow(/Missing API base URL for Penguin API Hub/);
-    } finally {
-      if (previous === undefined) delete process.env.PENGUIN_API_HUB_API_KEY;
-      else process.env.PENGUIN_API_HUB_API_KEY = previous;
-    }
-  });
-
   it("throws a clear error when the given workspace does not exist (no auto-create)", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "nested", "does-not-exist");
