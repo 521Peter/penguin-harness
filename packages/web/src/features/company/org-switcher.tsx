@@ -3,8 +3,8 @@
  * mode. The trigger names the open organization with its status dot and, beneath it, the
  * Project it belongs to; the menu lists every organization the user can reach, grouped by
  * Project with a check mark on the open one (picking one opens its overview), then the two
- * entries that make and shape one — "New organization" (success lands in the CEO's desk
- * session) and "Organization settings".
+ * entries that make and shape one — "New organization" (success makes the new organization
+ * the shell's current one and lands in its CEO's desk session) and "Organization settings".
  * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
  *
  * Beside it lives what the sidebar shows in place of a channel list while the user has no
@@ -23,14 +23,12 @@ import { Button } from "../../components/ui/button";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
+import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
-  groupOrganizationsByProject,
-  orgCreatedPath,
-  orgKey,
-  orgPagePath,
-  parseOrgKey,
-} from "./company-nav";
-import { CreateOrganizationDialog, OrganizationSettingsDialog } from "./org-dialogs";
+  CreateOrganizationDialog,
+  OrganizationSettingsDialog,
+  useOrganizationCreated,
+} from "./org-dialogs";
 import { OrgStatusDot } from "./shared";
 
 const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`;
@@ -38,6 +36,7 @@ const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 tex
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const company = useCompany();
+  const onOrgCreated = useOrganizationCreated();
   const { projects } = useProject();
   const [open, setOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -212,9 +211,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
         onClose={() => setCreateOpen(false)}
         onCreated={(detail) => {
           setCreateOpen(false);
-          void company.reloadOrganizations();
-          // Creation opens the CEO's desk: land in it so the mission conversation starts now.
-          go(orgCreatedPath(detail));
+          // Creation opens the CEO's desk: land in it so the mission conversation starts now,
+          // with the shell already inside the organization that desk belongs to.
+          void onOrgCreated(detail).then(() => onNavigate?.());
         }}
       />
       {settingsTarget !== null && (
@@ -238,8 +237,8 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
  * something that reads as broken.
  */
 export function NoOrganizationsSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const navigate = useNavigate();
   const company = useCompany();
+  const onOrgCreated = useOrganizationCreated();
   const [createOpen, setCreateOpen] = useState(false);
   // "No organization" is only true once the list has settled; before that it is a guess, and
   // a guess that flashes a call to action is worse than a placeholder.
@@ -258,9 +257,7 @@ export function NoOrganizationsSidebar({ onNavigate }: { onNavigate?: () => void
         onClose={() => setCreateOpen(false)}
         onCreated={(detail) => {
           setCreateOpen(false);
-          void company.reloadOrganizations();
-          navigate(orgCreatedPath(detail));
-          onNavigate?.();
+          void onOrgCreated(detail).then(() => onNavigate?.());
         }}
       />
     </div>

@@ -1,24 +1,42 @@
 /**
  * One employee card on the org chart, plus the state-dot legend shown beside the chart.
  *
- * The face is inert: it is a plain card that reads, and the kebab in its top-right corner —
- * the only focusable thing on it — is where opening the desk session and every personnel
- * action live. A whole-card link promises one of its many actions and steals the click from
- * the rest. Three rows: avatar with the name and title (the CEO wears a chip); the live
- * state dot and its label, the workspace tail, this period's spend against the budget; a
- * thin ratio bar. The state the dot draws is passed in rather than read off the employee: the
- * chart is a snapshot re-read on organization events, and no event says a run ended
- * (org-sessions.ts, liveEmployeeStates).
+ * The face carries no primary action: it is a plain card that reads, and the personnel menu —
+ * opening the desk session and every personnel action — is the one thing it can do. A
+ * whole-card link would promise one of those many actions and steal the click from the rest.
+ * Three rows: avatar with the name and title (the CEO wears a chip); the live state dot and
+ * its label, the workspace tail, this period's spend against the budget; a thin ratio bar.
+ * The state the dot draws is passed in rather than read off the employee: the chart is a
+ * snapshot re-read on organization events, and no event says a run ended (org-sessions.ts,
+ * liveEmployeeStates).
  * Every status colour is a tone picked by meaning; running and on-desk share emerald and
  * are told apart by motion (the running dot pulses) and by their labels.
  *
+ * Three ways into that one menu, all of them the same panel: the kebab in the top-right
+ * corner (the only focusable thing on the card, and the pointer's discoverable route), a
+ * secondary click anywhere on the card, and Shift+F10 from the focused kebab. The sidebar's
+ * `useRowContextMenu` drives them, so the panel hangs off the point the gesture landed on and
+ * inherits the Dropdown's dismiss stack, focus handling and viewport clamping. The card owns
+ * that state: which card's menu is open is decided by the panel itself, since opening one is
+ * an outside press on any other.
+ *
  * The card sits on a pan/zoom canvas (org-chart-page.tsx), which is why the kebab names its
  * own cursor: the canvas wears `grab` over the whole surface, the card included — pressing
- * the inert face drags the canvas — and the one control on it has to say it is not that.
+ * the inert face drags the canvas — and the one control on it has to say it is not that. A
+ * secondary click never starts that pan: usePointerDrag refuses any button but the primary.
+ *
+ * That pan is also why press-and-hold is NOT one of the three, though the hook offers it: the
+ * canvas takes pointer capture on press, so every later pointer event for that gesture is
+ * retargeted to the canvas and the card never sees the move or the lift that would cancel a
+ * hold. The timer would then fire on a finger that has been dragging for half a second. Touch
+ * reaches the menu through the kebab, which is drawn on every card rather than revealed on
+ * hover for exactly this reason.
  */
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
+import { useRowContextMenu } from "../../components/ui/context-menu";
 import { formatMoney, formatPercent } from "../../lib/format";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
@@ -79,8 +97,7 @@ export function ChartCard({
   x,
   y,
   detached = false,
-  menuOpen,
-  setMenuOpen,
+  viewEpoch,
   menu,
 }: {
   employee: OrgEmployeeItem;
@@ -93,11 +110,24 @@ export function ChartCard({
   y: number;
   /** In the detached row: its reporting line does not reach the CEO. */
   detached?: boolean;
-  menuOpen: boolean;
-  setMenuOpen: (open: boolean) => void;
-  /** The personnel menu's rows. */
-  menu: ReactNode;
+  /**
+   * Moves whenever the canvas pans or zooms under the cards, which closes an open menu: the
+   * panel hangs off a viewport point, and a transform carries the card out from under it
+   * without being either of the two things the panel can detect on its own (a scroll of a
+   * container it sits in, or a resize of the window).
+   */
+  viewEpoch: number;
+  /**
+   * The personnel menu's rows, built against the panel's own close: a row runs after the
+   * panel has gone, and the menu is the only keyboard route to these actions.
+   */
+  menu: (close: () => void) => ReactNode;
 }) {
+  const ctx = useRowContextMenu();
+  const { close } = ctx;
+  useEffect(() => {
+    close();
+  }, [viewEpoch, close]);
   const tone = budgetTone(employee.spend.ratio);
   const spent = formatMoney(employee.spend.cumulative, currency);
   const spend =
@@ -113,11 +143,17 @@ export function ChartCard({
   const flag = employee.invalid ?? (detached ? S.company.chart.detached : undefined);
   return (
     <div
+      ref={ctx.rowRef}
+      // Secondary click and Shift+F10 open the card's menu (not the hook's press-and-hold —
+      // see the header). The native menu is suppressed inside that handler only, so the rest
+      // of the app keeps the browser's own.
+      onContextMenu={ctx.rowProps.onContextMenu}
+      onKeyDown={ctx.rowProps.onKeyDown}
       className="group absolute"
       style={{ left: x, top: y, width: CHART_NODE_W, height: CHART_NODE_H }}
     >
       {/* The tooltip carries what the two truncating lines may have cut, and nothing else:
-          the card does not act, so it must not promise an action either. */}
+          the face has no click of its own, so it must not promise one either. */}
       <div
         title={
           flag !== undefined ? `${employee.name} · ${flag}` : `${employee.name} · ${employee.title}`
@@ -180,13 +216,20 @@ export function ChartCard({
           />
         </span>
       </div>
-      {/* The personnel menu: the overflow-menu style of the session rows, anchored at the card's
-          corner. Its own wrapper positions it — Dropdown's root is `relative` and would sit in flow. */}
+      {/* The personnel menu. Its own wrapper positions it — Dropdown's root is `relative` and
+          would otherwise sit in flow. The kebab is the Dropdown's own trigger rather than a
+          sibling of it, because the panel dismisses on any mousedown landing outside that
+          root: a trigger beside it would close the menu on press and reopen it on the click
+          that follows, instead of toggling. Placement comes from the gesture's anchor, not
+          from the wrapper — a secondary click hangs the same panel off the pointer. */}
       <div className="absolute top-1.5 right-1.5">
         <Dropdown
-          open={menuOpen}
-          setOpen={setMenuOpen}
-          portal={{ direction: "down", align: "right" }}
+          open={ctx.open}
+          setOpen={ctx.setOpen}
+          portal={{ direction: "down", align: "left" }}
+          anchorRect={ctx.anchor}
+          anchorOwner={ctx.anchorOwner}
+          returnFocus={ctx.returnFocus}
           menuClass="w-48"
           button={
             <button
@@ -194,17 +237,27 @@ export function ChartCard({
               title={S.company.chart.nodeMenu}
               aria-label={`${employee.name} · ${S.company.chart.nodeMenu}`}
               aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(!menuOpen)}
+              aria-expanded={ctx.open}
+              onClick={(e) => {
+                if (ctx.open) {
+                  ctx.close();
+                  return;
+                }
+                const r = e.currentTarget.getBoundingClientRect();
+                ctx.openAt({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+              }}
               className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
-                menuOpen ? "opacity-100" : "opacity-70"
+                ctx.open ? "opacity-100" : "opacity-70"
               }`}
             >
               <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.groupHeaderAction} filled />
             </button>
           }
         >
-          {menu}
+          {menu(() => {
+            ctx.returnFocus()?.focus();
+            ctx.close();
+          })}
         </Dropdown>
       </div>
     </div>

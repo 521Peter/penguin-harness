@@ -2468,6 +2468,10 @@ Benchmark：
     modelInfo:
       "工位会话与工单会话默认使用的模型；员工在组织图里另有指定时以员工的为准。改动从下一次工作轮起生效。",
     modelHint: "留空则使用 Project 的默认模型",
+    /** The picker offers models only, so the way back to the Project default is its own control. */
+    modelClear: "改回 Project 默认",
+    /** The stored model is no longer in the Project's model list. */
+    modelStale: "这个模型已不在 Project 的模型列表里",
     modelProjectDefault: "Project 默认",
     modelProjectDefaultNamed: (name: string): string => `Project 默认（${name}）`,
     modelsLoadFailed: "模型列表读取失败；仍可按 Project 默认模型创建",
@@ -2987,6 +2991,8 @@ Benchmark：
         "全员频道随组织一起创建：组织里的每个人都在这里——每位员工、每位 Project 成员，你也在这里看——谁也不能退出，也不能归档；预算告警等系统通知都发在这里。",
       channelInfo:
         "受邀频道：员工只能由成员邀请进来，@ 也只在频道成员之间送达；人可以自行加入，并且可以阅读任何频道。",
+      /** Why the all-hands channel's menu has no archive row; what that channel IS stays in the "?" above. */
+      allHandsNoArchive: "全员频道不可归档",
       /** The new-channel dialog. */
       createTitle: "新建频道",
       creating: "创建中…",
