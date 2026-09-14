@@ -408,3 +408,36 @@ cursors, budget marks) and each user's read cursor per channel.
   the switch is disabled while the request is in flight, and a write that fails puts the switch
   back on the stored value and names the reason on a line under it. The `?` explaining what the
   master switch does is unchanged.
+
+### The company pages after user testing (2026-09-15)
+
+- **Titles are the links.** A card, row or panel is never a click target as a whole; its title
+  is — a text button that opens or jumps — and the rest of the surface stays inert. Ticket cards
+  open their drawer from the title and move by dragging anywhere else; inbox rows, today's
+  schedule and the budget alerts on the overview jump from their titles; rows without a title
+  (KPI cards) keep a small corner button. `test/company-click-targets.test.ts` parses the company
+  modules and fails a click handler, a `role="button"` or a `cursor-pointer` on a non-control
+  surface.
+- **Tickets show less and say more.** A card carries the title, priority, blocked and due chips, a
+  plain 「父工单：…」 line and the owner — no session count, no cost, and no live session status
+  anywhere in the ticket UI. The drawer names its costs 本单成本 / 总成本, shows the parent as a
+  labelled field with an open button, and folds three sections: 子工单 (rows with an open button,
+  the count and the total cost in the heading), 关联工单会话 (rows with an open button; the
+  start and attach controls left the drawer, the API and CLI keep them) and 操作历史 (time,
+  principal and action only).
+- **The finance ledger folds its children.** Child tickets hide under their parent until the
+  chevron opens them (the folded row says how many); the roll-up column is called 总成本 / Total
+  cost.
+- **The calendar names its empty slots.** An empty cell or hour slot tints with the accent colour
+  on hover or focus and shows 「新建日程」 on top of whatever the cell holds; the slot is a real
+  button under the events, so a click on an event never opens the create form. Filtering by one
+  employee strikes the others through in the legend.
+- **The handbook explorer is the shared file tree** — the same `FileTree` the conversation page's
+  Workspace browser and the plugin library draw, with the index pinned as the first row and the
+  document meta on the row's trailing edge.
+- **Company mode says it is a beta.** A 内测版 / Beta pill sits beside the name in the
+  organization switcher (the collapsed rail carries the same suffix on "Switch to company mode");
+  a line under the admin's master switch always reads "Beta: it may be unstable; please report
+  what you hit.", and the same sentence joins that page's `?`; the first switch into the mode in a
+  browser raises it once as a toast and never again (remembered in localStorage as
+  `penguin.companyBetaNoticeShown`).
