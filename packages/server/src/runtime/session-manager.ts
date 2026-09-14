@@ -339,6 +339,27 @@ export interface SessionManagerDeps {
    * backfill assumes when it reads MAX(ts) as a session's last activity.
    */
   now?: () => Date;
+  /**
+   * Called when a Task starts (or is queued) from a PERSON's input — a message typed in the
+   * Web App, the CLI or a bound messaging bot, as opposed to one the harness injected
+   * (`sender: "server"` / `"harness"`). Company mode uses it to reset the desk's @-chain
+   * accounting: a person's message opens a fresh chain (hop 0), whatever mention last woke
+   * the desk. Optional; unit tests that do not wire it get nothing.
+   */
+  onHumanInput?: (sessionId: string) => void;
+}
+
+/**
+ * Whether a Task's input came from a person: every text payload either carries no sender or
+ * `sender: "user"`. A harness-injected turn (`"server"`, `"harness"`, `"parent_agent"`) on any
+ * message makes the whole input non-human — the org scheduler's trigger and a subagent's
+ * prompt both arrive that way.
+ */
+export function isHumanInput(input: readonly OmniMessage[]): boolean {
+  return input.every((m) => {
+    const p = m.payload as { sender?: string };
+    return p.sender === undefined || p.sender === "user";
+  });
 }
 
 /**
@@ -943,6 +964,9 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // A person's message opens a fresh chain for company mode's hop accounting, whether the
+      // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
+      if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
           id: randomUUID(),

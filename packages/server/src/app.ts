@@ -991,6 +991,11 @@ export function buildAppDeps(
     // Run-state flips reach the whole login session, not just the tab watching that one
     // conversation (see the shared publisher above for the audience).
     notifyProjectUsers,
+    // A person talking to a desk (the chat page, a bound bot) starts a new @-chain: the
+    // desk's next channel message is hop 1 again, whatever mention last woke it.
+    onHumanInput: (sessionId) => {
+      if (orgCacheRepo.ownerOfSession(sessionId) !== null) orgCacheRepo.setTriggerHop(sessionId, 0);
+    },
     ...(overrides.now ? { now: overrides.now } : {}),
   });
 

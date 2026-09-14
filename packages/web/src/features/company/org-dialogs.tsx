@@ -230,7 +230,7 @@ function MissionExamples({
   onPick: (example: { name: string; mission: string }) => void;
 }) {
   return (
-    <div className="mt-1.5 flex gap-1.5">
+    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
       {ORG_EXAMPLES.map((example) => {
         const copy = S.company.missionExamples[example.id];
         return (
@@ -240,7 +240,7 @@ function MissionExamples({
             title={`${copy.mission}\n${S.company.missionExampleHint}`}
             disabled={disabled}
             onClick={() => onPick(copy)}
-            className="min-w-0 flex-1 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+            className="min-w-0 truncate rounded-md border border-gray-200 px-2 py-1 text-left text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-100"
           >
             {copy.name}
           </button>

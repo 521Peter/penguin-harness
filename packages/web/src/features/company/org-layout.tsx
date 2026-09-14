@@ -146,7 +146,7 @@ function OrgEmptyLanding() {
             {S.company.createOrg}
           </Button>
         </div>
-        <ul className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-3 text-left sm:grid-cols-3">
+        <ul className="mx-auto mt-10 grid max-w-2xl grid-cols-1 gap-3 text-left sm:grid-cols-2">
           {ORG_EXAMPLES.map((example) => {
             const copy = S.company.missionExamples[example.id];
             return (
