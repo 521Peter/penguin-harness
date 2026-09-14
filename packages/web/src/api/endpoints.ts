@@ -134,6 +134,8 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateJobStatus,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
   RestartResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
@@ -172,6 +174,14 @@ export const getMe = () => apiFetch<MeResponse>("/api/me");
 
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
+
+/**
+ * Nickname and avatar, as a patch: an absent field keeps what is stored, `null` clears it.
+ * The response carries the updated user, which the caller feeds straight back into the auth
+ * state so the sidebar's avatar and name change without a second round trip.
+ */
+export const updateProfile = (body: UpdateProfileRequest) =>
+  apiFetch<UpdateProfileResponse>("/api/me/profile", { method: "PUT", body });
 
 export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 

@@ -127,6 +127,7 @@ export const en: Strings = {
     groupPersonal: "Personal",
     groupServer: "Server",
     /** Personal pages of the settings dialog. */
+    profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
@@ -441,6 +442,35 @@ export const en: Strings = {
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
       "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
+  },
+
+  /**
+   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * session, the desktop shell's own window included: a profile needs no password to change.
+   */
+  profile: {
+    /** Avatar row: its label, and the two actions beside the preview. */
+    avatar: "Avatar",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    changeAvatar: "Change avatar",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "Restore default",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
+    /** The picked image could not be brought under the size limit even as JPEG. */
+    avatarTooLarge: "That image is too large. Please pick a smaller one.",
+    /** The picked file could not be decoded as an image at all. */
+    avatarUnreadable: "That image could not be read. Please pick another file.",
+    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    displayName: "Nickname",
+    displayNameHint: "1–32 characters; leave blank to clear",
+    displayNamePlaceholder: "Blank shows the username",
   },
 
   account: {
