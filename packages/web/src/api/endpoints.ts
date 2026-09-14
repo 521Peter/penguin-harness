@@ -136,7 +136,11 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateJobStatus,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
   RestartResponse,
+  DesktopTrayPatch,
+  DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
@@ -172,6 +176,14 @@ export const getMe = () => apiFetch<MeResponse>("/api/me");
 
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
+
+/**
+ * Nickname and avatar, as a patch: an absent field keeps what is stored, `null` clears it.
+ * The response carries the updated user, which the caller feeds straight back into the auth
+ * state so the sidebar's avatar and name change without a second round trip.
+ */
+export const updateProfile = (body: UpdateProfileRequest) =>
+  apiFetch<UpdateProfileResponse>("/api/me/profile", { method: "PUT", body });
 
 export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 
@@ -1338,3 +1350,17 @@ export const desktopUpdateDownload = () =>
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
+
+// Desktop tray icon (desktop-shell sessions only) --------------------------------------
+
+/** What the shell last pushed; `status` is null until that first push, which reads as on. */
+export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/desktop/tray");
+
+/**
+ * Relays a tray change to the shell, which applies it and pushes the new state back.
+ *
+ * A patch rather than a snapshot: Settings › Appearance writes the switch, and the locale
+ * provider writes the UI language whenever it changes, and neither knows the other's value.
+ */
+export const setDesktopTray = (patch: DesktopTrayPatch) =>
+  apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });

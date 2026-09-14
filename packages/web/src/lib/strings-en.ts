@@ -127,6 +127,7 @@ export const en: Strings = {
     groupPersonal: "Personal",
     groupServer: "Server",
     /** Personal pages of the settings dialog. */
+    profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
@@ -213,6 +214,17 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    notifications: "Task completion notifications",
+    notificationsInfo:
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+    notificationsDenied:
+      "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
+    notificationsUnsupported: "This browser does not support system notifications.",
+    trayIcon: "Tray icon",
+    trayIconInfo:
+      "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -362,7 +374,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -430,6 +442,35 @@ export const en: Strings = {
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
       "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
+  },
+
+  /**
+   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * session, the desktop shell's own window included: a profile needs no password to change.
+   */
+  profile: {
+    /** Avatar row: its label, and the two actions beside the preview. */
+    avatar: "Avatar",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    changeAvatar: "Change avatar",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "Restore default",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
+    /** The picked image could not be brought under the size limit even as JPEG. */
+    avatarTooLarge: "That image is too large. Please pick a smaller one.",
+    /** The picked file could not be decoded as an image at all. */
+    avatarUnreadable: "That image could not be read. Please pick another file.",
+    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    displayName: "Nickname",
+    displayNameHint: "1–32 characters; leave blank to clear",
+    displayNamePlaceholder: "Blank shows the username",
   },
 
   account: {
@@ -812,6 +853,8 @@ export const en: Strings = {
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
@@ -1246,7 +1289,7 @@ export const en: Strings = {
       next: (when: string): string => `Next: ${when}`,
       today: (time: string): string => `today ${time}`,
       tomorrow: (time: string): string => `tomorrow ${time}`,
-      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      /** `monthDay` is formatMonthDay's output (9月3日 / Sep 3). */
       onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${monthDay}, ${year}, ${time}`,
@@ -2692,7 +2735,8 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    truncatedNote: (shown: number, total: number) => `Showing first ${shown} / ${total} messages`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",
