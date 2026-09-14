@@ -4,7 +4,9 @@
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
- * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and resume.
+ * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
+ * resume; and every pass brings an employee whose company plugins fell behind the library
+ * back up to it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -22,6 +24,7 @@ import { parseChannelConfig, serializeCalendarEvent } from "../src/organization/
 import { DEFAULT_CHANNEL_ID, ticketPath } from "../src/organization/paths.js";
 import { zonedDate } from "../src/organization/zoned.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
@@ -36,6 +39,8 @@ const CEO = "acme_ceo";
 const HR = "acme_hr";
 const T0 = Date.parse("2026-09-01T01:00:00Z");
 const DAY = 86_400_000;
+/** The version the fake plugin library offers; an employee set behind it is what a pass fixes. */
+const LIBRARY_VERSION = "2026-09-14.1";
 
 /** The utility completion's three shapes, as the id proposals see them. */
 const NO_MODEL: UtilityCompletion = {
@@ -85,6 +90,18 @@ describe("organization runtime", () => {
   let seq: number;
   /** The Agents the fake gateway says exist; a test deletes one to make its desk unopenable. */
   let existingAgents: Set<string>;
+  /**
+   * The plugin library and the Agents' installed copies as the fake gateway answers them:
+   * `library` per plugin name, `installed` keyed `<agentId>:<plugin>` (a hire records the
+   * library's version, so an employee is current until a test sets its entry back),
+   * `updated` every update performed, and `failUpdates` the pairs whose update throws.
+   */
+  let plugins: {
+    library: Map<string, string>;
+    installed: Map<string, string>;
+    updated: Array<{ agentId: string; plugin: string }>;
+    failUpdates: Set<string>;
+  };
 
   beforeEach(async () => {
     root = await makeTempRoot();
@@ -118,6 +135,12 @@ describe("organization runtime", () => {
     completion = { answers: [], prompts: [] };
     seq = 0;
     existingAgents = new Set<string>();
+    plugins = {
+      library: new Map(DEFAULT_EMPLOYEE_PLUGINS.map((name) => [name, LIBRARY_VERSION])),
+      installed: new Map(),
+      updated: [],
+      failUpdates: new Set(),
+    };
     deps = {
       root,
       store,
@@ -163,13 +186,31 @@ describe("organization runtime", () => {
       },
       agents: {
         exists: async (_p, agentId) => existingAgents.has(agentId),
-        create: async (_p, agentId, _name, _description, plugins) => {
+        create: async (_p, agentId, _name, _description, seeds) => {
           existingAgents.add(agentId);
-          agentsCreated.push({ agentId, plugins });
+          agentsCreated.push({ agentId, plugins: seeds });
+          // Creation installs the library's current content, so a fresh hire is never behind.
+          for (const name of seeds) {
+            const version = plugins.library.get(name);
+            if (version !== undefined) plugins.installed.set(`${agentId}:${name}`, version);
+          }
         },
         displayName: async (_p, agentId) => `Name of ${agentId}`,
         writeAgentsMd: async (_p, agentId, content) => {
           briefs.set(agentId, content);
+        },
+        pluginVersion: async (_p, agentId, plugin) => ({
+          installed: plugins.installed.get(`${agentId}:${plugin}`) ?? null,
+          library: plugins.library.get(plugin) ?? null,
+        }),
+        updatePlugin: async (_p, agentId, plugin) => {
+          if (plugins.failUpdates.has(`${agentId}:${plugin}`)) {
+            throw new Error(`plugin ${plugin} could not be written`);
+          }
+          const version = plugins.library.get(plugin);
+          if (version === undefined) throw new Error(`Plugin is not in the library: ${plugin}`);
+          plugins.installed.set(`${agentId}:${plugin}`, version);
+          plugins.updated.push({ agentId, plugin });
         },
       },
       projectConfig: new ProjectConfigService(root),
@@ -1988,6 +2029,62 @@ describe("organization runtime", () => {
       expect(await service.list(P)).toEqual([]);
       expect(existingAgents.has(CEO)).toBe(true);
       expect(sessions.findById(desk.sessionId)).not.toBeNull();
+    });
+  });
+
+  describe("employee plugins", () => {
+    const OLD = "2026-09-01.1";
+
+    async function orgWithHr(): Promise<void> {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      plugins.updated.length = 0;
+      errors.length = 0;
+    }
+
+    it("reinstalls a company plugin the library has moved past, and leaves the rest alone", async () => {
+      await orgWithHr();
+      plugins.installed.set(`${HR}:agent-company`, OLD);
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([{ agentId: HR, plugin: "agent-company" }]);
+      expect(plugins.installed.get(`${HR}:agent-company`)).toBe(LIBRARY_VERSION);
+      expect(errors).toEqual([]);
+    });
+
+    it("writes nothing while every employee is current", async () => {
+      await orgWithHr();
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([]);
+      // The same pass run twice stays a no-op: the comparison, not a one-shot flag, is what
+      // makes it idempotent.
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([]);
+    });
+
+    it("leaves a plugin the employee does not carry uninstalled", async () => {
+      await orgWithHr();
+      plugins.installed.delete(`${HR}:agent-development`);
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([]);
+      expect(plugins.installed.has(`${HR}:agent-development`)).toBe(false);
+    });
+
+    it("records a failed update and carries on with the rest of the pass", async () => {
+      await orgWithHr();
+      plugins.installed.set(`${HR}:agent-company`, OLD);
+      plugins.installed.set(`${CEO}:agent-company`, OLD);
+      plugins.failUpdates.add(`${CEO}:agent-company`);
+      await scheduler.tickOnce();
+      expect(plugins.updated).toEqual([{ agentId: HR, plugin: "agent-company" }]);
+      expect(plugins.installed.get(`${CEO}:agent-company`)).toBe(OLD);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({
+        source: "organization",
+        code: "org_plugin_update_failed",
+        ctx: { projectId: P, agentId: CEO },
+      });
+      // Not fatal: the calendar and the caches behind it in the pass still ran.
+      expect(await service.list(P)).toHaveLength(1);
     });
   });
 });

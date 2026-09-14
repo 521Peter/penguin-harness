@@ -1,7 +1,8 @@
 /**
- * Organization routes over the real app: the admin master switch 404s the whole group and
- * is reported by /api/me and /api/admin/settings; Project authorization gates reads and
- * writes (an outsider gets 404, a member may write) and no route deletes an organization;
+ * Organization routes over the real app: the admin master switch starts off, 404s the whole
+ * group while it is off, and is reported by /api/me and /api/admin/settings; Project
+ * authorization gates reads and writes (an outsider gets 404, a member may write), and no
+ * route deletes an organization;
  * bodies are validated before the service is asked; and the calling session rides write bodies as
  * `sessionId` (a read's query string), but only from the control environment's API token —
  * a signed-in member's claim is dropped. The service itself is a recording fake here — its semantics have their
@@ -95,6 +96,9 @@ describe("organization routes", () => {
 
   beforeEach(async () => {
     t = await createTestApp();
+    // Company mode is off on a server nobody turned it on (its own test below): every case
+    // here is about what the routes do once an admin has enabled it.
+    t.deps.serverSettingsRepo.setCompanyMode(true);
     calls = [];
     t.deps.orgService = fakeService(calls);
     const u = await provisionUser(t.app, "olivia");
@@ -104,6 +108,25 @@ describe("organization routes", () => {
 
   afterEach(async () => {
     await t.cleanup();
+  });
+
+  it("is off on a server whose admin never touched the switch", async () => {
+    const fresh = await createTestApp();
+    try {
+      const admin = await loginAdmin(fresh.app);
+      const settings = (await (
+        await apiClient(fresh.app, admin.cookie).get("/api/admin/settings")
+      ).json()) as ServerSettingsResponse;
+      expect(settings.settings.companyMode).toBe(false);
+      const u = await provisionUser(fresh.app, "olivia");
+      const api = apiClient(fresh.app, u.cookie);
+      const me = (await (await api.get("/api/me")).json()) as MeResponse;
+      expect(me.companyMode).toBe(false);
+      const res = await api.get("/api/projects/olivia-default_project/organizations");
+      expect(res.status).toBe(404);
+    } finally {
+      await fresh.cleanup();
+    }
   });
 
   it("answers 404 on every route while the admin switch is off, and /api/me reports it", async () => {

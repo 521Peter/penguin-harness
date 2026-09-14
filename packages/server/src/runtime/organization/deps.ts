@@ -46,7 +46,15 @@ export interface OrgSessionCreator {
   }): Promise<{ sessionId: string; workspace: string }>;
 }
 
-/** The Agent lifecycle pieces hiring and creation need. */
+/**
+ * The library plugins an employee is hired with, and the ones every reconcile pass keeps at
+ * the library's version. It lives here rather than beside the hiring code because both the
+ * hire and the pass reach it through the `agents` gateway below, and a module of interfaces
+ * can be imported from anywhere in the runtime without a cycle.
+ */
+export const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"] as const;
+
+/** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
 export interface OrgAgentGateway {
   exists(projectId: string, agentId: string): Promise<boolean>;
   create(
@@ -60,6 +68,19 @@ export interface OrgAgentGateway {
   displayName(projectId: string, agentId: string): Promise<string>;
   /** Replaces the Agent's AGENTS.md (the employee brief written at hire time). */
   writeAgentsMd(projectId: string, agentId: string, content: string): Promise<void>;
+  /**
+   * Where one library plugin stands on this Agent: the version it carries (null when it
+   * carries none of the plugin) against the version the library offers (null when the library
+   * has no such plugin). What the reconcile pass compares to decide whether an employee's
+   * company plugins have fallen behind.
+   */
+  pluginVersion(
+    projectId: string,
+    agentId: string,
+    plugin: string,
+  ): Promise<{ installed: string | null; library: string | null }>;
+  /** Reinstalls one library plugin over the Agent's copy — the whole-plugin update the Agents page performs. */
+  updatePlugin(projectId: string, agentId: string, plugin: string): Promise<void>;
 }
 
 /** Cost attribution by session (UsageService.costBySession / dailyCostForSessions). */

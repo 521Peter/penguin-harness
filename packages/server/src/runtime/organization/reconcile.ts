@@ -3,11 +3,13 @@
  * or a route's write asks for it. Files in, decisions out: caches are projected from the
  * ledger and the tickets, desks are renewed where the chart moved them, due calendar
  * events fire (carrying the ticket changes queued since the employee's last sweep), ticket
- * changes are recorded and queued, new channel mentions are delivered, budgets are checked.
+ * changes are recorded and queued, new channel mentions are delivered, budgets are checked,
+ * and every employee's company plugins are brought up to the library's version.
  * Missed work is never backfilled: a slot that passed while the server was down, the
  * organization paused or the switch off is consumed and skipped, like a schedule.
  */
 import { createHash } from "node:crypto";
+import { comparePluginVersions } from "@prismshadow/penguin-core";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
@@ -22,6 +24,7 @@ import { zonedDate } from "../../organization/zoned.js";
 import { latestSlotAt, slotInWindow } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend, TicketForSpend } from "./budget.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { deskDigest } from "./digest.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
@@ -130,6 +133,50 @@ export function syncCaches(deps: OrgDeps, org: LoadedOrg, tickets: readonly Load
   }
   deps.cache.syncTicketSessions(org.projectId, org.orgId, rows);
   deps.sessions.markOrgClient(owned);
+}
+
+/**
+ * An employee's company plugins, brought up to the library's version.
+ *
+ * An Agent's plugins are written once, at creation, and nothing rewrites them afterwards —
+ * the Agents page offers a manual per-Agent update, which nobody is there to click in an
+ * organization that runs unattended for weeks. So every pass compares each employee's
+ * installed {@link DEFAULT_EMPLOYEE_PLUGINS} against the library's version and reinstalls
+ * the ones that have fallen behind (the same whole-plugin update the Agents page performs),
+ * which is how a skill added to `agent-company` after a hire reaches the employees already
+ * at work.
+ *
+ * Cheap when nothing moved: the versions match and no file is written. An employee that does
+ * not carry a plugin at all is left alone — the set an Agent was hired with is the CEO's
+ * choice, not something a pass grows. A failed update is recorded and never stops the pass:
+ * the next one tries again.
+ */
+async function reconcileEmployeePlugins(deps: OrgDeps, org: LoadedOrg): Promise<void> {
+  for (const employee of org.chart.employees) {
+    for (const plugin of DEFAULT_EMPLOYEE_PLUGINS) {
+      try {
+        const { installed, library } = await deps.agents.pluginVersion(
+          org.projectId,
+          employee.agentId,
+          plugin,
+        );
+        if (installed === null || library === null) continue;
+        if (comparePluginVersions(library, installed) <= 0) continue;
+        await deps.agents.updatePlugin(org.projectId, employee.agentId, plugin);
+        deps.log?.(
+          `org: updated plugin ${plugin} on ${employee.agentId} (${installed} -> ${library})`,
+        );
+      } catch (err) {
+        recordError(
+          deps,
+          org,
+          "org_plugin_update_failed",
+          `Could not update plugin ${plugin} on ${employee.agentId}: ${err instanceof Error ? err.message : String(err)}`,
+          employee.agentId,
+        );
+      }
+    }
+  }
 }
 
 /** The CEO moved an employee's workspace: a desk whose session sits elsewhere is renewed. */
@@ -685,6 +732,7 @@ export async function reconcileOrg(
   }
   const { tickets } = await listTickets(deps, org);
   syncCaches(deps, org, tickets);
+  await reconcileEmployeePlugins(deps, org);
   await renewMovedDesks(deps, org);
   const spend = await computeSpend(deps, org, tickets);
   await reconcileBudgets(deps, org, spend);

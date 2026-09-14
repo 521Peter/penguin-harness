@@ -8,9 +8,13 @@
  * mention there — and finally check that development mode lists none of the organization's
  * own sessions. The desk row's run mark is checked on both sides of the initialization run:
  * it turns itself off when the run ends, which no server event announces.
+ *
+ * Company mode is off on a fresh server, so the spec turns the admin master switch on through
+ * /api/admin/settings before it signs in as the board member — without it there is no mode
+ * switch to click and every organization route answers 404.
  */
-import { test, expect } from "@playwright/test";
-import { provisionAndLogin } from "./auth.mjs";
+import { test, expect, request } from "@playwright/test";
+import { ADMIN_ID, ADMIN_PASSWORD, login, provisionAndLogin } from "./auth.mjs";
 
 const BASE = process.env.BASE_URL;
 const MOCK = process.env.MOCK_URL;
@@ -24,10 +28,25 @@ const ORG = "marketplace";
 const MISSION =
   "slow text test: 做一个 DeepSeek Harness 插件 Marketplace，通过社交媒体和 SEO 把搜索排名做到前三，靠首页限时置顶曝光位盈利。";
 
+/** The admin master switch, off by default: turned on server-wide before the flow starts. */
+async function enableCompanyMode() {
+  const adminCtx = await request.newContext();
+  try {
+    await login(adminCtx, ADMIN_ID, ADMIN_PASSWORD);
+    const res = await adminCtx.put(`${BASE}/api/admin/settings`, { data: { companyMode: true } });
+    if (!res.ok()) {
+      throw new Error(`enable company mode failed: ${res.status()} ${await res.text()}`);
+    }
+  } finally {
+    await adminCtx.dispose();
+  }
+}
+
 test("company mode: create the organization, meet the CEO, see the board and the chat work", async ({
   page,
 }) => {
   test.setTimeout(120_000);
+  await enableCompanyMode();
   await provisionAndLogin(page.request, U, P);
   const project = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0];
   const projectId = project.projectId;

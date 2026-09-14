@@ -93,6 +93,7 @@ import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
@@ -110,8 +111,6 @@ import type { LoadedTicket } from "./reconcile.js";
 import { rotaWarnings } from "./rota.js";
 import type { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
-
-export const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"] as const;
 
 /**
  * The CEO's partition of the shared workspace. The root of the shared workspace holds the

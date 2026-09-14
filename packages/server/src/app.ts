@@ -1146,6 +1146,15 @@ export function buildAppDeps(
         (await agentConfigService.readCardMeta(projectId, agentId)).name ?? agentId,
       writeAgentsMd: (projectId, agentId, content) =>
         agentConfigService.updateConfig(projectId, agentId, { agentsMd: content }),
+      pluginVersion: (projectId, agentId, plugin) =>
+        agentService.pluginVersion(projectId, agentId, plugin),
+      updatePlugin: async (projectId, agentId, plugin) => {
+        await agentService.updatePlugin(projectId, agentId, plugin);
+        // Same reason the plugins route invalidates: a hook package is bound when a core
+        // Session is built, so a runtime cached for this employee would keep the old set
+        // until it was evicted. A Task in flight keeps what it started with.
+        manager.invalidateAgentRuntimes(projectId, agentId);
+      },
     },
     projectConfig: projectConfigService,
     completeOnce: (projectId, prompt) => projectConfigService.completeOnce(projectId, prompt),

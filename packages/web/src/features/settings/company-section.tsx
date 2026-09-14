@@ -1,8 +1,9 @@
 /**
  * Company mode (admin only, server-global), modelled on the proxy section: one switch written
- * by a single PUT to /api/admin/settings. Off stops the organization scheduler, 404s every
- * organization route and hides the mode switch for everyone; on again resumes without
- * backfilling what was missed. Same form contract as the neighbouring pages — the control and
+ * by a single PUT to /api/admin/settings. The switch is off on a server nobody has turned it
+ * on, which is why the pre-hydration state below is off rather than on. Off stops the
+ * organization scheduler, 404s every organization route and hides the mode switch for
+ * everyone; on again resumes without backfilling what was missed. Same form contract as the neighbouring pages — the control and
  * Save stay disabled until the stored value arrives, an unchanged save sends nothing, and the
  * saved response is the new baseline. The auth context is refreshed afterwards because the
  * shell reads the flag from /api/me, not from this page.
@@ -22,7 +23,7 @@ export function CompanySection() {
   const { refresh } = useAuth();
   /** Stored settings as hydrated on mount (null until then) — the no-change baseline. */
   const [settings, setSettings] = useState<ServerSettings | null>(null);
-  const [companyMode, setCompanyMode] = useState(true);
+  const [companyMode, setCompanyMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const adopt = (next: ServerSettings) => {

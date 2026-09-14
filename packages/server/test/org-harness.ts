@@ -1,8 +1,8 @@
 /**
  * A company-mode harness on doubles: the real file store, caches and service, with the
- * session manager, session creation, the Agent lifecycle and usage pricing replaced by
- * recording fakes and the clock under test control. Shared by the runtime and scenario
- * suites so both exercise the same seams the app binds in production.
+ * session manager, session creation, the Agent lifecycle (plugin versions included) and usage
+ * pricing replaced by recording fakes and the clock under test control. Shared by the runtime
+ * and scenario suites so both exercise the same seams the app binds in production.
  */
 import { saveProjectConfig } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -15,6 +15,7 @@ import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
 import type { OrgDeps } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
@@ -55,7 +56,26 @@ export interface OrgHarness {
   flags: { companyMode: boolean };
   /** The Agents that exist in the Project, as the fake gateway answers `exists`; delete one to make its desk unopenable. */
   agents: Set<string>;
+  /** The plugin library and the Agents' installed copies, as the fake gateway answers them. */
+  plugins: FakePlugins;
 }
+
+/**
+ * What the fake `agents` gateway knows about plugins: the version the library offers per
+ * plugin name, the version each Agent carries (keyed `<agentId>:<plugin>`), the updates it was
+ * asked to perform, and the pairs whose update throws. A hire records every plugin it was
+ * created with at the library's version, so an employee is up to date until a test sets one of
+ * its entries back.
+ */
+export interface FakePlugins {
+  library: Map<string, string>;
+  installed: Map<string, string>;
+  updated: Array<{ agentId: string; plugin: string }>;
+  failUpdates: Set<string>;
+}
+
+/** The version the fake library offers for every plugin an employee is hired with. */
+export const FAKE_LIBRARY_VERSION = "2026-09-14.1";
 
 function textOf(input: OmniMessage[]): string {
   const first = input[0] as { payload?: { text?: string } } | undefined;
@@ -98,6 +118,12 @@ export async function makeOrgHarness(opts: {
   const errors: ErrorRecordArgs[] = [];
   const flags = { companyMode: true };
   const existingAgents = new Set<string>();
+  const plugins: FakePlugins = {
+    library: new Map(DEFAULT_EMPLOYEE_PLUGINS.map((name) => [name, FAKE_LIBRARY_VERSION])),
+    installed: new Map(),
+    updated: [],
+    failUpdates: new Set(),
+  };
   let seq = 0;
   const deps: OrgDeps = {
     root,
@@ -144,13 +170,32 @@ export async function makeOrgHarness(opts: {
     },
     agents: {
       exists: async (_p, agentId) => existingAgents.has(agentId),
-      create: async (_p, agentId, _name, _description, plugins) => {
+      create: async (_p, agentId, _name, _description, seeds) => {
         existingAgents.add(agentId);
-        agentsCreated.push({ agentId, plugins });
+        agentsCreated.push({ agentId, plugins: seeds });
+        // Creation installs the library's current content, which is why a fresh hire is never
+        // a candidate for the pass that keeps plugins current.
+        for (const name of seeds) {
+          const version = plugins.library.get(name);
+          if (version !== undefined) plugins.installed.set(`${agentId}:${name}`, version);
+        }
       },
       displayName: async (_p, agentId) => `Name of ${agentId}`,
       writeAgentsMd: async (_p, agentId, content) => {
         briefs.set(agentId, content);
+      },
+      pluginVersion: async (_p, agentId, plugin) => ({
+        installed: plugins.installed.get(`${agentId}:${plugin}`) ?? null,
+        library: plugins.library.get(plugin) ?? null,
+      }),
+      updatePlugin: async (_p, agentId, plugin) => {
+        if (plugins.failUpdates.has(`${agentId}:${plugin}`)) {
+          throw new Error(`plugin ${plugin} could not be written`);
+        }
+        const version = plugins.library.get(plugin);
+        if (version === undefined) throw new Error(`Plugin is not in the library: ${plugin}`);
+        plugins.installed.set(`${agentId}:${plugin}`, version);
+        plugins.updated.push({ agentId, plugin });
       },
     },
     projectConfig: new ProjectConfigService(root),
@@ -188,5 +233,6 @@ export async function makeOrgHarness(opts: {
     errors,
     flags,
     agents: existingAgents,
+    plugins,
   };
 }

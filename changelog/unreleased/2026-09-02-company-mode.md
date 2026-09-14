@@ -330,3 +330,22 @@ cursors, budget marks) and each user's read cursor per channel.
   changing an employee's workspace opens a fresh desk session, so the move stays the CEO's to
   make. The skills, the organization handbook template, the CEO's initialization run, the
   Company Mode guide, the CLI reference and the server API reference all describe the rule.
+- **Company mode is off until an admin turns it on.** The master switch under System settings ›
+  Server › Company mode now reads off when no row was ever written, instead of on: a server
+  nobody has opted into company mode answers 404 on every organization route, reports
+  `companyMode: false` from `GET /api/me`, keeps the organization scheduler idle and draws no
+  mode switch. An install that never touched the switch had company mode on and now has it
+  off — nothing on disk changes, the organizations stay exactly as they are, and the scheduler
+  simply idles until an admin enables the switch again, which resumes without backfilling what
+  was missed while it was off. The Company Mode guide and the settings page's "?" say so.
+- **An employee's company plugins are kept current.** An Agent's plugins used to be written
+  once, at creation, and only the Agents page's manual per-Agent update ever rewrote them —
+  which is nobody's job in an organization that runs unattended, so a skill added to
+  `agent-company` (`company-mirror`, for instance) never reached the employees already hired.
+  Every reconcile pass now compares each employee's installed `agent-company` and
+  `agent-development` against the library's version and reinstalls the whole plugin where it
+  has fallen behind, the same update the Agents page performs, logging one line per update.
+  Nothing is written while the versions match, a plugin an employee does not carry is left
+  uninstalled, and an update that fails is recorded as an `org_plugin_update_failed` error
+  without stopping the pass. `company-employee` says the server keeps these skills current, so
+  no employee installs one by hand.

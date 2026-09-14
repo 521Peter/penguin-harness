@@ -9,7 +9,7 @@ Development mode is one person talking to one Agent. Company mode is the second 
 
 Everything the company is lives in **files** under the Project directory. SQLite keeps caches that are rebuilt from those files on every pass, plus each user's read cursor in each channel — the same rule development mode follows for Agent State and Traces. Delete the caches and nothing changes; edit a file by hand and the next pass picks it up.
 
-Switch modes with the Development | Company control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, default on) and you have not hidden it yourself (System settings › Personal › Company mode).
+Switch modes with the Development | Company control at the top-left of the sidebar. It is there when the admin's master switch is on (System settings › Server › Company mode, **off by default** — an admin turns it on) and you have not hidden it yourself (System settings › Personal › Company mode).
 
 A desk or ticket session is stamped as the organization's on the row itself when it is opened, so it is listed in company mode and never in development mode's session list — including after the organization's directory is removed by hand or the master switch is turned off, when nothing else could tell whose it was. Organizations that already existed get their sessions stamped on the runtime's next pass over their files.
 
@@ -41,6 +41,8 @@ An organization also works in one **language**. It is `language` in `org_config.
 | Handbook | the company's knowledge base; its `README.md` is the index every work run reads first, the other documents are listed there and read on demand | `handbook/` |
 
 The handbook is progressive loading in practice: every trigger points at `handbook/README.md`, the index names the layout, the protocols, the role conventions and every document with one line saying when it matters, and a run reads a document only when that line says so. Board decisions go in `handbook/decisions/<yyyy-mm-dd>-<slug>.md`, conventions and how-tos next to them; the Handbook page of the Web App browses, edits and creates them, and `penguin org handbook list | show | write | rm` does the same from a session. The index cannot be deleted.
+
+An employee's company skills are kept current by the server: every reconcile pass compares the `agent-company` and `agent-development` each employee carries against the plugin library and reinstalls the whole plugin wherever it has fallen behind, so a skill added to the library reaches employees already at work without anyone updating each Agent by hand. Nothing is written while the versions match, and an update that fails is recorded as an error without disturbing the rest of the pass. Hiring is unchanged: a new employee installs the current version to begin with.
 
 People and employees are named the same way everywhere: `user:<user_id>` and `agent:<agent_id>`; `@all` is every member of the channel it is written in, `system` is the scheduler.
 
@@ -119,7 +121,7 @@ The **handbook** page lists the knowledge base as an explorer tree — folders b
 
 ## Switches
 
-- **Server**: the admin's company-mode switch. Off stops the organization scheduler (nothing fires, nothing is backfilled when it is turned on again), every organization route answers 404, and the mode switch disappears for everyone.
+- **Server**: the admin's company-mode switch, off by default — a fresh server enables it under System settings › Server › Company mode. Off stops the organization scheduler (nothing fires, nothing is backfilled when it is turned on again), every organization route answers 404, and the mode switch disappears for everyone.
 - **Personal**: hides the mode switch for you only; the organizations keep running.
 - **Organization**: pausing an organization stops all of its automatic triggers; people can still open any desk and talk.
 

@@ -190,7 +190,7 @@ export const en: Strings = {
       "Off only hides your own mode switch; organizations keep running. The admin master switch sits under Server.",
     companyModeServer: "Enable company mode",
     companyModeServerInfo:
-      "The server-wide master switch: off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger.",
+      "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger.",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
