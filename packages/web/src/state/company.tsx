@@ -9,6 +9,10 @@
  * Session's own page; organizations keep running regardless — the personal switch only hides the
  * user's own view of them.
  *
+ * Entering company mode is also where the shell says the mode is a beta: the first switch
+ * into it in a browser raises the notice once (features/company/beta-badge.tsx keeps the
+ * flag), which is why `setWorkMode` is the single handler both mode switches call.
+ *
  * The chosen mode and the organization last opened are user preferences (`workMode`,
  * `lastOrgKey` in ui_prefs) mirrored into localStorage (lib/work-mode.ts) so a reload stands
  * in the right mode before the preferences arrive; the stored copy wins once it does. Both
@@ -39,6 +43,9 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { apiErrorText } from "../lib/api-error";
+import { S } from "../lib/strings";
+import { toastAttention } from "../components/ui/toast";
+import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";
@@ -195,6 +202,14 @@ export function createCompanyStore() {
       if (mode === get().workMode) return;
       storeWorkMode(mode);
       set({ workMode: mode });
+      // The mode is a beta, and this is the one place a person enters it: both switches and
+      // the `/org` landing come through here, and hydrating the stored preference does not
+      // (it sets the field directly), so the notice follows a deliberate move and never a
+      // reload. Once per browser — the flag is the only state it keeps.
+      if (mode === "company" && shouldShowBetaNotice()) {
+        markBetaNoticeShown();
+        toastAttention(S.company.betaNotice);
+      }
       // Leaving company mode is what drops the open organization — not leaving its routes.
       // A desk or ticket conversation renders at `/chat/:sessionId` with the company sidebar
       // around it, and that sidebar lists this organization's channels and desks.

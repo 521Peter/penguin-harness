@@ -8,7 +8,8 @@
  * backfilling what was missed. A write that fails puts the switch back on the stored value and
  * names the reason on a line under it (a toast would leave the switch and the message on
  * separate surfaces). The auth context is refreshed afterwards because the shell reads the flag
- * from /api/me, not from this page.
+ * from /api/me, not from this page. The mode is a beta; the line under the switch says so
+ * wherever the switch stands.
  */
 import { useEffect, useState } from "react";
 import * as api from "../../api/endpoints";
@@ -85,6 +86,10 @@ export function CompanySection() {
         </div>
         {/* The reason the switch went back, under the switch it went back on. */}
         {error !== undefined && <p className={`mt-2 text-xs ${toneInk.danger}`}>{error}</p>}
+        {/* The mode is a beta, and this switch signs a whole server up for it: the warning
+            stands under it unconditionally rather than behind the page's "?", which is a
+            click away and is read once. */}
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.company.betaNotice}</p>
       </div>
     </SectionShell>
   );
