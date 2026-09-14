@@ -403,3 +403,8 @@ cursors, budget marks) and each user's read cursor per channel.
   hired, since hiring installs `agent-company`. `agent-development` is four skills again and
   `agent-company` is six; the plugin's manifest, the Skills documentation, the company-mode
   guide, the landing page's Skill list and the plugin library README follow.
+- **The admin's company-mode switch applies the moment it is flipped.** System settings ›
+  Server › Company mode has no Save button: the flip is the write (`PUT /api/admin/settings`),
+  the switch is disabled while the request is in flight, and a write that fails puts the switch
+  back on the stored value and names the reason on a line under it. The `?` explaining what the
+  master switch does is unchanged.

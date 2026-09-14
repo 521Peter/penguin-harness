@@ -103,3 +103,6 @@ Web App 新增第二种工作模式。公司模式下，一个 Project 的 Agent
   技能标签页）；而 CEO 与员工自受雇之日起就带着它，因为招募本来就会装 `agent-company`。于是
   `agent-development` 回到四个 Skill，`agent-company` 变为六个；插件清单、Skill 文档、公司模式指南、
   落地页的 Skill 列表与插件库 README 一并跟上。
+- **管理员的公司模式开关拨动即生效。** 系统设置 › 服务器 › 公司模式不再有保存按钮：拨动即写入
+  （`PUT /api/admin/settings`），请求在途期间开关禁用，写入失败则把开关拨回服务端存着的值，并在其
+  下方以一行说明原因。解释总开关作用的「?」不变。
