@@ -1,4 +1,4 @@
-/** Stable identifiers for Penguin API Hub's key-authorization flow. */
+/** Stable identifiers for Penguin Go's key-authorization flow. */
 
 export const PLATFORM_CLIENT_ID = "penguin-harness";
 
@@ -21,7 +21,7 @@ export interface PlatformCatalogModel {
   clientType?: "openai-chat";
 }
 
-/** Validated snapshot returned by Penguin API Hub's client-model catalog. */
+/** Validated snapshot returned by Penguin Go's client-model catalog. */
 export interface PlatformModelCatalog {
   models: PlatformCatalogModel[];
 }

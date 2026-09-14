@@ -78,8 +78,8 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
-  PENGUIN_API_HUB_BASE_URL,
-  PENGUIN_API_HUB_PROVIDER_ID,
+  PENGUIN_GO_BASE_URL,
+  PENGUIN_GO_PROVIDER_ID,
   canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
@@ -866,7 +866,7 @@ export function ModelsPage() {
     } catch (error) {
       if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
         keyLanded.current = false;
-        setOauthFor(PENGUIN_API_HUB_PROVIDER_ID);
+        setOauthFor(PENGUIN_GO_PROVIDER_ID);
       } else {
         toastError(apiErrorText(error));
       }
@@ -1129,7 +1129,7 @@ export function ModelsPage() {
               const open = isGroupExpanded(expanded, group.provider.id, searching);
               const drag = groupDragProps(group.provider.id);
               const platformAuthorized =
-                group.provider.id === PENGUIN_API_HUB_PROVIDER_ID &&
+                group.provider.id === PENGUIN_GO_PROVIDER_ID &&
                 group.rows.some((row) => Boolean(row.credential?.apiKeyMasked));
               return (
                 // The drop indicator is drawn against the WHOLE group, so "below" reads as
@@ -1212,7 +1212,7 @@ export function ModelsPage() {
                         )}
                       </button>
                       {isOwner && platformAuthorized && (
-                        // A stored Hub key enables catalog refresh, but authorization remains
+                        // A stored Penguin Go key enables catalog refresh, but authorization remains
                         // a separate action so the owner can replace it with another account.
                         // Sync leads the group actions and sits immediately before Add model.
                         <Button
@@ -1247,8 +1247,7 @@ export function ModelsPage() {
                         </Button>
                       )}
                       {isOwner &&
-                        (group.provider.oauth ||
-                          group.provider.id === PENGUIN_API_HUB_PROVIDER_ID) && (
+                        (group.provider.oauth || group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
                           // Authorize-a-key action: rendered off the group's own catalog
                           // descriptor, so a provider gains this button by publishing a flow
                           // rather than by being named here. Same narrow-row rule as its
@@ -1445,7 +1444,7 @@ export function ModelsPage() {
           momentary absence of rows reads as zero and is never seen. */}
       {projectId &&
         oauthFor !== null &&
-        (oauthFor === PENGUIN_API_HUB_PROVIDER_ID ? (
+        (oauthFor === PENGUIN_GO_PROVIDER_ID ? (
           <PlatformKeyAuthDialog
             projectId={projectId}
             providerLabel={
@@ -2331,9 +2330,7 @@ function ModelDialog({
       cacheWrite: "",
       output: "",
       baseUrl:
-        addProvider === PENGUIN_API_HUB_PROVIDER_ID
-          ? PENGUIN_API_HUB_BASE_URL
-          : (info?.gatewayBaseUrl ?? ""),
+        addProvider === PENGUIN_GO_PROVIDER_ID ? PENGUIN_GO_BASE_URL : (info?.gatewayBaseUrl ?? ""),
       originalBaseUrl: "",
       apiKeyInput: "",
       clearApiKey: false,
@@ -2613,13 +2610,13 @@ function ModelDialog({
   // inferred — required for custom / user-defined groups and entries with an explicit
   // openai protocol (gateway groups already have it pre-filled); optional for entries
   // auto-routed within a first-party vendor group (the client has its own official
-  // default endpoint). The Penguin API relay is also required: its shared key must never
+  // default endpoint). The Penguin Go relay is also required: its shared key must never
   // fall through to a vendor default. Shared by validation and the label's required "*" mark.
   const openAiLike =
     form.clientType.trim().toLowerCase().includes("openai") ||
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
-  const baseUrlRequired = form.provider === PENGUIN_API_HUB_PROVIDER_ID || (!preset && openAiLike);
+  const baseUrlRequired = form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike);
   // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
   // clients: the base URL field's suffix becomes the protocol picker there, unless the
   // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
@@ -2734,7 +2731,7 @@ function ModelDialog({
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
   // env fallback resolves live from the current form (uses the same
-  // the same provider-aware resolver as the server's getModels): the Penguin API relay
+  // the same provider-aware resolver as the server's getModels): the Penguin Go relay
   // keeps its own key while ordinary groups follow client routing.
   //
   // Custom and user-defined groups opt out of the model_id half (per maintainer): typing

@@ -119,7 +119,7 @@ const GLYPHS: Record<string, Glyph> = {
       </>
     ),
   },
-  "penguin-api-hub": {
+  "penguin-go": {
     // The app's Penguin emblem with its white rounded-square background and gradients
     // removed. Every remaining brand shape inherits currentColor, matching the other
     // preset-provider marks while the original full-colour app logo stays untouched.

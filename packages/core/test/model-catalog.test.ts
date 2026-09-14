@@ -32,13 +32,14 @@ describe("model-catalog", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
     // Group order is hand-curated, interleaving gateways and first-party vendors: the
-    // recommended TokenDance first, the prebuilt Hub next, DeepSeek after it, and vLLM last
+    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
+    // and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
-      "penguin-api-hub",
+      "penguin-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -61,7 +62,7 @@ describe("model-catalog", () => {
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     expect(providerInfo("minimax")!.label).toBe("MiniMax");
     expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
-    expect(providerInfo("penguin-api-hub")!.label).toBe("Penguin API");
+    expect(providerInfo("penguin-go")!.label).toBe("Penguin Go");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -113,9 +114,9 @@ describe("model-catalog", () => {
     expect(oauth.keyName).toBe("PenguinHarness");
   });
 
-  it("prebuilds Penguin API Hub with fixed relay routes and no account-owned pricing", () => {
-    const hub = MODEL_CATALOG.filter((model) => model.provider === "penguin-api-hub");
-    expect(hub.map((model) => model.modelId)).toEqual([
+  it("prebuilds Penguin Go with fixed relay routes and no account-owned pricing", () => {
+    const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
+    expect(penguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
@@ -128,20 +129,22 @@ describe("model-catalog", () => {
       "deepseek-v4-pro",
       "deepseek-v4-flash-vision-exp",
     ]);
-    expect(hub.every((model) => model.baseUrl === "https://token.penguin.ooo/api")).toBe(true);
-    expect(hub.every((model) => model.pricing === undefined)).toBe(true);
     expect(
-      hub
+      penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
+    ).toBe(true);
+    expect(penguinGoModels.every((model) => model.pricing === undefined)).toBe(true);
+    expect(
+      penguinGoModels
         .filter((model) => model.modelId.startsWith("gemini-"))
         .every((model) => model.clientType === undefined),
     ).toBe(true);
     expect(
-      hub
+      penguinGoModels
         .filter((model) => model.modelId.startsWith("deepseek-"))
         .every((model) => model.clientType === "openai-chat"),
     ).toBe(true);
-    expect(catalogEntryFor("penguin-api-hub", "deepseek-flash")?.supportsVision).toBe(true);
-    expect(catalogEntryFor("penguin-api-hub", "deepseek-v4-flash")?.supportsVision).toBe(false);
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")?.supportsVision).toBe(false);
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -153,8 +156,8 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "penguin-api-hub") {
-        // Hub pricing belongs to the external platform and may vary independently of this
+      if (m.provider === "penguin-go") {
+        // Penguin Go pricing belongs to the external platform and may vary independently of this
         // release. Undefined is deliberately "unknown", not a fabricated zero cost.
         expect(m.pricing, m.modelId).toBeUndefined();
       } else if (
@@ -702,7 +705,7 @@ describe("model-catalog", () => {
         ...gateway,
         ...minimax,
         ...pinnedDirect,
-        ...MODEL_CATALOG.filter((m) => m.provider === "penguin-api-hub"),
+        ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
       ]
         .map((m) => [m.provider, m.modelId])
         .sort(),
@@ -1085,13 +1088,13 @@ describe("model-catalog", () => {
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
-  it("keeps Penguin API relay credentials separate from both vendor protocols", () => {
-    expect(resolveProviderModelEnv("penguin-api-hub", "gemini-3.8-flash")?.envKey).toBe(
-      "PENGUIN_API_HUB_API_KEY",
+  it("keeps Penguin Go relay credentials separate from both vendor protocols", () => {
+    expect(resolveProviderModelEnv("penguin-go", "gemini-3.8-flash")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
     );
-    expect(
-      resolveProviderModelEnv("penguin-api-hub", "deepseek-flash", "openai-chat")?.envKey,
-    ).toBe("PENGUIN_API_HUB_API_KEY");
+    expect(resolveProviderModelEnv("penguin-go", "deepseek-flash", "openai-chat")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
     expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveProviderModelEnv("openrouter", "any-model", "openai-chat")?.envKey).toBe(
       "OPENAI_API_KEY",
@@ -1184,11 +1187,10 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
-      if (m.provider === "penguin-api-hub") {
-        // The routed clients would normally read vendor vars. Agent resolves the Hub's
-        // dedicated key explicitly before constructing them so those vars never cross to
-        // the relay endpoint.
-        expect(provider.envKey).toBe("PENGUIN_API_HUB_API_KEY");
+      if (m.provider === "penguin-go") {
+        // Penguin Go mixes routed clients behind one relay, so its provider-scoped
+        // environment name intentionally differs from each client's vendor variable.
+        expect(provider.envKey).toBe("PENGUIN_GO_API_KEY");
         continue;
       }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);

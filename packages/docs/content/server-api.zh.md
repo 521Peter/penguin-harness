@@ -181,9 +181,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
-#### Penguin API Hub Key 授权
+#### Penguin Go Key 授权
 
-以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-api-hub` 既有条目，并按平台元数据创建本地缺失模型；已有模型只刷新平台价格，其他元数据不会被覆盖，模型也不会被删除。
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型只刷新平台价格，其他元数据不会被覆盖，模型也不会被删除。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

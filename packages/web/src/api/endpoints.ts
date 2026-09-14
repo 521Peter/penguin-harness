@@ -347,7 +347,7 @@ export const submitModelOAuthCode = (projectId: string, flowId: string, code: st
     { method: "POST", body: { code } },
   );
 
-// Penguin API Hub key authorization (owner) -------------------------------------------
+// Penguin Go key authorization (owner) -------------------------------------------
 
 export const startPlatformAuth = (projectId: string) =>
   apiFetch<PlatformAuthStartResponse>(

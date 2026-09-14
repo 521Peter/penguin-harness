@@ -181,17 +181,17 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 `PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
 
-#### Penguin API Hub key authorization
+#### Penguin Go key authorization
 
-All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-api-hub` entries, and creates locally missing models from the platform metadata. Existing models refresh only their platform price; other metadata is not overwritten, and models are never deleted.
+All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh only their platform price; other metadata is not overwritten, and models are never deleted.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | /api/projects/:projectId/platform-auth/start | Start a one-time authorization flow; its platform deadline is capped locally at ten minutes |
 | POST | /api/projects/:projectId/platform-auth/sync | Fetch the platform catalog with the stored key, add locally missing models, and refresh existing prices; returns `added` / `updated` counts, or `platform_reauthorization_required` when that key is invalid |
-| GET | /api/projects/:projectId/platform-auth/:flowId/status | Poll the Hub server-side, write the delivered key to the group, and add platform models |
+| GET | /api/projects/:projectId/platform-auth/:flowId/status | Poll Penguin Go server-side, write the delivered key to the group, and add platform models |
 | POST | /api/projects/:projectId/platform-auth/:flowId/retry | Retry only the local atomic write after an apply failure; does not request the single-use delivery again |
-| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | Cancel the local flow; the Hub-side pending record expires by its TTL |
+| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | Cancel the local flow; the platform-side pending record expires by its TTL |
 
 A completed write invalidates cached Project runtimes and publishes `credentials_updated`. A non-empty platform catalog can create the group when it is absent; `apply_failed` means the validated delivery could not be applied to local configuration, and its retry route repeats only that local write.
 

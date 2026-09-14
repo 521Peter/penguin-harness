@@ -36,7 +36,7 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
-  PENGUIN_API_HUB_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
@@ -205,9 +205,9 @@ function assertRelayConnection(
   apiKey: string | undefined,
   baseUrl: string | undefined,
 ): void {
-  if (provider !== PENGUIN_API_HUB_PROVIDER_ID) return;
-  if (apiKey === undefined) throw new Error("Missing API key for Penguin API Hub.");
-  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin API Hub.");
+  if (provider !== PENGUIN_GO_PROVIDER_ID) return;
+  if (apiKey === undefined) throw new Error("Missing API key for Penguin Go.");
+  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin Go.");
 }
 
 /**
@@ -827,7 +827,7 @@ export class ProjectConfigService {
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
       savedClientType = entry === undefined ? undefined : optStr(entry.client_type);
     }
-    const relayRequest = req.provider === PENGUIN_API_HUB_PROVIDER_ID;
+    const relayRequest = req.provider === PENGUIN_GO_PROVIDER_ID;
     if (apiKey === undefined && relayRequest && req.provider && req.modelId) {
       apiKey = modelEnvironmentApiKey(req.provider, req.modelId, savedClientType);
     }

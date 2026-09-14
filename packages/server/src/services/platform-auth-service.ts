@@ -1,7 +1,7 @@
 /**
- * Project-scoped Penguin API Hub key authorization.
+ * Project-scoped Penguin Go key authorization.
  *
- * The Web App presents this like any other provider's "authorize a key" action. The Hub's
+ * The Web App presents this like any other provider's "authorize a key" action. Penguin Go's
  * wire protocol is different from OAuth/PKCE, though: the server registers a device secret,
  * polls the one-time delivery, validates its API key and model catalog, then adds newly
  * advertised models while writing the key across the provider group. Account and balance
@@ -268,7 +268,7 @@ export class PlatformAuthService {
         body: JSON.stringify({ code, deviceSecret, client: { id: PLATFORM_CLIENT_ID } }),
       });
     } catch {
-      throw new HttpError(502, "platform_unreachable", "Penguin API Hub could not be reached.");
+      throw new HttpError(502, "platform_unreachable", "Penguin Go could not be reached.");
     }
     if (response.status === 429) {
       let body: unknown = null;
@@ -281,30 +281,22 @@ export class PlatformAuthService {
       throw new HttpError(
         429,
         "platform_rate_limited",
-        "Penguin API Hub is receiving too many authorization requests. Try again shortly.",
+        "Penguin Go is receiving too many authorization requests. Try again shortly.",
         retryAfter,
       );
     }
     if (response.status !== 201) {
-      throw new HttpError(502, "platform_start_failed", "Penguin API Hub refused the key flow.");
+      throw new HttpError(502, "platform_start_failed", "Penguin Go refused the key flow.");
     }
     let body: Record<string, unknown>;
     try {
       body = asRecord(await readJsonBounded(response));
     } catch {
-      throw new HttpError(
-        502,
-        "platform_start_failed",
-        "Penguin API Hub returned an invalid response.",
-      );
+      throw new HttpError(502, "platform_start_failed", "Penguin Go returned an invalid response.");
     }
     const expiresAt = typeof body.expiresAt === "string" ? Date.parse(body.expiresAt) : NaN;
     if (!Number.isFinite(expiresAt) || expiresAt <= this.now()) {
-      throw new HttpError(
-        502,
-        "platform_start_failed",
-        "Penguin API Hub returned an invalid expiry.",
-      );
+      throw new HttpError(502, "platform_start_failed", "Penguin Go returned an invalid expiry.");
     }
     this.evictOldest(input.userId, input.projectId);
     const authorizeUrl = `${this.deps.origin}/desktop/authorize?code=${encodeURIComponent(code)}`;
@@ -360,7 +352,7 @@ export class PlatformAuthService {
       throw new HttpError(
         409,
         "platform_reauthorization_required",
-        "Penguin API Hub authorization is required.",
+        "Penguin Go authorization is required.",
       );
     }
     let response: Response;
@@ -370,17 +362,17 @@ export class PlatformAuthService {
         headers: { authorization: `Bearer ${apiKey}` },
       });
     } catch {
-      throw new HttpError(502, "platform_unreachable", "Penguin API Hub could not be reached.");
+      throw new HttpError(502, "platform_unreachable", "Penguin Go could not be reached.");
     }
     if (response.status === 401 || response.status === 403) {
       throw new HttpError(
         409,
         "platform_reauthorization_required",
-        "The Penguin API Hub key is no longer valid. Authorize it again.",
+        "The Penguin Go key is no longer valid. Authorize it again.",
       );
     }
     if (!response.ok) {
-      throw new HttpError(502, "platform_sync_failed", "Penguin API Hub refused model sync.");
+      throw new HttpError(502, "platform_sync_failed", "Penguin Go refused model sync.");
     }
     let catalog: PlatformModelCatalog;
     try {
@@ -389,7 +381,7 @@ export class PlatformAuthService {
       throw new HttpError(
         502,
         "platform_sync_failed",
-        "Penguin API Hub returned an invalid model catalog.",
+        "Penguin Go returned an invalid model catalog.",
       );
     }
     return this.deps.applyCatalog(projectId, catalog, apiKey, false);
@@ -494,7 +486,7 @@ export class PlatformAuthService {
     flow.error = undefined;
     try {
       const result = await this.deps.applyCatalog(flow.projectId, flow.catalog, flow.apiKey, true);
-      if (result.applied === 0) throw new Error("The Penguin API Hub catalog is empty.");
+      if (result.applied === 0) throw new Error("The Penguin Go catalog is empty.");
       flow.applied = result.applied;
       flow.apiKey = undefined;
       flow.catalog = undefined;

@@ -1,4 +1,4 @@
-/** Project-owner routes for authorizing a Penguin API Hub key. */
+/** Project-owner routes for authorizing a Penguin Go key. */
 import { Hono } from "hono";
 import type {
   PlatformAuthFlowStatusResponse,

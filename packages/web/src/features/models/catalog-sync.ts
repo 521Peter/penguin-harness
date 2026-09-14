@@ -3,7 +3,7 @@
  * to the search box): union semantics — catalog entries not configured locally are added;
  * entries present on both sides are reset to the catalog's fields (context window, pricing,
  * protocol, base URL, vision — the catalog wins wherever the two differ). Missing catalog
- * pricing normally removes local pricing; Penguin API is the exception because its mutable
+ * pricing normally removes local pricing; Penguin Go is the exception because its mutable
  * prices come from platform sync. Locally added models (including user-defined groups) are
  * kept untouched. Credentials are never touched: merged rows carry no apiKey input (the
  * PUT keeps the stored key) and existing rows keep their credential display state.
@@ -12,7 +12,7 @@
  * {@link displayNameFill}.
  */
 import {
-  PENGUIN_API_HUB_PROVIDER_ID,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   presetModelEntries,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -32,7 +32,7 @@ function presetFields(
   p: PresetEntry,
   current?: { cacheRead: string; cacheWrite: string; output: string },
 ) {
-  const keepPlatformPricing = p.provider === PENGUIN_API_HUB_PROVIDER_ID && p.pricing === undefined;
+  const keepPlatformPricing = p.provider === PENGUIN_GO_PROVIDER_ID && p.pricing === undefined;
   const pricing = p.pricing
     ? {
         cacheRead: String(p.pricing.cache_read),

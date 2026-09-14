@@ -791,7 +791,7 @@ export interface ModelOAuthCodeResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Penguin API Hub key authorization (/api/projects/:p/platform-auth, owner)
+// Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
 // ---------------------------------------------------------------------------
 
 export interface PlatformAuthStartResponse {
@@ -815,7 +815,7 @@ export interface PlatformAuthFlowStatusResponse {
   applied?: number;
 }
 
-/** Result of refreshing Penguin API Hub's catalog with the Project's stored platform key. */
+/** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
 export interface PlatformModelSyncResponse extends ModelsResponse {
   added: number;
   updated: number;

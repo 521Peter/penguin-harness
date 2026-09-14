@@ -987,15 +987,15 @@ export const zh = {
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
     },
     platformKeyIntro: (n: number): string =>
-      `授权后会自动获取一个 Penguin API Hub API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
     platformKeyAppliedBody: (n: number): string =>
-      `已完成授权：Penguin API Hub API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
     platformKeyStarting: "正在创建授权请求…",
     platformKeyApplying: "授权已完成，正在写入模型组…",
     platformKeyErrors: {
-      unreachable: "无法连接 Penguin API Hub，请检查网络后重新开始。",
-      upstream_failed: "Penguin API Hub 未能完成授权，请重新开始。",
-      invalid_key: "Penguin API Hub 未返回可用的 API key，请重新开始。",
+      unreachable: "无法连接 Penguin Go，请检查网络后重新开始。",
+      upstream_failed: "Penguin Go 未能完成授权，请重新开始。",
+      invalid_key: "Penguin Go 未返回可用的 API key，请重新开始。",
       expired: "授权已过期，请重新开始。",
       locked: "授权已锁定，请重新开始。",
       already_delivered: "该授权结果已经交付，请重新开始。",

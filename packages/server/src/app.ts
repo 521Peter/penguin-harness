@@ -109,7 +109,7 @@ import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuthService } from "./services/platform-auth-service.js";
-import { PENGUIN_API_HUB_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
+import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -184,7 +184,7 @@ export interface AppDeps {
   projectConfigService: ProjectConfigService;
   /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
   modelOAuth: ModelOAuthService;
-  /** In-flight Penguin API Hub flows and Project-scoped connection checks. */
+  /** In-flight Penguin Go flows and Project-scoped connection checks. */
   platformAuth: PlatformAuthService;
   agentService: AgentService;
   agentConfigService: AgentConfigService;
@@ -904,13 +904,12 @@ export function buildAppDeps(
       projectConfigService.setGroupApiKey(projectId, provider, apiKey),
   });
   const platformAuth = new PlatformAuthService({
-    origin: config.penguinApiHubOrigin,
-    getKey: (projectId) =>
-      projectConfigService.getGroupApiKey(projectId, PENGUIN_API_HUB_PROVIDER_ID),
+    origin: config.penguinGoOrigin,
+    getKey: (projectId) => projectConfigService.getGroupApiKey(projectId, PENGUIN_GO_PROVIDER_ID),
     applyCatalog: (projectId, catalog, apiKey, applyKeyToExisting) =>
       projectConfigService.mergePlatformModels(
         projectId,
-        PENGUIN_API_HUB_PROVIDER_ID,
+        PENGUIN_GO_PROVIDER_ID,
         catalog,
         apiKey,
         applyKeyToExisting,

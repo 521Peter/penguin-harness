@@ -20,7 +20,7 @@ function flowError(code: PlatformAuthFlowErrorCode | undefined): string {
 }
 
 /**
- * Penguin API Hub uses a device-style start/poll exchange internally, but presents the
+ * Penguin Go uses a device-style start/poll exchange internally, but presents the
  * same group-level "authorize a key" interaction as TokenDance. Account metadata never
  * enters this component; the completed flow only reports how many preset rows got the key.
  */

@@ -20,10 +20,10 @@ function json(status: number, body: unknown): Response {
 const deliveryBody = {
   status: "claimed",
   client: { id: "penguin-harness", displayName: "PenguinHarness" },
-  user: { id: 7, username: "hub-user", displayName: "Hub User", avatarUrl: null },
+  user: { id: 7, username: "penguin-go-user", displayName: "Penguin Go User", avatarUrl: null },
   apiKey: "ignored-top-level-key",
   connection: {
-    apiKey: "sk-penguin-hub-secret-0001",
+    apiKey: "sk-penguin-go-secret-0001",
     endpoints: {
       openai: "https://token.penguin.ooo/api",
       google: "https://token.penguin.ooo/api",
@@ -77,10 +77,10 @@ const syncCatalog = (models: unknown[] = deliveryBody.connection.models) => ({
   models,
 });
 
-describe("Penguin API Hub key delivery validation", () => {
+describe("Penguin Go key delivery validation", () => {
   it("accepts only the expected client and connection API key", () => {
     expect(platformConnection(deliveryBody)).toMatchObject({
-      apiKey: "sk-penguin-hub-secret-0001",
+      apiKey: "sk-penguin-go-secret-0001",
       catalog: {
         models: [
           {
@@ -152,7 +152,7 @@ describe("Penguin API Hub key delivery validation", () => {
   });
 });
 
-describe("Penguin API Hub key authorization routes", () => {
+describe("Penguin Go key authorization routes", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
   let member: ReturnType<typeof apiClient>;
@@ -162,17 +162,21 @@ describe("Penguin API Hub key authorization routes", () => {
 
   beforeEach(async () => {
     t = await createTestApp();
-    const ownerUser = await provisionUser(t.app, "hub_owner");
+    const ownerUser = await provisionUser(t.app, "penguin_api_owner");
     owner = apiClient(t.app, ownerUser.cookie);
-    const memberUser = await provisionUser(t.app, "hub_member");
+    const memberUser = await provisionUser(t.app, "penguin_api_member");
     member = apiClient(t.app, memberUser.cookie);
     projectId = (
       (await (
-        await owner.post("/api/projects", { projectId: "hub_owner-hub", name: "Hub Project" })
+        await owner.post("/api/projects", {
+          projectId: "penguin_api_owner-project",
+          name: "Penguin Go Project",
+        })
       ).json()) as ProjectCreateResponse
     ).project.projectId;
     expect(
-      (await owner.post(`/api/projects/${projectId}/members`, { userId: "hub_member" })).status,
+      (await owner.post(`/api/projects/${projectId}/members`, { userId: "penguin_api_member" }))
+        .status,
     ).toBe(201);
 
     pollCount = 0;
@@ -196,7 +200,7 @@ describe("Penguin API Hub key authorization routes", () => {
         }
         if (url.pathname === "/api/client/models") {
           expect(new Headers(init?.headers).get("authorization")).toBe(
-            "Bearer sk-penguin-hub-secret-0001",
+            "Bearer sk-penguin-go-secret-0001",
           );
           return json(200, syncCatalog(currentCatalogModels));
         }
@@ -216,8 +220,10 @@ describe("Penguin API Hub key authorization routes", () => {
     const initial = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
-    const initialHub = initial.models.filter((model) => model.provider === "penguin-api-hub");
-    expect(initialHub.map((model) => model.modelId)).toEqual([
+    const initialPenguinGoModels = initial.models.filter(
+      (model) => model.provider === "penguin-go",
+    );
+    expect(initialPenguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
@@ -231,9 +237,13 @@ describe("Penguin API Hub key authorization routes", () => {
       "deepseek-v4-flash-vision-exp",
     ]);
     expect(
-      initialHub.every((model) => model.credential?.baseUrl === "https://token.penguin.ooo/api"),
+      initialPenguinGoModels.every(
+        (model) => model.credential?.baseUrl === "https://token.penguin.ooo/api",
+      ),
     ).toBe(true);
-    expect(initialHub.every((model) => model.credential?.apiKeyMasked === undefined)).toBe(true);
+    expect(
+      initialPenguinGoModels.every((model) => model.credential?.apiKeyMasked === undefined),
+    ).toBe(true);
     expect((await member.post(`${base}/start`, {})).status).toBe(403);
     const unauthorizedSync = await owner.post(`${base}/sync`, {});
     expect(unauthorizedSync.status).toBe(409);
@@ -263,9 +273,9 @@ describe("Penguin API Hub key authorization routes", () => {
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
-    const hub = models.models.filter((model) => model.provider === "penguin-api-hub");
-    expect(hub).toHaveLength(12);
-    expect(hub.find((model) => model.modelId === "deepseek-future")).toMatchObject({
+    const penguinGoModels = models.models.filter((model) => model.provider === "penguin-go");
+    expect(penguinGoModels).toHaveLength(12);
+    expect(penguinGoModels.find((model) => model.modelId === "deepseek-future")).toMatchObject({
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
       maxTokens: 65_536,
@@ -274,23 +284,27 @@ describe("Penguin API Hub key authorization routes", () => {
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
       credential: { baseUrl: "https://token.penguin.ooo/api" },
     });
-    expect(hub.find((model) => model.modelId === "gemini-3.8-flash")?.pricing).toEqual({
+    expect(penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash")?.pricing).toEqual({
       cacheRead: 0,
       cacheWrite: 1.25,
       output: 10,
     });
-    expect(hub.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(true);
+    expect(penguinGoModels.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(
+      true,
+    );
     expect(
-      hub.every((model) => model.credential?.baseUrl === "https://token.penguin.ooo/api"),
+      penguinGoModels.every(
+        (model) => model.credential?.baseUrl === "https://token.penguin.ooo/api",
+      ),
     ).toBe(true);
-    expect(JSON.stringify(models)).not.toContain("sk-penguin-hub-secret-0001");
+    expect(JSON.stringify(models)).not.toContain("sk-penguin-go-secret-0001");
 
     const synced = (await (
       await owner.post(`${base}/sync`, {})
     ).json()) as PlatformModelSyncResponse;
     expect(synced).toMatchObject({ added: 0, updated: 0 });
     expect(synced.updatedAt).toBe(models.updatedAt);
-    expect(synced.models.filter((model) => model.provider === "penguin-api-hub")).toHaveLength(12);
+    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(12);
 
     currentCatalogModels = currentCatalogModels.map((model) =>
       typeof model === "object" &&

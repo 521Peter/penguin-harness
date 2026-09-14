@@ -90,12 +90,12 @@ describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
   });
 });
 
-describe("resolveServerConfig: PENGUIN_API_HUB_ORIGIN parsing", () => {
+describe("resolveServerConfig: PENGUIN_GO_ORIGIN parsing", () => {
   it("defaults to the production HTTPS origin and accepts loopback HTTP for integration", () => {
-    expect(resolveServerConfig({ ...base }).penguinApiHubOrigin).toBe("https://token.penguin.ooo");
+    expect(resolveServerConfig({ ...base }).penguinGoOrigin).toBe("https://token.penguin.ooo");
     expect(
-      resolveServerConfig({ ...base, PENGUIN_API_HUB_ORIGIN: " http://127.0.0.1:3000 " })
-        .penguinApiHubOrigin,
+      resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: " http://127.0.0.1:3000 " })
+        .penguinGoOrigin,
     ).toBe("http://127.0.0.1:3000");
   });
 
@@ -106,8 +106,8 @@ describe("resolveServerConfig: PENGUIN_API_HUB_ORIGIN parsing", () => {
       "https://user:pass@token.penguin.ooo",
       "https://token.penguin.ooo?next=x",
     ]) {
-      expect(() => resolveServerConfig({ ...base, PENGUIN_API_HUB_ORIGIN: bad }), bad).toThrow(
-        /Invalid PENGUIN_API_HUB_ORIGIN/,
+      expect(() => resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: bad }), bad).toThrow(
+        /Invalid PENGUIN_GO_ORIGIN/,
       );
     }
   });

@@ -221,9 +221,9 @@ describe("syncRowsWithCatalog", () => {
     expect([row.cacheRead, row.cacheWrite, row.output]).toEqual(["", "", ""]);
   });
 
-  it("keeps Penguin API pricing owned by platform sync out of preset updates", () => {
+  it("keeps Penguin Go pricing owned by platform sync out of preset updates", () => {
     const preset = presetModelEntries().find(
-      (entry) => entry.provider === "penguin-api-hub" && entry.model_id === "gemini-3.8-flash",
+      (entry) => entry.provider === "penguin-go" && entry.model_id === "gemini-3.8-flash",
     )!;
     const local = makeRow({
       provider: preset.provider,
