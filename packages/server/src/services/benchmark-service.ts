@@ -1,8 +1,10 @@
 /**
  * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title, description, per-case run count `runs`, build `status`) and
- * `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each case its
- * model-written averages and a runs array).
+ * `benchmark_config.toml` (title, description, per-case run count `runs`, and the build
+ * `status`: `draft` while the Benchmark is still being written, `failed` when its calibration
+ * never produced a result to freeze, `published` otherwise) and `scoreboard.yaml`
+ * (evaluations[], each carrying the Agent it tested, each case its model-written averages and
+ * a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
  * directory whole (`remove`), and never touches a scoreboard.
@@ -450,10 +452,12 @@ export class BenchmarkService {
       if (configRuns !== undefined && Number.isInteger(configRuns) && configRuns >= 1) {
         runs = configRuns;
       }
-      // Only a literal "draft" says the Benchmark is still being built. A config written before
-      // this field existed has none, and an unrecognized value is not a lock either, so both
-      // read as published.
-      if (stringOr(config.status) === "draft") status = "draft";
+      // The two states that make a Benchmark unusable are literal: "draft" while it is still
+      // being built, "failed" when its calibration never produced a result to freeze. A config
+      // written before this field existed has none, and an unrecognized value is neither, so
+      // both read as published.
+      const raw = stringOr(config.status);
+      status = raw === "draft" ? "draft" : raw === "failed" ? "failed" : "published";
     } catch {
       // Missing or corrupt: title falls back to the directory name.
     }

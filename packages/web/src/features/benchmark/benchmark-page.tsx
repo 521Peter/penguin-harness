@@ -123,8 +123,9 @@ function TestedAgents({
  * then the Agents it has tested, the sparkline, the newest Score with its change from the
  * previous record of the same label, and the actions. The info column is the card's main button
  * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
- * nested block. A draft card is masked under a notice that it is being built, with only the
- * delete icon left live.
+ * nested block. A card that is not published is masked under a notice — still being built for a
+ * draft, creation failed for a Benchmark whose calibration never finished — with only the delete
+ * icon left live.
  */
 function BenchmarkCard({
   benchmark,
@@ -145,15 +146,17 @@ function BenchmarkCard({
 }) {
   const latest = latestWithDelta(benchmark.evaluations);
   const series = sparklineSeries(benchmark.evaluations);
-  // A draft is still being written and calibrated by the agent, so the card is masked and inert;
-  // only the owner's delete stays above the mask, for cleaning up a calibration that failed.
-  const draft = benchmark.status === "draft";
+  // A Benchmark that is not published is masked and inert: a draft is still being written and
+  // calibrated by the agent, and a failed one never finished calibrating and can only be thrown
+  // away. Only the owner's delete stays above the mask, which is how either is cleaned up.
+  const masked = benchmark.status !== "published";
+  const failed = benchmark.status === "failed";
   return (
     <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
       <button
         type="button"
         onClick={onOpen}
-        disabled={draft}
+        disabled={masked}
         className="min-w-[14rem] flex-1 text-left"
       >
         <span className="flex items-center gap-2">
@@ -212,10 +215,10 @@ function BenchmarkCard({
       <div className="flex shrink-0 items-center gap-1">
         {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a
             Benchmark is for, and optimizing it is the tab next door. */}
-        <Button size="sm" variant="primary" onClick={onUse} disabled={draft}>
+        <Button size="sm" variant="primary" onClick={onUse} disabled={masked}>
           {S.benchmark.use}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onOpen} disabled={draft}>
+        <Button size="sm" variant="ghost" onClick={onOpen} disabled={masked}>
           {S.benchmark.view}
         </Button>
         {canDelete && (
@@ -225,23 +228,27 @@ function BenchmarkCard({
             title={S.benchmark.deleteBenchmark}
             aria-label={S.benchmark.deleteBenchmark}
             onClick={onDelete}
-            className={draft ? "relative z-10" : undefined}
+            className={masked ? "relative z-10" : undefined}
           >
             <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
           </Button>
         )}
       </div>
-      {draft && (
+      {masked && (
         <div
           role="note"
-          title={S.benchmark.buildingHint}
+          title={failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
         >
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-            {S.benchmark.building}
+          {/* A failed creation is the one thing here the user has to act on, so its title takes
+              the danger ink; the line under it stays secondary text either way. */}
+          <span
+            className={`text-sm font-medium ${failed ? toneInk.danger : "text-gray-700 dark:text-gray-200"}`}
+          >
+            {failed ? S.benchmark.creationFailed : S.benchmark.building}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {S.benchmark.buildingHint}
+            {failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
           </span>
         </div>
       )}

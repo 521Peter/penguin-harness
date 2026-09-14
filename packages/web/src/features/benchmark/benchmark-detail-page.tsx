@@ -84,9 +84,11 @@ export function BenchmarkDetailPage() {
 
   if (!projectId) return null;
 
-  // A draft is still being written and calibrated by the agent: there are no settled cases or
-  // scores to show yet, and nothing to evaluate against.
-  const draft = benchmark !== null && benchmark.status === "draft";
+  // A Benchmark that is not published has no settled cases or scores to show and nothing to
+  // evaluate against: a draft is still being written and calibrated by the agent, and a failed
+  // one never finished calibrating and can only be deleted.
+  const masked = benchmark !== null && benchmark.status !== "published";
+  const failed = benchmark !== null && benchmark.status === "failed";
 
   let body;
   if (error !== null) {
@@ -100,8 +102,15 @@ export function BenchmarkDetailPage() {
         <Skeleton className="h-32 w-full" />
       </div>
     );
-  } else if (draft) {
-    body = <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />;
+  } else if (masked) {
+    body = failed ? (
+      <EmptyState
+        title={S.benchmark.creationFailed}
+        description={S.benchmark.creationFailedDetail}
+      />
+    ) : (
+      <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />
+    );
   } else {
     body = <BenchmarkDetail projectId={projectId} benchmark={benchmark} />;
   }
@@ -121,8 +130,8 @@ export function BenchmarkDetailPage() {
         {/* The Benchmark's name, the directory its files live in, and the Use entry point. The
             case counts and the description are the detail's own, one block below. A Benchmark
             tests whichever Agents its scoreboard names, so no single Agent is named up here. A
-            draft reached by its address keeps the path but drops Use, and shows the building
-            notice in place of the detail. */}
+            Benchmark that is not published, reached by its address, keeps the path but drops
+            Use, and shows the building or creation-failed notice in place of the detail. */}
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
           <h1 className="min-w-0 truncate text-xl font-semibold">
             {benchmark?.title ?? benchmarkId}
@@ -141,7 +150,7 @@ export function BenchmarkDetailPage() {
                   className={ROW_COPY_CLASS}
                 />
               </span>
-              {!draft && (
+              {!masked && (
                 <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
                   {S.benchmark.use}
                 </Button>
@@ -152,7 +161,7 @@ export function BenchmarkDetailPage() {
         {body}
       </div>
 
-      {using && benchmark !== null && !draft && (
+      {using && benchmark !== null && !masked && (
         <UseBenchmarkModal
           key={benchmark.id}
           open

@@ -2160,6 +2160,14 @@ Benchmark：
       benchmark: (n: number) => `评估任务（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
     },
+    /**
+     * Tooltip of a folder-only group's header — a group with no active conversation of its
+     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
+     * those folders hold, which is also the count the dimmed header shows; the Workspace path
+     * follows where the header has one, since this sentence replaces the tooltip that carried it.
+     */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
     /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
     attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
@@ -2743,6 +2751,11 @@ Benchmark：
     building: "构建中",
     buildingHint: "智能体还在出题与校准难度，构建完成后即可使用",
     buildingDetail: "构建完成后，这里会显示题目、分数曲线与评估明细。",
+    /** A Benchmark whose calibration never finished: unusable, so the card and page are masked. */
+    creationFailed: "创建失败",
+    creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
+    creationFailedDetail:
+      "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,
@@ -2797,7 +2810,12 @@ Benchmark：
     askEvaluationDescription:
       "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
     askEvaluationDefault: "解释这次评估的结果。",
+    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
     askEvaluationExamples: {
+      explain: {
+        label: "解释这次评估的结果",
+        prompt: "解释这次评估的结果。",
+      },
       whyLow: {
         label: "为什么这次分数低？",
         prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
@@ -2850,7 +2868,12 @@ Benchmark：
     askCaseDescription:
       "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
     askCaseDefault: "解释这道题考什么、怎样才算答好。",
+    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
     askCaseExamples: {
+      explain: {
+        label: "解释这道题考什么、怎样才算答好",
+        prompt: "解释这道题考什么、怎样才算答好。",
+      },
       rubricRewards: {
         label: "评分细则在奖励什么？",
         prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
@@ -2892,29 +2915,52 @@ Benchmark：
     targetAgentHint: "题目为它而出、分数记在它名下；出题本身由下方所示的智能体在新对话里完成",
     aiCreateExamples: {
       reportWriter: {
-        label: "为报告写作智能体出一套高难度题",
-        description: "5 道题：材料矛盾、格式严格、跨语言、篇幅与引用",
-        prompt:
-          "为报告写作智能体设计一套高难度 Benchmark：5 道题，覆盖材料自相矛盾、格式要求严格、跨语言资料、篇幅限制与引用规范等场景，" +
-          "评分细则要能把「优秀」和「及格」拉开差距，然后取得基线分。",
+        label: "报告写作：材料互相矛盾的 3 道题",
+        description: "3 道题：冲突材料、缺失口径、严格篇幅与引用",
+        prompt: `为报告写作智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`report-conflicting-sources\`
+- capability：在材料互相矛盾、关键口径没有写明、篇幅与引用受限时，仍能交出结论可追溯、口径一致的报告
+- 题量：3 道
+- 出题手法：每题给 2–3 份彼此冲突的材料，其中一份日期更新但只在页脚标注；币种、时区、统计口径等关键前提刻意不写全，正确做法是先指出缺口、再做保守假设并标明；篇幅上限与引用格式严格，超限或漏引直接失分
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
       },
       customerService: {
-        label: "客服智能体的多轮对话题",
-        description: "8 道题：情绪化用户、政策边界、需查资料",
-        prompt:
-          "为客服智能体设计 8 道多轮对话题：含情绪化用户、政策边界、需要查资料才能回答的问题，评分看准确性、语气与是否越权承诺。",
+        label: "客服：隐藏政策前提的 3 道对话题",
+        description: "3 道题：信息不全的用户、藏在附录的政策条件、越权承诺陷阱",
+        prompt: `为客服智能体出一套题量少而难的多轮对话 Benchmark，把基线分压低。
+
+- benchmark_id：\`support-hidden-policy\`
+- capability：在用户信息不全、政策条件藏在资料深处、情绪化表达诱导越权承诺时，仍能先核实再答复、不越权、口径与政策一致
+- 题量：3 道
+- 出题手法：政策文件的例外条款与生效日期只出现在附录；用户描述模糊，关键事实要追问才给；至少一题里最顺手的答复正是越权承诺；评分看是否核实、是否越权、语气与准确性
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
       },
       codeReview: {
-        label: "代码审查智能体的缺陷题",
-        description: "6 道题：每题 2–3 个真实缺陷，评分看查全与误报",
-        prompt:
-          "为代码审查智能体出 6 道题：每题给一段含 2–3 个真实缺陷的代码（安全、并发、边界），评分看是否找全、是否误报。",
+        label: "代码审查：缺陷藏在约定里的 3 道题",
+        description: "3 道题：调用约定与并发前提未写明，注释与测试会误导",
+        prompt: `为代码审查智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`review-hidden-contracts\`
+- capability：在缺陷藏在调用约定、并发前提与数据形态里、注释与测试反而误导时，仍能查全真实缺陷、不误报、并说明如何验证
+- 题量：3 道
+- 出题手法：每题一个小型多文件仓库，2–3 个真实缺陷分别依赖未写明的调用顺序、时区或编码假设、并发前提；附带一两条过时注释和一份能通过却覆盖不到缺陷的测试；评分看查全、误报与是否给出可复现的验证步骤
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
       },
       dataAnalysis: {
-        label: "数据分析智能体的 CSV 题",
-        description: "5 道题：附 CSV 与业务问题，评分看结论与口径",
-        prompt:
-          "为数据分析智能体出 5 道题：每题附一份 CSV 与业务问题，评分看结论正确性、图表与口径说明。",
+        label: "数据分析：问题模糊、数据带坑的 3 道题",
+        description: "3 道题：脏数据、未说明的口径、需要先澄清假设",
+        prompt: `为数据分析智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`analysis-ambiguous-asks\`
+- capability：在业务问题表述模糊、数据带脏值与未说明的口径时，先澄清假设再分析，结论正确且口径可核对
+- 题量：3 道
+- 出题手法：每题附一份带重复行、混合单位与缺失值的 CSV，字段含义只有一部分写在数据字典里；业务问题本身有两种合理解读，正确做法是指出分歧、按标明的假设分别作答；评分看结论、口径说明与图表是否与结论一致
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
@@ -2923,7 +2969,7 @@ Benchmark：
       `- test_agent_id：\`${targetAgentId}\`\n` +
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
       "- desired_baseline_score：`<70`（上文另有要求时以上文为准）\n" +
-      "- pilot_iteration_limit：`3`\n\n" +
+      "- pilot_iteration_limit：`3`（上文另有要求时以上文为准）\n\n" +
       "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
       "（title、description、runs = 1；不记录被测智能体）、" +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +

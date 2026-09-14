@@ -2186,6 +2186,9 @@ Scenarios:
       benchmark: (n: number) => `Evaluations (${n})`,
       archived: (n: number) => `Archived (${n})`,
     },
+    /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
     attachedFilesBanner: (names: string[]): string =>
@@ -2788,6 +2791,12 @@ Scenarios:
       "The agent is still writing the cases and calibrating their difficulty; the Benchmark opens once that is done",
     buildingDetail:
       "Once it is built, the cases, the score chart and the evaluation table appear here.",
+    /** A Benchmark whose calibration never finished: unusable, so the card and page are masked. */
+    creationFailed: "Creation failed",
+    creationFailedHint:
+      "The cases' difficulty could not be calibrated; delete this Benchmark and create it again",
+    creationFailedDetail:
+      "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized; delete it and create it again.",
     testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
@@ -2834,7 +2843,12 @@ Scenarios:
     askEvaluationDescription:
       "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
     askEvaluationDefault: "Explain this evaluation's result.",
+    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
     askEvaluationExamples: {
+      explain: {
+        label: "Explain this evaluation's result",
+        prompt: "Explain this evaluation's result.",
+      },
       whyLow: {
         label: "Why is the score low?",
         prompt:
@@ -2891,7 +2905,12 @@ Scenarios:
     askCaseDescription:
       "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
     askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
+    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
     askCaseExamples: {
+      explain: {
+        label: "Explain what this case tests and what a strong answer looks like",
+        prompt: "Explain what this case tests and what a strong answer looks like.",
+      },
       rubricRewards: {
         label: "What does the rubric reward?",
         prompt:
@@ -2934,31 +2953,55 @@ Scenarios:
       "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
     aiCreateExamples: {
       reportWriter: {
-        label: "A hard set for a report-writing agent",
+        label: "Report writing: 3 cases with contradicting sources",
         description:
-          "5 cases: contradicting sources, strict format, cross-language, length and citations",
-        prompt:
-          "Design a hard Benchmark for a report-writing agent: 5 cases covering self-contradicting sources, strict formatting requirements, cross-language material, length limits and citation rules. " +
-          "The rubrics must separate excellent from merely passing work. Then take the baseline score.",
+          "3 cases: conflicting material, unstated conventions, strict length and citations",
+        prompt: `Write a small, hard Benchmark for the report-writing agent — few cases, a low baseline.
+
+- benchmark_id: \`report-conflicting-sources\`
+- capability: still deliver a report with traceable conclusions and one consistent set of conventions when the sources contradict each other, key conventions are unstated, and length and citations are constrained
+- case count: 3
+- techniques: each case gives 2–3 sources that contradict one another, one of them newer but dated only in a footer; currency, time zone and counting conventions are deliberately left incomplete, and the right move is to name the gap, make a conservative assumption and mark it; a strict length cap and citation format, where overrunning or a missing citation costs points outright
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
       },
       customerService: {
-        label: "Multi-turn cases for a support agent",
-        description: "8 cases: upset users, policy edges, questions that need a lookup",
-        prompt:
-          "Design 8 multi-turn conversation cases for a customer-support agent: upset users, policy boundaries, and questions that cannot be answered without looking something up. Score accuracy, tone and whether the agent promises more than it may.",
+        label: "Support: 3 conversations with a hidden policy condition",
+        description:
+          "3 cases: incomplete users, policy conditions buried in an appendix, an over-promise trap",
+        prompt: `Write a small, hard multi-turn Benchmark for the customer-support agent — few cases, a low baseline.
+
+- benchmark_id: \`support-hidden-policy\`
+- capability: verify before answering, never over-promise, and stay consistent with the policy when the user's information is incomplete, the policy condition is buried deep in the material, and an emotional message invites a promise the agent cannot make
+- case count: 3
+- techniques: the policy's exceptions and effective dates appear only in an appendix; the user's description is vague and the key facts come out only when asked; in at least one case the most natural reply is exactly the forbidden promise; scoring looks at verification, over-promising, tone and accuracy
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
       },
       codeReview: {
-        label: "Defect cases for a code-review agent",
-        description: "6 cases with 2–3 real defects each; score recall and false positives",
-        prompt:
-          "Write 6 cases for a code-review agent: each gives a code snippet with 2–3 real defects (security, concurrency, boundaries). Score whether every defect is found and whether anything is flagged falsely.",
+        label: "Code review: 3 cases whose defects hide in the contracts",
+        description:
+          "3 cases: unstated calling and concurrency assumptions, misleading comments and tests",
+        prompt: `Write a small, hard Benchmark for the code-review agent — few cases, a low baseline.
+
+- benchmark_id: \`review-hidden-contracts\`
+- capability: find every real defect without false positives, and say how to verify each, when the defects hide in calling conventions, concurrency assumptions and data shapes and the comments and tests mislead
+- case count: 3
+- techniques: each case is a small multi-file repository with 2–3 real defects that depend on an unstated call order, a time-zone or encoding assumption, or a concurrency precondition; add one or two stale comments and a test that passes without covering the defects; scoring looks at recall, false positives and whether reproducible verification steps are given
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
       },
       dataAnalysis: {
-        label: "CSV cases for a data-analysis agent",
-        description:
-          "5 cases with a CSV and a business question; score conclusions and definitions",
-        prompt:
-          "Write 5 cases for a data-analysis agent: each comes with a CSV file and a business question. Score the correctness of the conclusion, the charts, and how clearly metrics are defined.",
+        label: "Data analysis: 3 cases with a vague ask and a booby-trapped dataset",
+        description: "3 cases: dirty data, unstated conventions, assumptions to clarify first",
+        prompt: `Write a small, hard Benchmark for the data-analysis agent — few cases, a low baseline.
+
+- benchmark_id: \`analysis-ambiguous-asks\`
+- capability: clarify assumptions before analysing, then reach a correct conclusion with verifiable conventions, when the business question is vague and the data carries dirty values and unstated conventions
+- case count: 3
+- techniques: each case ships a CSV with duplicate rows, mixed units and missing values, and a data dictionary that explains only some of the fields; the business question has two reasonable readings, and the right move is to name the split and answer under each stated assumption; scoring looks at the conclusion, the stated conventions and whether the charts agree with the conclusion
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
       },
     },
     aiCreateTail: (targetAgentId: string): string =>
@@ -2966,7 +3009,7 @@ Scenarios:
       `- test_agent_id: \`${targetAgentId}\`\n` +
       "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
       "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
-      "- pilot_iteration_limit: `3`\n\n" +
+      "- pilot_iteration_limit: `3` (the draft above wins when it names one)\n\n" +
       "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
       "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +

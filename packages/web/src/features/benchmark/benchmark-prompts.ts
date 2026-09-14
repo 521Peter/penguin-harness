@@ -121,7 +121,7 @@ export function askEvaluationTail(params: AskEvaluationParams): string {
   return S.benchmark.askEvaluationTail(params);
 }
 
-/** The three canned questions of the evaluation dialog's Ask AI panel. */
+/** The canned questions of the evaluation dialog's Ask AI panel, the default question first — the box opens on it, and the leading button is how a reader gets back to it after trying another. */
 export function askEvaluationExamples(): AiExample[] {
   return Object.entries(S.benchmark.askEvaluationExamples).map(([key, ex]) => ({
     key,
@@ -142,7 +142,7 @@ export function askCaseTail(params: AskCaseParams): string {
   return S.benchmark.askCaseTail(params);
 }
 
-/** The three canned questions of the case dialog's Ask AI panel. */
+/** The canned questions of the case dialog's Ask AI panel, the default question first (see askEvaluationExamples). */
 export function askCaseExamples(): AiExample[] {
   return Object.entries(S.benchmark.askCaseExamples).map(([key, ex]) => ({
     key,

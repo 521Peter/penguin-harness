@@ -225,6 +225,33 @@ export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
   return parts;
 }
 
+/**
+ * A group's FOLDED share: the conversations its collapsed folders hold (Subagents /
+ * Scheduled / Evaluations / Archived), summed from one set of category counts. Missing
+ * keys count as zero rather than poisoning the sum with NaN — the guard
+ * aggregateWorkspaceCounts applies to the same numbers.
+ */
+export function foldedShare(counts: SessionCategoryCounts): number {
+  let total = 0;
+  for (const category of FOLDER_CATEGORIES) {
+    const n = counts[category];
+    if (n > 0) total += n;
+  }
+  return total;
+}
+
+/**
+ * Whether a group holds nothing but folded conversations: no active row of its own, and at
+ * least one row inside its folders. That is the shape an evaluation leaves behind — one
+ * Workspace per Case × Run, each holding a single Test Session — and the shape of an Agent
+ * that has only ever been evaluated; the sidebar folds such a group up and sorts it behind
+ * the others. A group with both shares at zero (a registered but still unused Workspace) is
+ * NOT folder-only: it has nothing folded away to fold up.
+ */
+export function isFolderOnly(activeShare: number, folded: number): boolean {
+  return activeShare === 0 && folded > 0;
+}
+
 const ALL_CATEGORIES: readonly SessionCategory[] = ["active", ...FOLDER_CATEGORIES];
 
 /** One workspace-mode group's aggregated server counts: exact totals plus which Agents hold rows of each category. */

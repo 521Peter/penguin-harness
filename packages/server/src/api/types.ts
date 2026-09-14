@@ -3276,8 +3276,11 @@ export interface BenchmarkEvaluation {
   cases: BenchmarkCaseScore[];
 }
 
-/** Whether the Skill that builds a Benchmark is done with it; see `BenchmarkSummary.status`. */
-export type BenchmarkStatus = "draft" | "published";
+/**
+ * Whether the Skill that builds a Benchmark is done with it, and how it ended; see
+ * `BenchmarkSummary.status`.
+ */
+export type BenchmarkStatus = "draft" | "published" | "failed";
 
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
@@ -3290,8 +3293,11 @@ export interface BenchmarkSummary {
   /**
    * `draft` while the Skill that builds the Benchmark is still writing its cases and
    * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
-   * Benchmark is frozen and its Formal Baseline recorded. Only a literal `draft` in
-   * benchmark_config.toml locks it: a missing field, or any other value, reads as published.
+   * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
+   * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
+   * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
+   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
+   * or any other value, reads as published.
    */
   status: BenchmarkStatus;
   /** Case count (number of case subfolders). */

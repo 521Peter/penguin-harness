@@ -8,6 +8,7 @@
  * name, never the sentences around them, which differ per dictionary.
  */
 import { describe, expect, it } from "vitest";
+import { S } from "../src/lib/strings";
 import {
   MAX_RUNS,
   askCaseExamples,
@@ -206,14 +207,17 @@ describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {
     expect(tail).not.toContain("run_subagent");
   });
 
-  it("offers examples with unique keys and non-empty prompts", () => {
+  it("offers examples with unique keys and non-empty prompts, the default question first", () => {
     const examples = askEvaluationExamples();
-    expect(examples).toHaveLength(3);
+    expect(examples).toHaveLength(4);
     expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
     for (const e of examples) {
       expect(e.label).not.toBe("");
       expect(e.prompt.trim()).not.toBe("");
     }
+    // The box opens on the default question; the leading example IS that question, so a
+    // reader who tried another example can bring it back with one click.
+    expect(examples[0]?.prompt).toBe(S.benchmark.askEvaluationDefault);
   });
 });
 
@@ -251,9 +255,10 @@ describe("askCaseTail (the case dialog's Ask AI question)", () => {
     expect(tail).not.toContain("64.7");
   });
 
-  it("offers examples with unique keys and non-empty prompts", () => {
+  it("offers examples with unique keys and non-empty prompts, the default question first", () => {
     const examples = askCaseExamples();
-    expect(examples).toHaveLength(3);
+    expect(examples).toHaveLength(4);
+    expect(examples[0]?.prompt).toBe(S.benchmark.askCaseDefault);
     expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
     for (const e of examples) {
       expect(e.label).not.toBe("");

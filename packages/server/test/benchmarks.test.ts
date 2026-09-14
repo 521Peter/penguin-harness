@@ -428,13 +428,20 @@ describe("benchmarks api", () => {
     });
   });
 
-  it("reads status from the config: only a literal draft locks, everything else is published", async () => {
+  it("reads status from the config: literal draft and failed are themselves, everything else is published", async () => {
     const dir = benchmarksDir(t.root, projectId);
-    // Still being written by benchmark-design: the one value that locks a Benchmark.
+    // Still being written by benchmark-design: the Benchmark is not usable yet.
     await fs.mkdir(path.join(dir, "draft-bench"), { recursive: true });
     await fs.writeFile(
       path.join(dir, "draft-bench", "benchmark_config.toml"),
       'title = "Draft"\nruns = 1\nstatus = "draft"\n',
+      "utf8",
+    );
+    // Calibration never produced a Pilot result to freeze: the Benchmark is unusable.
+    await fs.mkdir(path.join(dir, "failed-bench"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "failed-bench", "benchmark_config.toml"),
+      'title = "Failed"\nruns = 1\nstatus = "failed"\n',
       "utf8",
     );
     // Written before the field existed: no status at all is not a lock.
@@ -455,6 +462,7 @@ describe("benchmarks api", () => {
     const res = (await (await member.get(base)).json()) as BenchmarksResponse;
     expect(res.benchmarks.map((b) => [b.id, b.status])).toEqual([
       ["draft-bench", "draft"],
+      ["failed-bench", "failed"],
       ["legacy-bench", "published"],
       ["unknown-bench", "published"],
     ]);
