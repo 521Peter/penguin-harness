@@ -3659,10 +3659,42 @@ export interface OrgTicketProgressEntry {
   sessionId?: string;
 }
 
+/**
+ * One line of a ticket's operation history, kept in the file's frontmatter apart from the
+ * progress prose: what was done, by whom (`agent:<id>` / `user:<id>` — an employee is recognised
+ * from the Agent id its command subprocesses carry, a person otherwise), and when.
+ */
+export type OrgTicketHistoryAction =
+  | "created"
+  | "assigned"
+  | "moved"
+  | "blocked"
+  | "unblocked"
+  | "progress"
+  | "session_started"
+  | "session_attached"
+  | "edited";
+
+export interface OrgTicketHistoryEntry {
+  at: string;
+  by: string;
+  action: OrgTicketHistoryAction;
+  /** The action's detail: the column moved to, the new owner, the block reason, the session id. */
+  note?: string;
+}
+
+/**
+ * The ticket id's slug: lowercase letters in hyphen-joined words, no digits (the date prefix
+ * already carries the numbers), chosen for meaning — derived from an ASCII title, proposed by
+ * the Project's model for a title in another language, or passed explicitly.
+ */
+export const TICKET_SLUG_PATTERN = /^[a-z]+(?:-[a-z]+)*$/;
+
 export interface OrgTicketItem {
   ticketId: string;
   title: string;
   status: OrgTicketStatus;
+  /** Being folded into `owner` (a ticket has one responsible principal; who filed it is in the history). */
   initiator: string;
   owner?: string;
   parent?: string;
@@ -3695,6 +3727,8 @@ export interface OrgTicketDetail extends OrgTicketItem {
   acceptanceCriteria: string;
   progress: OrgTicketProgressEntry[];
   result: string;
+  /** The operation history from the frontmatter, oldest first (absent from a server older than the field). */
+  history?: OrgTicketHistoryEntry[];
   /** The whole file, for the Markdown view and for clients that prefer to edit it as text. */
   body: string;
   children: string[];
@@ -4112,6 +4146,12 @@ export interface OrgTicketProgressRequest {
    * control environment's credential; a signed-in user's write is attributed to the user.
    */
   sessionId?: string;
+  /**
+   * The calling employee's Agent id (CLI: PENGUIN_AGENT_ID from the control environment), the
+   * identity a write is recorded under; honoured only with the local API token, like sessionId,
+   * and ignored — the write falls back to the person — when it names no employee.
+   */
+  agentId?: string;
 }
 
 export interface OrgTicketStartRequest {
