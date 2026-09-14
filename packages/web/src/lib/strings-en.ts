@@ -2982,7 +2982,7 @@ Scenarios:
     },
     overview: {
       title: "Overview",
-      info: "The organization on one page: employees, the board, today's calendar and this period's budget, plus what needs your decision. Every block opens its page.",
+      info: "The organization on one page: employees, the board, today's calendar and this period's budget, plus what needs your decision. A corner button on each block opens its page.",
       employees: "Employees",
       onDesk: "On desk",
       running: "Running",
@@ -3021,6 +3021,11 @@ Scenarios:
       openBoard: "Open the ticket board",
       openCalendar: "Open the calendar",
       openFinance: "Open finance",
+      /** The button at the end of an inbox row: the row itself is inert, this is where it goes. */
+      openTicket: "Open the ticket",
+      openChannel: "Open the channel",
+      /** The counts under the board bar: each opens the board filtered to the column it counts. */
+      openColumn: (column: string): string => `Open the "${column}" tickets`,
       /** The three first steps of a new organization (replaces the empty sections). */
       firstStepsTitle: "First steps",
       firstStepsInfo:
@@ -3489,6 +3494,9 @@ Scenarios:
       ticketRef: (id: string): string => `Ticket ${id}`,
       sessionRef: "View session",
       replyTo: "Reply to",
+      /** The ref chips' tooltips: what the chip's own text does not say — where it lands. */
+      openTicketRef: "Open the ticket",
+      replyToJump: "Jump to the message this replies to",
       hop: (n: number): string => `Relay · hop ${n}`,
       hopInfo:
         "Sent automatically by an employee's work run, N relays down an @-chain: a message from a person or the calendar is hop 0, an employee's reply from the run it triggered is hop 1 (unmarked), the reply of the next employee it @-mentioned is hop 2 … At the organization's chain limit (3 by default) an @ is recorded but triggers nobody, so two employees cannot @ each other all night.",

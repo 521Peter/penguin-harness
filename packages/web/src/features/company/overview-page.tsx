@@ -6,8 +6,10 @@
  * it — and then three full-width runs, one under the other: the inbox (what names the reader,
  * what is stuck and what has landed, newest first), today's timeline with each instance's
  * outcome, and the budget alerts. Each reading is stated once: the spend lives in its KPI cell
- * alone, and no card is a link — each carries one corner button to the page it summarizes, so
- * the controls inside a card stay clickable and the destination is named rather than guessed.
+ * alone, and nothing on this page is clickable as a whole — no card, no row, no heading. Every
+ * jump is a named button: the corner button of a KPI cell, the JumpButton at the end of an
+ * inbox / timeline / alert row, the counts under the board bar. The controls inside a card
+ * stay clickable, and the destination is read rather than guessed.
  * A brand-new organization (nobody hired, empty board) gets the three-step guide in place of
  * the sections, and the header then drops its "open the CEO's desk" button: the guide's first
  * step is that same call to action, and one screen carries a control once.
@@ -94,9 +96,12 @@ const INBOX_ICON: Record<InboxCategory, string> = {
   done: NAV_ICONS.orgTickets,
 };
 
-/** A row of a section: full width, quiet hover, the content decides the rest. */
-const rowClass =
-  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+/**
+ * A row of a section: full width, the content decides the rest. The row is inert — it carries
+ * no click of its own and no hover wash that would imply one; where it leads somewhere, the
+ * JumpButton at its end is the only thing that goes there.
+ */
+const rowClass = "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm";
 
 /** A small tone-marked count: the dot, the label, the number. */
 function ToneCount({ tone, label, value }: { tone: Tone; label: string; value: number }) {
@@ -548,11 +553,17 @@ export function OverviewPage() {
                     />
                   ))}
               </span>
+              {/* The counts under the bar are the controls, not the bar and not the cell: each
+                  is a small button that opens the board filtered to what it counts, and its
+                  tooltip says so rather than leaving the reader to guess. */}
               <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                 {board.segments.map((seg) => (
                   <button
                     key={seg.status}
                     type="button"
+                    title={S.company.overview.openColumn(
+                      S.company.tickets.columns[seg.status] ?? seg.status,
+                    )}
                     onClick={() => page("tickets", `?column=${seg.status}`)}
                     className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
                   >
@@ -570,6 +581,7 @@ export function OverviewPage() {
                     beside the five column counts and has to weigh the same as they do. */}
                 <button
                   type="button"
+                  title={S.company.overview.openColumn(S.company.overview.blocked)}
                   onClick={() => page("tickets", "?blocked=1")}
                   className={`inline-flex items-center ${ICON_GAP.tight} rounded px-1 text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`}
                 >
@@ -699,34 +711,36 @@ export function OverviewPage() {
             ) : (
               <ul className="space-y-0.5">
                 {visibleInbox.map((row) => (
-                  <li key={row.key}>
-                    <button
-                      type="button"
-                      onClick={() => openInboxRow(row.target)}
-                      className={rowClass}
+                  <li key={row.key} className={rowClass}>
+                    <span
+                      className={`flex w-20 shrink-0 items-center ${ICON_GAP.tight} text-xs text-gray-500 dark:text-gray-400`}
                     >
-                      <span
-                        className={`flex w-20 shrink-0 items-center ${ICON_GAP.tight} text-xs text-gray-500 dark:text-gray-400`}
-                      >
-                        <GlyphIcon d={INBOX_ICON[row.category]} size={ICON_SIZE.rowLead} />
-                        <span className="truncate">
-                          {S.company.overview.inboxCategories[row.category]}
-                        </span>
+                      <GlyphIcon d={INBOX_ICON[row.category]} size={ICON_SIZE.rowLead} />
+                      <span className="truncate">
+                        {S.company.overview.inboxCategories[row.category]}
                       </span>
-                      <InboxDot row={row} />
-                      <span className="min-w-0 flex-1 truncate">{row.title}</span>
-                      {row.detail !== undefined && (
-                        <span className="hidden max-w-40 shrink-0 truncate text-xs text-gray-500 sm:inline dark:text-gray-400">
-                          {row.detail}
-                        </span>
-                      )}
-                      <span
-                        className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 dark:text-gray-500"
-                        {...(row.time !== null ? { title: formatDateTime(row.time) } : {})}
-                      >
-                        {row.time === null ? "—" : formatRelativeShort(row.time, locale)}
+                    </span>
+                    <InboxDot row={row} />
+                    <span className="min-w-0 flex-1 truncate">{row.title}</span>
+                    {row.detail !== undefined && (
+                      <span className="hidden max-w-40 shrink-0 truncate text-xs text-gray-500 sm:inline dark:text-gray-400">
+                        {row.detail}
                       </span>
-                    </button>
+                    )}
+                    <span
+                      className="w-20 shrink-0 text-right text-xs tabular-nums text-gray-400 dark:text-gray-500"
+                      {...(row.time !== null ? { title: formatDateTime(row.time) } : {})}
+                    >
+                      {row.time === null ? "—" : formatRelativeShort(row.time, locale)}
+                    </span>
+                    <JumpButton
+                      label={
+                        row.target.kind === "ticket"
+                          ? S.company.overview.openTicket
+                          : S.company.overview.openChannel
+                      }
+                      onClick={() => openInboxRow(row.target)}
+                    />
                   </li>
                 ))}
               </ul>
@@ -749,11 +763,7 @@ export function OverviewPage() {
                         aria-hidden
                         className={`absolute -left-1 top-3 block h-1.5 w-1.5 rounded-full ${toneDot[tone]}`}
                       />
-                      <button
-                        type="button"
-                        onClick={() => page("calendar")}
-                        className={`${rowClass} px-1.5`}
-                      >
+                      <div className={`${rowClass} px-1.5`}>
                         <span className="w-11 shrink-0 font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400">
                           {entry.at === null ? "—" : timeLabel(entry.at)}
                         </span>
@@ -764,7 +774,11 @@ export function OverviewPage() {
                         <span className={`shrink-0 text-xs ${toneInk[tone]}`}>
                           {markLabel(entry.mark)}
                         </span>
-                      </button>
+                        <JumpButton
+                          label={S.company.overview.openCalendar}
+                          onClick={() => page("calendar")}
+                        />
+                      </div>
                     </li>
                   );
                 })}
@@ -788,20 +802,22 @@ export function OverviewPage() {
             ) : (
               <ul className="space-y-0.5">
                 {detail.alerts.map((a) => (
-                  <li key={`${a.agentId}/${a.period}`}>
-                    <button type="button" onClick={() => page("finance")} className={rowClass}>
-                      <span className="min-w-0 flex-1 truncate">
-                        <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
-                      </span>
-                      {a.pausedAt !== undefined ? (
-                        <Badge tone="red">{S.company.finance.paused}</Badge>
-                      ) : (
-                        <Badge tone="amber">{S.company.finance.warned}</Badge>
-                      )}
-                      <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                        {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}
-                      </span>
-                    </button>
+                  <li key={`${a.agentId}/${a.period}`} className={rowClass}>
+                    <span className="min-w-0 flex-1 truncate">
+                      <PrincipalChip principal={agentPrincipal(a.agentId)} names={names} />
+                    </span>
+                    {a.pausedAt !== undefined ? (
+                      <Badge tone="red">{S.company.finance.paused}</Badge>
+                    ) : (
+                      <Badge tone="amber">{S.company.finance.warned}</Badge>
+                    )}
+                    <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                      {formatRelativeShort(a.pausedAt ?? a.warnedAt ?? "", locale)}
+                    </span>
+                    <JumpButton
+                      label={S.company.overview.openFinance}
+                      onClick={() => page("finance")}
+                    />
                   </li>
                 ))}
               </ul>

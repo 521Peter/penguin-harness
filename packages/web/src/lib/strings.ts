@@ -2939,7 +2939,7 @@ Benchmark：
     },
     overview: {
       title: "概览",
-      info: "组织的全局一页：员工、看板、今日日程与本周期预算，以及需要你拍板的事。每块都可点进对应页面。",
+      info: "组织的全局一页：员工、看板、今日日程与本周期预算，以及需要你拍板的事。每块角上有一个按钮，点它进对应页面。",
       employees: "员工",
       onDesk: "在岗",
       running: "运行中",
@@ -2977,6 +2977,11 @@ Benchmark：
       openBoard: "打开工单看板",
       openCalendar: "打开日历",
       openFinance: "打开财务",
+      /** The button at the end of an inbox row: the row itself is inert, this is where it goes. */
+      openTicket: "查看工单",
+      openChannel: "打开频道",
+      /** The counts under the board bar: each opens the board filtered to the column it counts. */
+      openColumn: (column: string): string => `查看「${column}」的工单`,
       /** The three first steps of a new organization (replaces the empty sections). */
       firstStepsTitle: "三步上手",
       firstStepsInfo:
@@ -3424,6 +3429,9 @@ Benchmark：
       ticketRef: (id: string): string => `工单 ${id}`,
       sessionRef: "查看会话",
       replyTo: "回复",
+      /** The ref chips' tooltips: what the chip's own text does not say — where it lands. */
+      openTicketRef: "查看工单",
+      replyToJump: "跳到被回复的消息",
       hop: (n: number): string => `自动接力 · 第 ${n} 跳`,
       /** The chip's tooltip, and the one line about hops the channel header's "?" carries. */
       hopInfo:

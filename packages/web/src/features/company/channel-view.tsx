@@ -460,17 +460,26 @@ export function ChannelView() {
     return (
       <span className={`mt-1 flex flex-wrap items-center ${ICON_GAP.row}`}>
         {ticket !== undefined && (
-          <RefChip onClick={() => openTicket(ticket)} icon={NAV_ICONS.orgTickets}>
+          <RefChip
+            onClick={() => openTicket(ticket)}
+            icon={NAV_ICONS.orgTickets}
+            title={S.company.channels.openTicketRef}
+          >
             {S.company.channels.ticketRef(ticket)}
           </RefChip>
         )}
         {session !== undefined && (
-          <RefChip onClick={() => navigate(`/chat/${session}`)}>
+          <RefChip
+            onClick={() => navigate(`/chat/${session}`)}
+            title={S.company.channels.sessionRef}
+          >
             {S.company.channels.sessionRef}
           </RefChip>
         )}
         {replyTo !== undefined && (
-          <RefChip onClick={() => scrollToMessage(replyTo)}>{S.company.channels.replyTo}</RefChip>
+          <RefChip onClick={() => scrollToMessage(replyTo)} title={S.company.channels.replyToJump}>
+            {S.company.channels.replyTo}
+          </RefChip>
         )}
       </span>
     );
@@ -758,19 +767,27 @@ export function ChannelView() {
   );
 }
 
-/** A small bordered chip that opens what a message refers to. */
+/**
+ * A small bordered chip that opens what a message refers to. The message bubble itself is inert
+ * — these chips are the only way out of it — so each says in its tooltip where it lands, which
+ * the chip's own text alone ("工单 T-3", "回复") does not.
+ */
 function RefChip({
   onClick,
   icon,
+  title,
   children,
 }: {
   onClick: () => void;
   icon?: string;
+  /** Where the chip goes, as its tooltip reads it. */
+  title: string;
   children: string;
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className={`inline-flex items-center ${ICON_GAP.tight} rounded-full border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-600 transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100`}
     >
