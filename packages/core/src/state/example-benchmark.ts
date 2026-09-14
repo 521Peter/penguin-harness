@@ -3,7 +3,8 @@
  *
  * A Project whose `benchmarks/` directory does not exist yet gets the Project-level
  * `benchmarks/example-benchmark/`: two sample cases (each with statement/ and rubric/ indexed
- * by a README.md), benchmark_config.toml (runs = 2), and a scoreboard.yaml with three sample
+ * by a README.md), benchmark_config.toml (runs = 2, status = published — the example is a
+ * finished Benchmark, not one a Skill is still writing), and a scoreboard.yaml with three sample
  * evaluations, each labelled with default_agent as the Agent it tested — so the evaluation
  * center has data out of the box. Its description states plainly that this is a built-in
  * example and the whole directory can be deleted or replaced. Provisioning rides on
@@ -38,6 +39,7 @@ const EXAMPLE_BENCHMARK_CONFIG = {
     "A built-in example benchmark so the evaluation charts have data out of the box. " +
     "Replace it with your own.",
   runs: 2,
+  status: "published",
 };
 
 /** Two sample cases: statement and scoring rubric (in English, 3-5 lines each). */

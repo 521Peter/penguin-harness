@@ -48,7 +48,7 @@ Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/be
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark 配置（Builder 的 runs 固定为 1）
+├── benchmark_config.toml       # Benchmark 配置：title、description、runs（Builder 的 runs 固定为 1）、status
 ├── <case-id>/
 │   ├── statement/              # 交给 Target Agent 的任务描述
 │   └── rubric/                 # 私有评分标准，对 Target Agent 隔离
@@ -58,6 +58,8 @@ Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/be
 `rubric/` 与 `statement/` 的隔离是刻意设计：Target Agent 只能看到题面，永远接触不到评分标准。
 
 `benchmark_config.toml` 是目录成为 Benchmark 的标志：`benchmarks/` 下缺少该文件的目录不会被列出。在评测运行期间删除 Benchmark 会留下这样的目录——正在运行的评测仍在向被删除的路径写入。从未评测过的 Benchmark 仍带有配置文件，照常列出；残留目录可以手工删除。
+
+`status` 表示这个 Benchmark 是否已经完成：`benchmark-design` 仍在出题与校准难度时为草稿 `draft`，Web App 对其遮罩——不能使用、也看不到详情；记录 Formal Baseline 后为发布 `published`。手动创建的 Benchmark 与内置示例一开始就是 `published`。没有该字段、或取值不是 `draft` 的配置，都按 `published` 读。
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 

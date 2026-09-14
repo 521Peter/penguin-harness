@@ -243,8 +243,8 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /benchmarks | Benchmark 评分数据——只返回带 `benchmark_config.toml` 的目录；缺少该文件的目录（评测运行期间删除 Benchmark 所留下的残留）会被跳过 |
-| POST | /benchmarks | 手动新建 Benchmark（仅 owner）：`{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`。服务端写入 `benchmark_config.toml`、内容为 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（标题为其一级标题）与 `rubric/README.md`；id 沿用 Agent id 的字符规则，题目 id 以 `CASE-` 开头；目录已存在时返回 409 `benchmark_exists` |
+| GET | /benchmarks | Benchmark 评分数据——只返回带 `benchmark_config.toml` 的目录；缺少该文件的目录（评测运行期间删除 Benchmark 所留下的残留）会被跳过；每条带 `status`（技能仍在构建时为 `draft`，否则 `published`） |
+| POST | /benchmarks | 手动新建 Benchmark（仅 owner）：`{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`。服务端写入 `benchmark_config.toml`（其中 `status = "published"`）、内容为 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（标题为其一级标题）与 `rubric/README.md`；id 沿用 Agent id 的字符规则，题目 id 以 `CASE-` 开头；目录已存在时返回 409 `benchmark_exists` |
 | DELETE | /benchmarks/:benchmarkId | 整目录删除一个 Benchmark——题目、配置与记分板（仅 owner；204，不存在返回 404） |
 | GET | /benchmarks/:benchmarkId/cases | 单个 Benchmark 的题目列表：题目 id 与题干 README 的一级标题；评分细则永不返回 |
 | GET | /benchmarks/:benchmarkId/cases/:caseId/files | 浏览某道题的 `statement/`；在 `/files` 前加 `/rubric` 即评分细则一侧 |

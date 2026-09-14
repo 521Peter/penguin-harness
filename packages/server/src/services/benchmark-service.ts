@@ -1,6 +1,6 @@
 /**
  * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads
- * `benchmark_config.toml` (title, description, per-case run count `runs`) and
+ * `benchmark_config.toml` (title, description, per-case run count `runs`, build `status`) and
  * `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each case its
  * model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
@@ -26,6 +26,7 @@ import type {
   BenchmarkCasesResponse,
   BenchmarkEvaluation,
   BenchmarkRunScore,
+  BenchmarkStatus,
   BenchmarkSummary,
   BenchmarksResponse,
   CaseMaterial,
@@ -254,9 +255,9 @@ export class BenchmarkService {
 
   /**
    * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
-   * (title, description, runs), `scoreboard.yaml` with an empty evaluations list, and per case
-   * `statement/README.md` (`# <title>`, then the statement) and `rubric/README.md` (the rubric
-   * verbatim). An existing directory is a 409, never merged into: a Benchmark's scores stay
+   * (title, description, runs, status), `scoreboard.yaml` with an empty evaluations list, and
+   * per case `statement/README.md` (`# <title>`, then the statement) and `rubric/README.md` (the
+   * rubric verbatim). An existing directory is a 409, never merged into: a Benchmark's scores stay
    * comparable only while its cases are rewritten by nothing but the Skills. A half-written
    * directory is removed again when a later write fails.
    */
@@ -281,6 +282,9 @@ export class BenchmarkService {
           ? { description: input.description }
           : {}),
         runs: input.runs,
+        // A Benchmark made by hand is complete the moment it is submitted: its cases are
+        // written and frozen, so nothing is left for a Skill to finish.
+        status: "published",
       };
       await fs.writeFile(
         path.join(benchDir, "benchmark_config.toml"),
@@ -427,12 +431,13 @@ export class BenchmarkService {
   }
 
   private async readBenchmark(benchDir: string, id: string): Promise<BenchmarkSummary> {
-    // benchmark_config.toml: title, description, and per-case run count (falls back
-    // to defaults if corrupt). The model isn't part of the config — each evaluation
+    // benchmark_config.toml: title, description, per-case run count and build status (falls
+    // back to defaults if corrupt). The model isn't part of the config — each evaluation
     // carries the Model actually used for that run.
     let title = id;
     let description: string | undefined;
     let runs: number | undefined;
+    let status: BenchmarkStatus = "published";
     try {
       const config = asRecord(
         parseToml(await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8")),
@@ -445,6 +450,10 @@ export class BenchmarkService {
       if (configRuns !== undefined && Number.isInteger(configRuns) && configRuns >= 1) {
         runs = configRuns;
       }
+      // Only a literal "draft" says the Benchmark is still being built. A config written before
+      // this field existed has none, and an unrecognized value is not a lock either, so both
+      // read as published.
+      if (stringOr(config.status) === "draft") status = "draft";
     } catch {
       // Missing or corrupt: title falls back to the directory name.
     }
@@ -478,6 +487,7 @@ export class BenchmarkService {
       title,
       ...(description !== undefined ? { description } : {}),
       ...(runs !== undefined ? { runs } : {}),
+      status,
       caseCount,
       evaluations,
       // Which Agents this Benchmark has evaluated is a fact of its scoreboard, not of its

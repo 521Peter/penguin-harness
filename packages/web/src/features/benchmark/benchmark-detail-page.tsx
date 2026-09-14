@@ -84,6 +84,10 @@ export function BenchmarkDetailPage() {
 
   if (!projectId) return null;
 
+  // A draft is still being written and calibrated by the agent: there are no settled cases or
+  // scores to show yet, and nothing to evaluate against.
+  const draft = benchmark !== null && benchmark.status === "draft";
+
   let body;
   if (error !== null) {
     body = <p className="text-sm text-red-600 dark:text-red-400">{error}</p>;
@@ -96,6 +100,8 @@ export function BenchmarkDetailPage() {
         <Skeleton className="h-32 w-full" />
       </div>
     );
+  } else if (draft) {
+    body = <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />;
   } else {
     body = <BenchmarkDetail projectId={projectId} benchmark={benchmark} />;
   }
@@ -114,7 +120,9 @@ export function BenchmarkDetailPage() {
         </Button>
         {/* The Benchmark's name, the directory its files live in, and the Use entry point. The
             case counts and the description are the detail's own, one block below. A Benchmark
-            tests whichever Agents its scoreboard names, so no single Agent is named up here. */}
+            tests whichever Agents its scoreboard names, so no single Agent is named up here. A
+            draft reached by its address keeps the path but drops Use, and shows the building
+            notice in place of the detail. */}
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
           <h1 className="min-w-0 truncate text-xl font-semibold">
             {benchmark?.title ?? benchmarkId}
@@ -133,16 +141,18 @@ export function BenchmarkDetailPage() {
                   className={ROW_COPY_CLASS}
                 />
               </span>
-              <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
-                {S.benchmark.use}
-              </Button>
+              {!draft && (
+                <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
+                  {S.benchmark.use}
+                </Button>
+              )}
             </>
           )}
         </div>
         {body}
       </div>
 
-      {using && benchmark !== null && (
+      {using && benchmark !== null && !draft && (
         <UseBenchmarkModal
           key={benchmark.id}
           open

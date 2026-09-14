@@ -123,7 +123,8 @@ function TestedAgents({
  * then the Agents it has tested, the sparkline, the newest Score with its change from the
  * previous record of the same label, and the actions. The info column is the card's main button
  * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
- * nested block.
+ * nested block. A draft card is masked under a notice that it is being built, with only the
+ * delete icon left live.
  */
 function BenchmarkCard({
   benchmark,
@@ -144,9 +145,17 @@ function BenchmarkCard({
 }) {
   const latest = latestWithDelta(benchmark.evaluations);
   const series = sparklineSeries(benchmark.evaluations);
+  // A draft is still being written and calibrated by the agent, so the card is masked and inert;
+  // only the owner's delete stays above the mask, for cleaning up a calibration that failed.
+  const draft = benchmark.status === "draft";
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
-      <button type="button" onClick={onOpen} className="min-w-[14rem] flex-1 text-left">
+    <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={draft}
+        className="min-w-[14rem] flex-1 text-left"
+      >
         <span className="flex items-center gap-2">
           <span className="min-w-0 truncate text-base font-bold">{benchmark.title}</span>
           <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
@@ -203,10 +212,10 @@ function BenchmarkCard({
       <div className="flex shrink-0 items-center gap-1">
         {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a
             Benchmark is for, and optimizing it is the tab next door. */}
-        <Button size="sm" variant="primary" onClick={onUse}>
+        <Button size="sm" variant="primary" onClick={onUse} disabled={draft}>
           {S.benchmark.use}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onOpen}>
+        <Button size="sm" variant="ghost" onClick={onOpen} disabled={draft}>
           {S.benchmark.view}
         </Button>
         {canDelete && (
@@ -216,11 +225,26 @@ function BenchmarkCard({
             title={S.benchmark.deleteBenchmark}
             aria-label={S.benchmark.deleteBenchmark}
             onClick={onDelete}
+            className={draft ? "relative z-10" : undefined}
           >
             <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
           </Button>
         )}
       </div>
+      {draft && (
+        <div
+          role="note"
+          title={S.benchmark.buildingHint}
+          className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
+        >
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+            {S.benchmark.building}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            {S.benchmark.buildingHint}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

@@ -2693,6 +2693,10 @@ Benchmark：
     caseCount: (n: number): string => `${n} 题`,
     runsPerCase: (n: number): string => `每题 ${n} 次运行`,
     notEvaluated: "尚未评测",
+    /** A draft Benchmark: the agent is still writing its cases, so card and page are masked. */
+    building: "构建中",
+    buildingHint: "智能体还在出题与校准难度，构建完成后即可使用",
+    buildingDetail: "构建完成后，这里会显示题目、分数曲线与评估明细。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,

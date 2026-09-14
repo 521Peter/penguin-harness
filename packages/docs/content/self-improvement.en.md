@@ -48,7 +48,7 @@ Benchmarks belong to the Project, stored in `<root>/<project>/benchmarks/<id>/`,
 
 ```text
 <project>/benchmarks/<id>/
-├── benchmark_config.toml       # Benchmark configuration (Builder runs is fixed at 1)
+├── benchmark_config.toml       # Benchmark configuration: title, description, runs (Builder runs is fixed at 1), status
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
 │   └── rubric/                 # private scoring rubric, isolated from the Target Agent
@@ -58,6 +58,8 @@ Benchmarks belong to the Project, stored in `<root>/<project>/benchmarks/<id>/`,
 The separation of `rubric/` from `statement/` is deliberate: the Target Agent sees only the task statement and never touches the scoring rubric.
 
 `benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. Deleting a Benchmark while an evaluation is still running leaves such a directory behind, because the running evaluation keeps writing to the paths it was deleted from. A Benchmark that has simply never been evaluated still has its config and is listed as usual; a leftover directory is safe to delete by hand.
+
+`status` says whether the Benchmark is finished: `draft` while `benchmark-design` is still writing its cases and calibrating their difficulty, which the Web App masks — no Use, no detail — and `published` once the Formal Baseline is recorded. A Benchmark created by hand and the built-in example are published from the start. A config without the field, or with any value other than `draft`, reads as published.
 
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 

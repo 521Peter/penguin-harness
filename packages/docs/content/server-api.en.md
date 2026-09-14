@@ -243,8 +243,8 @@ Benchmarks hang off the Project, not off an Agent: one Benchmark evaluates as ma
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /benchmarks | Benchmark scoring data — only directories holding a `benchmark_config.toml`; one without it (what a Benchmark deleted mid-evaluation leaves behind) is skipped |
-| POST | /benchmarks | Create a Benchmark by hand (owner only): `{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`. The server writes `benchmark_config.toml`, a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (the title as its heading) and `rubric/README.md`; ids follow the agent-id alphabet, case ids start with `CASE-`; 409 `benchmark_exists` when the directory is already there |
+| GET | /benchmarks | Benchmark scoring data — only directories holding a `benchmark_config.toml`; one without it (what a Benchmark deleted mid-evaluation leaves behind) is skipped; each entry carries `status` (`draft` while the Skill is still building it, else `published`) |
+| POST | /benchmarks | Create a Benchmark by hand (owner only): `{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (the title as its heading) and `rubric/README.md`; ids follow the agent-id alphabet, case ids start with `CASE-`; 409 `benchmark_exists` when the directory is already there |
 | DELETE | /benchmarks/:benchmarkId | Remove a Benchmark directory whole — cases, config and scoreboard (owner only; 204, 404 when absent) |
 | GET | /benchmarks/:benchmarkId/cases | Case list of one Benchmark: id and the statement README's heading. Rubrics are never returned |
 | GET | /benchmarks/:benchmarkId/cases/:caseId/files | Browse one case's `statement/`; add `/rubric` before `/files` for the rubric side |

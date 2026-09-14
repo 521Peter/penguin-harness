@@ -2737,6 +2737,12 @@ Scenarios:
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
     runsPerCase: (n: number): string => `${n} run${n === 1 ? "" : "s"} per case`,
     notEvaluated: "Not evaluated yet",
+    /** A draft Benchmark: the agent is still writing its cases, so card and page are masked. */
+    building: "Being built",
+    buildingHint:
+      "The agent is still writing the cases and calibrating their difficulty; the Benchmark opens once that is done",
+    buildingDetail:
+      "Once it is built, the cases, the score chart and the evaluation table appear here.",
     testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,

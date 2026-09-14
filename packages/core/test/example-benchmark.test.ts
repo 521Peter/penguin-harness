@@ -73,13 +73,14 @@ describe("example benchmark provisioning", () => {
     await loadAgentState({ init: {} });
     const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
-    // benchmark_config.toml: title/description/runs=2; contains no model reference (the model
-    // is recorded on each evaluation instead).
+    // benchmark_config.toml: title/description/runs=2/status=published; contains no model
+    // reference (the model is recorded on each evaluation instead).
     const config = parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"));
     expect(config.title).toBe("Example Benchmark");
     expect(String(config.description)).toContain("built-in example");
     expect(String(config.description)).toContain("Replace it with your own");
     expect(Number(config.runs)).toBe(2);
+    expect(config.status).toBe("published");
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 

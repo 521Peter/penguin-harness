@@ -3244,6 +3244,9 @@ export interface BenchmarkEvaluation {
   cases: BenchmarkCaseScore[];
 }
 
+/** Whether the Skill that builds a Benchmark is done with it; see `BenchmarkSummary.status`. */
+export type BenchmarkStatus = "draft" | "published";
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
@@ -3252,6 +3255,13 @@ export interface BenchmarkSummary {
   description?: string;
   /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
   runs?: number;
+  /**
+   * `draft` while the Skill that builds the Benchmark is still writing its cases and
+   * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
+   * Benchmark is frozen and its Formal Baseline recorded. Only a literal `draft` in
+   * benchmark_config.toml locks it: a missing field, or any other value, reads as published.
+   */
+  status: BenchmarkStatus;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */

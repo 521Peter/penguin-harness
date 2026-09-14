@@ -1,6 +1,7 @@
 /**
- * Benchmark API integration tests: benchmark_config.toml title/description and runs
- * pass-through (and a directory without one is not listed), scoreboard.yaml v2's
+ * Benchmark API integration tests: benchmark_config.toml title/description, runs and status
+ * pass-through (only a literal draft status locks a Benchmark; a directory without a config is
+ * not listed), scoreboard.yaml v2's
  * evaluations[] (summary pass-through, the Agent each evaluation tested, model-written
  * Case/Evaluation averages and per-case runs arrays), rejection of legacy Scoreboard entries,
  * case count, empty when unconfigured, permissions (members can read, outsiders get 404), and
@@ -221,6 +222,7 @@ describe("benchmarks api", () => {
       title: "SWE Bench v2",
       description: "Example",
       runs: 2,
+      status: "published",
       caseCount: 2,
     });
     // config carries no model reference (the model lives on each evaluation).
@@ -426,6 +428,38 @@ describe("benchmarks api", () => {
     });
   });
 
+  it("reads status from the config: only a literal draft locks, everything else is published", async () => {
+    const dir = benchmarksDir(t.root, projectId);
+    // Still being written by benchmark-design: the one value that locks a Benchmark.
+    await fs.mkdir(path.join(dir, "draft-bench"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "draft-bench", "benchmark_config.toml"),
+      'title = "Draft"\nruns = 1\nstatus = "draft"\n',
+      "utf8",
+    );
+    // Written before the field existed: no status at all is not a lock.
+    await fs.mkdir(path.join(dir, "legacy-bench"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "legacy-bench", "benchmark_config.toml"),
+      'title = "Legacy"\nruns = 1\n',
+      "utf8",
+    );
+    // Neither is a value nobody defined.
+    await fs.mkdir(path.join(dir, "unknown-bench"), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, "unknown-bench", "benchmark_config.toml"),
+      'title = "Unknown"\nruns = 1\nstatus = "someday"\n',
+      "utf8",
+    );
+
+    const res = (await (await member.get(base)).json()) as BenchmarksResponse;
+    expect(res.benchmarks.map((b) => [b.id, b.status])).toEqual([
+      ["draft-bench", "draft"],
+      ["legacy-bench", "published"],
+      ["unknown-bench", "published"],
+    ]);
+  });
+
   /** A well-formed create request; the tests below vary one field at a time. */
   const createBody: BenchmarkCreateRequest = {
     id: "report-writing-v1",
@@ -457,6 +491,7 @@ describe("benchmarks api", () => {
       title: "Report writing",
       description: "Hard cases for the report writer",
       runs: 2,
+      status: "published",
       caseCount: 2,
       evaluations: [],
       // A Benchmark names no Agent of its own: it has evaluated none until it is run.
@@ -468,6 +503,7 @@ describe("benchmarks api", () => {
       title: "Report writing",
       description: "Hard cases for the report writer",
       runs: 2,
+      status: "published",
     });
     expect(await fs.readFile(path.join(dir, "scoreboard.yaml"), "utf8")).toBe("evaluations: []\n");
     // The statement README opens with the title as its heading (what the case list reads
