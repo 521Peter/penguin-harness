@@ -2671,7 +2671,7 @@ Scenarios:
     } as Record<string, string>,
     chart: {
       title: "Org Chart",
-      info: "The employee tree is the reporting line: the CEO at the root, every node an employee Agent. The menu in a node's top-right corner opens its desk session and holds the personnel actions, each of which rewrites the chart file.",
+      info: "The employee tree is the reporting line: the CEO at the root, every node an employee Agent. The menu in a node's top-right corner opens its desk session and holds the personnel actions, each of which rewrites the chart file. The canvas zooms with the wheel and pans by dragging; click the percentage to fit the whole chart in the window again.",
       empty: "The chart is empty",
       nodeMenu: "Employee actions",
       hire: "Hire a subordinate",
@@ -2733,11 +2733,12 @@ Scenarios:
         `Have ${name} leave? It is removed from the chart and its subordinates report to its manager instead; the Agent and every session are kept.`,
       left: (name: string): string => `${name} has left`,
       saved: "Chart updated",
-      /** The page: zoom control, legend, counts, a failed refresh, the detached row. */
+      /** The page: the canvas and its zoom control, the legend, counts, a failed refresh, the detached row. */
+      canvas: "Org chart canvas",
       zoom: "Zoom",
       zoomIn: "Zoom in",
       zoomOut: "Zoom out",
-      zoomFit: "Fit to width",
+      zoomFit: "Fit to window",
       legend: "State legend",
       employeeCount: (n: number): string => `${n} employee${n === 1 ? "" : "s"}`,
       spend: "This period's spend",

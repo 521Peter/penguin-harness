@@ -11,6 +11,10 @@
  * (org-sessions.ts, liveEmployeeStates).
  * Every status colour is a tone picked by meaning; running and on-desk share emerald and
  * are told apart by motion (the running dot pulses) and by their labels.
+ *
+ * The card sits on a pan/zoom canvas (org-chart-page.tsx), which is why the kebab names its
+ * own cursor: the canvas wears `grab` over the whole surface, the card included — pressing
+ * the inert face drags the canvas — and the one control on it has to say it is not that.
  */
 import type { ReactNode } from "react";
 import type { OrgEmployeeItem, OrgEmployeeState } from "@prismshadow/penguin-server/api";
@@ -192,7 +196,7 @@ export function ChartCard({
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(!menuOpen)}
-              className={`flex h-6 w-6 items-center justify-center rounded-md text-gray-400 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
+              className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-gray-400 transition-[opacity,background-color,color] duration-150 group-hover:opacity-100 hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200 ${
                 menuOpen ? "opacity-100" : "opacity-70"
               }`}
             >

@@ -11,11 +11,18 @@
  * running dot until something unrelated moved. The dots read the session list's live statuses
  * instead (org-sessions.ts, liveEmployeeStates), falling back to the snapshot per employee.
  *
- * The drawing centres itself when narrower than the page and scrolls sideways when wider.
- * A wide chart opens shrunk to fit the page's width; the header's zoom control steps
- * between 60% and 120%, and its readout puts the chart back to fit.
+ * The drawing is a canvas, not a page section: the frame fills what is left of the window and
+ * clips, and the whole tree is one absolutely positioned layer placed by a single transform,
+ * so panning and zooming never re-layout a card. It opens fitted — the whole tree visible and
+ * centred — and from there the wheel zooms around the cursor, a drag anywhere that is not a
+ * control pans, and the header's − / + step around the frame's centre while the percent
+ * readout goes back to the fit. The fit is re-taken as the drawing or the frame changes size
+ * (a hire widens the tree, a sidebar collapse widens the frame) until the reader moves the
+ * view themselves; from then on it is theirs, and only the percent button gives it back.
+ * The arithmetic is in canvas-view.ts.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router";
 import type { OrgChartResponse, OrgEmployeeItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
@@ -37,12 +44,24 @@ import {
   overflowMenuGlyph,
   overflowMenuRowClass,
 } from "../../components/ui/session-row-menu";
+import { usePointerDrag } from "../dock/use-pointer-drag";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import { orgKey } from "./company-nav";
 import { liveEmployeeStates } from "./org-sessions";
 import { DESK_ICON } from "./channel-header";
 import { CHART_DETACHED_LABEL_H, layoutOrgTree } from "./org-chart-tree";
-import { ZOOM_MAX, ZOOM_MIN, fitZoom, stepZoom } from "./chart-view";
+import {
+  ZOOM_MAX,
+  ZOOM_MIN,
+  ZOOM_STEP,
+  clampView,
+  fitView,
+  panBy,
+  viewTransform,
+  wheelZoomFactor,
+  zoomAt,
+} from "./canvas-view";
+import type { CanvasSize, CanvasView } from "./canvas-view";
 import { ChartCard, ChartLegend } from "./chart-card";
 import { DeskRenewDialog, EmployeeEditDialog, HireDialog } from "./employee-dialogs";
 import type { EmployeeEdit } from "./employee-dialogs";
@@ -60,6 +79,36 @@ const MENU_ICONS = {
 /** The header's zoom buttons (24x24 line paths): a minus and a plus. */
 const ZOOM_ICONS = { out: "M5 12h14", in: "M12 5v14M5 12h14" } as const;
 
+/** The canvas never collapses below this, however little of the window the rows above it leave. */
+const CANVAS_MIN_H = 240;
+/** One arrow-key press, in frame pixels: the canvas has to be navigable without a pointer. */
+const CANVAS_KEY_PAN = 48;
+
+/**
+ * A press that landed on a control is that control's own: the cards' kebabs must open their
+ * menu rather than start a pan, and a press inside an open menu belongs to the menu.
+ */
+function isInteractive(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("button, a, input, select, textarea") !== null;
+}
+
+/**
+ * The lowest edge the canvas may reach: the inside of the scrolling column the page sits in,
+ * its bottom padding kept. Measured rather than written as a `calc()` — what stands between
+ * the window's top and the canvas is a title row plus however many notices the chart has
+ * raised, which is not a height CSS can know. The window's edge is the fallback when the walk
+ * finds no scroller, which only leaves the canvas one padding too tall.
+ */
+function columnBottom(el: HTMLElement): number {
+  for (let node = el.parentElement; node !== null; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.overflowY === "auto" || style.overflowY === "scroll") {
+      return node.getBoundingClientRect().bottom - (parseFloat(style.paddingBottom) || 0);
+    }
+  }
+  return window.innerHeight;
+}
+
 export function OrgChartPage() {
   const { projectId, orgId, org } = useOrg();
   const navigate = useNavigate();
@@ -76,28 +125,12 @@ export function OrgChartPage() {
   const [renewFor, setRenewFor] = useState<OrgEmployeeItem | null>(null);
   const [leaveFor, setLeaveFor] = useState<OrgEmployeeItem | null>(null);
   const [busy, setBusy] = useState(false);
-  /** The chosen zoom; null is fit-to-width, the default. */
-  const [zoom, setZoom] = useState<number | null>(null);
-  const [frameWidth, setFrameWidth] = useState(0);
-
-  // The frame's width decides the fit zoom; a ResizeObserver keeps it current through
-  // sidebar collapses and window resizes. A callback ref, because the frame mounts only
-  // once the chart has arrived.
-  const observer = useRef<ResizeObserver | null>(null);
-  const frameRef = useCallback((el: HTMLDivElement | null) => {
-    observer.current?.disconnect();
-    observer.current = null;
-    if (el === null) return;
-    setFrameWidth(el.clientWidth);
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width;
-      if (width !== undefined) setFrameWidth(width);
-    });
-    ro.observe(el);
-    observer.current = ro;
-  }, []);
-  useEffect(() => () => observer.current?.disconnect(), []);
+  /** The view the reader moved to; null follows the fit, which is what the chart opens at. */
+  const [view, setView] = useState<CanvasView | null>(null);
+  const [frame, setFrame] = useState<CanvasSize>({ width: 0, height: 0 });
+  const [panning, setPanning] = useState(false);
+  /** The canvas frame, held as state rather than in a ref: it mounts only once the chart has arrived, and the listeners below attach to it. */
+  const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -130,8 +163,135 @@ export function OrgChartPage() {
     () => liveEmployeeStates(chart?.employees ?? [], orgSessions, liveStatuses),
     [chart, orgSessions, liveStatuses],
   );
-  const scale = layout === null ? 1 : (zoom ?? fitZoom(frameWidth, layout.width));
-  const percent = Math.round(scale * 100);
+  const drawing = useMemo<CanvasSize>(
+    () => ({ width: layout?.width ?? 0, height: layout?.height ?? 0 }),
+    [layout],
+  );
+  const fit = useMemo(() => fitView(frame, drawing), [frame, drawing]);
+  const current = view ?? fit;
+  const percent = Math.round(current.scale * 100);
+
+  // The wheel listener and the pan gesture outlive the render that created them, so they read
+  // the view and the two boxes it is clamped against from here rather than from their closure.
+  const live = useRef({ view: current, frame, drawing });
+  live.current = { view: current, frame, drawing };
+
+  /** Every move of the view goes through here, so none of them can push the drawing off the frame. */
+  const applyView = useCallback((next: CanvasView) => {
+    setMenuFor(null);
+    setView(clampView(next, live.current.frame, live.current.drawing));
+  }, []);
+
+  /** −/+ and their keys step around the frame's centre: what the reader is looking at is what stays put. */
+  const zoomStep = useCallback(
+    (direction: 1 | -1) => {
+      const { view: from, frame: box } = live.current;
+      const centre = { x: box.width / 2, y: box.height / 2 };
+      applyView(zoomAt(from, centre, direction === 1 ? ZOOM_STEP : 1 / ZOOM_STEP));
+    },
+    [applyView],
+  );
+
+  // The canvas fills the rest of the scrolling column, which has to be measured: see
+  // columnBottom. Re-measured after every render as well as on a resize, because the notices
+  // above the canvas come and go and each one moves its top edge without changing its own box,
+  // which is a move no ResizeObserver reports.
+  const measure = useCallback(() => {
+    if (frameEl === null) return;
+    const rect = frameEl.getBoundingClientRect();
+    const height = Math.max(CANVAS_MIN_H, columnBottom(frameEl) - rect.top);
+    setFrame((prev) =>
+      Math.abs(prev.width - rect.width) < 0.5 && Math.abs(prev.height - height) < 0.5
+        ? prev
+        : { width: rect.width, height },
+    );
+  }, [frameEl]);
+  useLayoutEffect(measure);
+  useEffect(() => {
+    if (frameEl === null) return;
+    window.addEventListener("resize", measure);
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure());
+    ro?.observe(frameEl);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
+  }, [frameEl, measure]);
+
+  // Wheel zooms around the cursor, and a trackpad pinch — which arrives as a ctrl+wheel —
+  // needs no branch of its own. A native listener registered non-passive: React's synthetic
+  // onWheel is passive, so a preventDefault there cannot stop the column scrolling instead.
+  useEffect(() => {
+    if (frameEl === null) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      // clientLeft/clientTop take the frame's border off: the drawing layer is placed from the
+      // inside of that border, and an anchor a border's width out drifts as the wheel repeats.
+      const rect = frameEl.getBoundingClientRect();
+      const pointer = {
+        x: event.clientX - rect.left - frameEl.clientLeft,
+        y: event.clientY - rect.top - frameEl.clientTop,
+      };
+      applyView(zoomAt(live.current.view, pointer, wheelZoomFactor(event.deltaY, event.deltaMode)));
+    };
+    frameEl.addEventListener("wheel", onWheel, { passive: false });
+    return () => frameEl.removeEventListener("wheel", onWheel);
+  }, [frameEl, applyView]);
+
+  // Drag pans, from anywhere on the canvas that is not a control — the cards are inert, so
+  // grabbing one is grabbing the canvas under it. Pointer capture, so a fast pull that leaves
+  // the frame (or the window) keeps panning and still ends cleanly.
+  const panDrag = usePointerDrag<{ x: number; y: number; view: CanvasView }>({
+    threshold: 0,
+    begin: (event) => {
+      if (isInteractive(event.target)) return null;
+      // The keyboard shortcuts act on the focused canvas, and a click is how a pointer user
+      // gets there; Safari does not focus a tabindex'd div on its own.
+      event.currentTarget.focus();
+      setPanning(true);
+      return { x: event.clientX, y: event.clientY, view: live.current.view };
+    },
+    onMove: (event, start) =>
+      applyView(panBy(start.view, event.clientX - start.x, event.clientY - start.y)),
+    onEnd: () => setPanning(false),
+    onCancel: () => setPanning(false),
+  });
+
+  /** The canvas's own keys: zoom in, out, back to fit, and the arrows for a pan without a pointer. */
+  const onCanvasKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // A key pressed on a card's kebab is the menu's business, not the canvas's.
+    if (event.target !== event.currentTarget) return;
+    const from = live.current.view;
+    switch (event.key) {
+      case "+":
+      case "=":
+        zoomStep(1);
+        break;
+      case "-":
+      case "_":
+        zoomStep(-1);
+        break;
+      case "0":
+        setMenuFor(null);
+        setView(null);
+        break;
+      case "ArrowLeft":
+        applyView(panBy(from, CANVAS_KEY_PAN, 0));
+        break;
+      case "ArrowRight":
+        applyView(panBy(from, -CANVAS_KEY_PAN, 0));
+        break;
+      case "ArrowUp":
+        applyView(panBy(from, 0, CANVAS_KEY_PAN));
+        break;
+      case "ArrowDown":
+        applyView(panBy(from, 0, -CANVAS_KEY_PAN));
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
 
   const openDesk = async (employee: OrgEmployeeItem) => {
     try {
@@ -244,8 +404,8 @@ export function OrgChartPage() {
         variant="ghost"
         title={S.company.chart.zoomOut}
         aria-label={S.company.chart.zoomOut}
-        disabled={scale <= ZOOM_MIN}
-        onClick={() => setZoom(stepZoom(scale, -1))}
+        disabled={current.scale <= ZOOM_MIN}
+        onClick={() => zoomStep(-1)}
       >
         <GlyphIcon d={ZOOM_ICONS.out} size={ICON_SIZE.iconButton} />
       </Button>
@@ -253,7 +413,10 @@ export function OrgChartPage() {
         type="button"
         title={S.company.chart.zoomFit}
         aria-label={`${S.company.chart.zoomFit} · ${percent}%`}
-        onClick={() => setZoom(null)}
+        onClick={() => {
+          setMenuFor(null);
+          setView(null);
+        }}
         className="min-w-11 rounded-md px-1 py-1 text-center text-xs text-gray-600 tabular-nums transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
       >
         {percent}%
@@ -263,8 +426,8 @@ export function OrgChartPage() {
         variant="ghost"
         title={S.company.chart.zoomIn}
         aria-label={S.company.chart.zoomIn}
-        disabled={scale >= ZOOM_MAX}
-        onClick={() => setZoom(stepZoom(scale, 1))}
+        disabled={current.scale >= ZOOM_MAX}
+        onClick={() => zoomStep(1)}
       >
         <GlyphIcon d={ZOOM_ICONS.in} size={ICON_SIZE.iconButton} />
       </Button>
@@ -304,61 +467,73 @@ export function OrgChartPage() {
               {S.company.chart.employeeCount(chart.employees.length)}
             </span>
           </div>
-          <div ref={frameRef} className="overflow-x-auto pb-3">
-            {/* The scaled box takes the drawing's on-screen size, so `mx-auto` centres it when the frame is wider and the frame scrolls when it is not. */}
+          {/* The canvas: a clipping frame that fills the window, and one transformed layer
+              inside it. `select-none` because a drag across the cards is a pan, not a
+              selection; `touch-action: none` because it is a one-finger pan, not a scroll. */}
+          <div
+            ref={setFrameEl}
+            role="group"
+            aria-label={S.company.chart.canvas}
+            tabIndex={0}
+            onKeyDown={onCanvasKeyDown}
+            {...panDrag}
+            style={{ height: frame.height, touchAction: "none" }}
+            className={`relative select-none overflow-hidden rounded-lg border border-gray-200 bg-gray-50/60 outline-none focus-visible:border-gray-400 dark:border-gray-800 dark:bg-gray-900/40 dark:focus-visible:border-gray-600 ${
+              panning ? "cursor-grabbing" : "cursor-grab"
+            }`}
+          >
             <div
-              className="mx-auto"
-              style={{ width: layout.width * scale, height: layout.height * scale }}
+              className="absolute top-0 left-0 origin-top-left"
+              style={{
+                width: layout.width,
+                height: layout.height,
+                transform: viewTransform(current),
+              }}
             >
-              <div
-                className="relative origin-top-left"
-                style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}
+              <svg
+                width={layout.width}
+                height={layout.height}
+                className="absolute inset-0 text-gray-300 dark:text-gray-700"
+                aria-hidden
               >
-                <svg
-                  width={layout.width}
-                  height={layout.height}
-                  className="absolute inset-0 text-gray-300 dark:text-gray-700"
-                  aria-hidden
+                {layout.edges.map((edge) => (
+                  <path
+                    key={`${edge.fromId}>${edge.toId}`}
+                    d={edge.path}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                ))}
+              </svg>
+              {layout.detachedTop !== null && (
+                <p
+                  className={`absolute right-0 left-0 text-center text-[11px] font-medium ${toneInk.danger}`}
+                  style={{ top: layout.detachedTop - CHART_DETACHED_LABEL_H }}
                 >
-                  {layout.edges.map((edge) => (
-                    <path
-                      key={`${edge.fromId}>${edge.toId}`}
-                      d={edge.path}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                  ))}
-                </svg>
-                {layout.detachedTop !== null && (
-                  <p
-                    className={`absolute right-0 left-0 text-center text-[11px] font-medium ${toneInk.danger}`}
-                    style={{ top: layout.detachedTop - CHART_DETACHED_LABEL_H }}
-                  >
-                    {S.company.chart.detached}
-                  </p>
-                )}
-                {layout.nodes.map((node) => {
-                  const employee = byId.get(node.id);
-                  if (employee === undefined) return null;
-                  const isCeo = employee.agentId === chart.ceoAgentId;
-                  return (
-                    <ChartCard
-                      key={node.id}
-                      employee={employee}
-                      state={employeeStates.get(employee.agentId) ?? employee.state}
-                      isCeo={isCeo}
-                      currency={currency}
-                      x={node.x}
-                      y={node.y}
-                      detached={node.detached}
-                      menuOpen={menuFor === node.id}
-                      setMenuOpen={(open) => setMenuFor(open ? node.id : null)}
-                      menu={nodeMenu(employee, isCeo)}
-                    />
-                  );
-                })}
-              </div>
+                  {S.company.chart.detached}
+                </p>
+              )}
+              {layout.nodes.map((node) => {
+                const employee = byId.get(node.id);
+                if (employee === undefined) return null;
+                const isCeo = employee.agentId === chart.ceoAgentId;
+                return (
+                  <ChartCard
+                    key={node.id}
+                    employee={employee}
+                    state={employeeStates.get(employee.agentId) ?? employee.state}
+                    isCeo={isCeo}
+                    currency={currency}
+                    x={node.x}
+                    y={node.y}
+                    detached={node.detached}
+                    menuOpen={menuFor === node.id}
+                    setMenuOpen={(open) => setMenuFor(open ? node.id : null)}
+                    menu={nodeMenu(employee, isCeo)}
+                  />
+                );
+              })}
             </div>
           </div>
         </>

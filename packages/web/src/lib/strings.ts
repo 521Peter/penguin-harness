@@ -2615,7 +2615,7 @@ Benchmark：
     } as Record<string, string>,
     chart: {
       title: "组织图",
-      info: "员工树即汇报线：CEO 为根，每个节点是一位员工 Agent。节点右上角的菜单里是「打开工位会话」和人事操作，每一项人事操作都会改写组织图文件。",
+      info: "员工树即汇报线：CEO 为根，每个节点是一位员工 Agent。节点右上角的菜单里是「打开工位会话」和人事操作，每一项人事操作都会改写组织图文件。画布可滚轮缩放、拖拽平移；点右上角的百分比回到适应窗口。",
       empty: "组织图为空",
       nodeMenu: "员工操作",
       hire: "招募下属",
@@ -2671,11 +2671,12 @@ Benchmark：
         `让 ${name} 离任？它会移出组织图，其下属改为汇报给它的上级；Agent 本身与所有会话保留。`,
       left: (name: string): string => `${name} 已离任`,
       saved: "组织图已更新",
-      /** The page: zoom control, legend, counts, a failed refresh, the detached row. */
+      /** The page: the canvas and its zoom control, the legend, counts, a failed refresh, the detached row. */
+      canvas: "组织图画布",
       zoom: "缩放",
       zoomIn: "放大",
       zoomOut: "缩小",
-      zoomFit: "适应宽度",
+      zoomFit: "适应窗口",
       legend: "运行态图例",
       employeeCount: (n: number): string => `${n} 位员工`,
       spend: "本周期支出",
