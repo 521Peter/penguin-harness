@@ -141,8 +141,8 @@ export const zh = {
   settings: {
     language: "语言",
     languageInfo: "界面语言，可跟随浏览器设置。",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "系统设置",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "设置",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",

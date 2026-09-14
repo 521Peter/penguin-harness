@@ -121,8 +121,8 @@ export const en: Strings = {
   settings: {
     language: "Language",
     languageInfo: "Interface language; can follow the browser.",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "System settings",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "Settings",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
