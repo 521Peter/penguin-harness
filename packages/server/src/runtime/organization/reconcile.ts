@@ -11,12 +11,7 @@ import { createHash } from "node:crypto";
 import type { OrgCalendarOutcome, OrgChannelMessage, OrgTicketChange } from "../../api/types.js";
 import type { ChannelConfig, TicketDoc } from "../../organization/files.js";
 import { parseChannelMessageLine, serializeChannelMessageLine } from "../../organization/files.js";
-import {
-  agentPrincipal,
-  parsePrincipal,
-  principalAgentId,
-  userPrincipal,
-} from "../../organization/principal.js";
+import { agentPrincipal, parsePrincipal, principalAgentId } from "../../organization/principal.js";
 import { DEFAULT_CHANNEL_ID } from "../../organization/paths.js";
 import { zonedDate } from "../../organization/zoned.js";
 import { latestSlotAt, slotInWindow } from "../schedule-file.js";
@@ -26,8 +21,8 @@ import type { OrgDeps } from "./deps.js";
 import { deskDigest } from "./digest.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
-import { budgetPaused, budgetWarned, systemMessage, ticketState } from "./notices.js";
-import type { SystemLine, TicketNoticeKind } from "./notices.js";
+import { budgetPaused, budgetWarned, systemMessage } from "./notices.js";
+import type { SystemLine } from "./notices.js";
 import { dispatchToDesk, ensureDesk, syncDeskCache } from "./triggers.js";
 
 export interface LoadedTicket extends TicketForSpend {
@@ -254,43 +249,22 @@ async function reconcileCalendar(
 // Tickets
 // ---------------------------------------------------------------------------
 
-/** The ticket changes that also write a `system` line; the rest only reach the employees they concern. */
-const TICKET_NOTICE_KIND: Partial<Record<OrgTicketChange, TicketNoticeKind>> = {
-  blocked: "ticket_blocked",
-  done: "ticket_done",
-  rejected: "ticket_rejected",
-};
-
 /**
- * One ticket change, told to the people it concerns and queued for the employees it
- * concerns. A change never starts a work run: the employees' half is a row per (employee,
- * ticket, change) that the employee's next calendar sweep carries under "Since your last
- * sweep" — queued whether or not the organization is paused, since delivery waits for that
- * sweep anyway. The people's half is immediate: the all-hands line the board reads.
+ * One ticket change, queued for the employees it concerns. A change never starts a work run
+ * and it never writes into a channel: the employees' half is a row per (employee, ticket,
+ * change) that the employee's next calendar sweep carries under "Since your last sweep" —
+ * queued whether or not the organization is paused, since delivery waits for that sweep
+ * anyway. The people's half is the `org_ticket` event and the overview's inbox, both read
+ * from the board itself; a channel is for what people and employees say to each other, and a
+ * board that narrates itself into the all-hands channel buries that.
  */
-async function notifyTicket(
+function notifyTicket(
   deps: OrgDeps,
   org: LoadedOrg,
   t: LoadedTicket,
   change: OrgTicketChange,
   agentIds: Iterable<string>,
-  userIds: Iterable<string>,
-): Promise<void> {
-  const users = [...new Set(userIds)];
-  const kind = TICKET_NOTICE_KIND[change];
-  // A closing status is the board's news whether or not anyone asked to be @-mentioned, so
-  // the line lands either way; `blocked` is written only when it is addressed to a person.
-  if (kind !== undefined && (users.length > 0 || change !== "blocked")) {
-    const mentions = users.map(userPrincipal);
-    await appendSystemMessage(
-      deps,
-      org,
-      DEFAULT_CHANNEL_ID,
-      ticketState(kind, t.ticketId, t.doc.title, mentions),
-      mentions,
-      { ticket: t.ticketId },
-    );
-  }
+): void {
   const at = new Date(nowOf(deps)).toISOString();
   for (const agentId of new Set(agentIds)) {
     if (!org.byId.has(agentId)) continue;
@@ -316,7 +290,7 @@ async function reconcileTickets(
       orgId: org.orgId,
       ticketId: t.ticketId,
       status: t.doc.status,
-      owner: t.doc.owner ?? "",
+      owner: t.doc.owner,
       blocked: t.doc.blocked ?? "",
       blockedBy: t.doc.blockedBy ?? "",
     };
@@ -350,41 +324,32 @@ async function reconcileTickets(
     }
     const ownerAgent = cur.owner === "" ? null : principalAgentId(cur.owner);
     if (prev.owner !== cur.owner && ownerAgent !== null) {
-      await notifyTicket(deps, org, t, "assigned", [ownerAgent], []);
+      notifyTicket(deps, org, t, "assigned", [ownerAgent]);
     }
     if (prev.blocked === "" && cur.blocked !== "") {
       const agents: string[] = [];
-      const users: string[] = [];
       const by = parsePrincipal(cur.blockedBy);
       if (by?.kind === "agent") agents.push(by.id);
-      else if (by?.kind === "user") users.push(by.id);
       const manager = ownerAgent !== null ? (org.byId.get(ownerAgent)?.reportsTo ?? null) : null;
       if (manager !== null) agents.push(manager);
-      await notifyTicket(deps, org, t, "blocked", agents, users);
+      notifyTicket(deps, org, t, "blocked", agents);
     }
     if (prev.status !== cur.status && (cur.status === "done" || cur.status === "rejected")) {
-      // An employee initiator hears about its own ticket in its next sweep; a person does not
-      // get an @-mention for filing one — a mention badge per closed ticket is noise, and the
-      // sweep report carries completions. A person who wants to be told lists itself in Notify.
+      // An employee owner hears about its own ticket in its next sweep; a person reads the
+      // closure on the board and in the overview's inbox.
       const agents: string[] = [];
-      for (const p of new Set([...t.doc.notify, t.doc.initiator])) {
+      for (const p of new Set([...t.doc.notify, t.doc.owner])) {
         const parsed = parsePrincipal(p);
         if (parsed?.kind === "agent") agents.push(parsed.id);
       }
-      const users: string[] = [];
-      for (const p of new Set(t.doc.notify)) {
-        const parsed = parsePrincipal(p);
-        if (parsed?.kind === "user") users.push(parsed.id);
-      }
-      await notifyTicket(deps, org, t, cur.status, agents, users);
+      notifyTicket(deps, org, t, cur.status, agents);
       // Tickets waiting on this one: their owners are told in their own next sweep, which is
       // where they decide whether to verify and unblock.
       for (const waiting of tickets) {
         if (waiting.doc.blockedBy !== t.ticketId) continue;
-        const waitingOwner =
-          waiting.doc.owner === undefined ? null : principalAgentId(waiting.doc.owner);
+        const waitingOwner = principalAgentId(waiting.doc.owner);
         if (waitingOwner !== null) {
-          await notifyTicket(deps, org, waiting, "blocker_closed", [waitingOwner], []);
+          notifyTicket(deps, org, waiting, "blocker_closed", [waitingOwner]);
         }
       }
     }

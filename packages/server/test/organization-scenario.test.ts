@@ -152,7 +152,8 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
       { title: "Plugin Marketplace", goal: MISSION, owner: `agent:${CEO}`, priority: "P0" },
       ceoActor,
     );
-    expect(parent.initiator).toBe(`agent:${CEO}`);
+    expect(parent.owner).toBe(`agent:${CEO}`);
+    expect(parent.history[0]).toMatchObject({ by: `agent:${CEO}`, action: "created" });
     const site = await service.createTicket(
       P,
       ORG,
@@ -343,15 +344,17 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     await service.moveTicket(P, ORG, site.ticketId, "review", undefined, devWork);
     const siteDetail = await service.ticket(P, ORG, site.ticketId);
     expect(siteDetail.status).toBe("review");
-    // created (CEO), accepted (CEO), two progress lines and the move to review (the developer's session).
-    expect(siteDetail.progress.map((p) => p.by)).toEqual([
-      `agent:${CEO}`,
-      `agent:${CEO}`,
-      `agent:${DEV}`,
-      `agent:${DEV}`,
-      `agent:${DEV}`,
+    // The prose is the two sentences the developer's session wrote; who did what is history.
+    expect(siteDetail.progress).toHaveLength(2);
+    expect(siteDetail.history.map((h) => [h.by, h.action])).toEqual([
+      [`agent:${CEO}`, "created"],
+      [`agent:${CEO}`, "assigned"],
+      [`agent:${CEO}`, "moved"],
+      [`agent:${DEV}`, "session_started"],
+      [`agent:${DEV}`, "progress"],
+      [`agent:${DEV}`, "progress"],
+      [`agent:${DEV}`, "moved"],
     ]);
-    expect(siteDetail.progress.at(-1)?.sessionId).toBe(siteWork);
     // The CEO's desk accepted the ticket from inside its own session, but accepting is a
     // decision, not work: only the developer's ticket session is booked as contributing.
     expect(siteDetail.sessions).toEqual([siteWork]);

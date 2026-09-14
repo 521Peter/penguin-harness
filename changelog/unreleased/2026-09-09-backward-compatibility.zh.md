@@ -7,9 +7,9 @@
 
 [English](2026-09-09-backward-compatibility.md)
 
-[公司模式](2026-09-02-company-mode.zh.md)进入试用时，磁盘上已经有组织在跑，于是后来的四项改动
+[公司模式](2026-09-02-company-mode.zh.md)进入试用时，磁盘上已经有组织在跑，于是后来的五项改动
 都得面对早于它们写下的数据。没有一项需要迁移，也没有一项需要用户动手；这里写清楚每项容忍的是什么
-旧形态，以及其中哪一项是带有效期的垫片。
+旧形态，以及其中哪些是带有效期的垫片。
 
 ## `sessions.client = "org"`：创建时写入，由对账回填
 
@@ -41,7 +41,31 @@
 调度器不再产生 `kind: ticket_notice` 的工作轮；标记解析器仍接受这个 kind，旧 Trace 的
 `[org_trigger]` 块照旧折叠与渲染。只要这些 Trace 还会被读，枚举成员就留着。没有按计划要删的东西。
 
+## frontmatter 之前格式的工单文件
+
+工单现在是 YAML frontmatter 加正文。在此之前写下的工单都是 `# Ticket: <标题>` 加若干
+`Key: value` 头部行，仍然能读：`packages/server/src/organization/files.ts` 里的
+`parseLegacyTicket` 把旧头部映射到新字段，把 `Initiator` 折进唯一的 `owner`（没有指派过负责人的
+工单归创建者），并把它记成 history 的 `created` 条目；每条旧进展行
+（`- <时间> <主体> <正文> session:<id>`）变成一句纯进展，外加一条带着原时间与原主体的 `progress`
+history 条目。看板上两种格式并列显示，而每一次写入都按新格式序列化——工单在第一次被写入时完成转换。
+
+转换中丢掉的东西：旧工单里那条 `moved … → done` 进展变成的是 `progress` 而不是 `moved` 条目，
+因此这项改动之前关闭的工单在组织概览的 inbox 里不带 `closedAt`——和手工移动的工单一直以来的情形相同。
+
+**这是一段带有效期的垫片。**`parseLegacyTicket` 在 frontmatter 格式发布之后的下一个版本就可以删：
+到那时，凡是组织还在写的工单都已转换过；此后仍未被写过的工单，本就没人在做它，其文件手工转换或原样
+留着都行。删它的人顺手删掉 `parseTicket` 里的旧格式分支与 `organization-files.test.ts` 里的旧格式测试。
+
+## 全员频道里已经存在的工单系统行
+
+工单的变化不再往频道写 `system` 行，于是再没有东西产生 `ticket_blocked`、`ticket_done`、
+`ticket_rejected` 这三种 notice。它们仍保留在 `OrgChannelNoticeKind` 联合类型里，Web App 与 CLI 的
+渲染器也保留，好让组织消息文件里已有的那些行仍按读者的语言渲染，而不是退回成英文原文。不是按计划要
+删的垫片：只要这些文件还会被读，它们就留着。
+
 ## 兼容性
 
 升级无需操作。既有组织在重启后的第一轮对账被标记；升级之前删除的组织，其会话会留在开发模式列表里，
-直到归档或删除。唯一的兼容代码是对账里的回填，从下一个版本起可以移除。
+直到归档或删除。既有工单按原样读取，并在第一次被写入时改写为新格式。兼容代码有两处——对账里的回填与
+`parseLegacyTicket`，都从下一个版本起可以移除。

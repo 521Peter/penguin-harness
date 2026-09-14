@@ -10,6 +10,7 @@ import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
 import type { TicketDoc } from "../../organization/files.js";
 import { orgLanguage, serializeTicket } from "../../organization/files.js";
+import { agentPrincipal } from "../../organization/principal.js";
 import type { OrgDeps } from "./deps.js";
 import type { LoadedOrg } from "./model.js";
 import { employeeLine, sharedWorkspace } from "./model.js";
@@ -188,16 +189,18 @@ export async function dispatchToDesk(
 
 /**
  * Opens a ticket session: an ordinary session of the employee's Agent in the desk's (or a
- * chosen) workspace, appended to the ticket's `Sessions` header — the fact that makes the
+ * chosen) workspace, appended to the ticket's `sessions` list — the fact that makes the
  * session the ticket's — and started with one input carrying where it stands, the rule that
- * references and deliverables are named by full path, and the whole ticket.
+ * references and deliverables are named by full path, and the whole ticket. `by` is the
+ * principal the `session_started` history entry is recorded under; it defaults to the
+ * employee the session runs as, which is who started it in every path but a person's.
  */
 export async function openTicketSession(
   deps: OrgDeps,
   org: LoadedOrg,
   ticket: { ticketId: string; column: TicketDoc["status"]; doc: TicketDoc },
   agentId: string,
-  opts: { message?: string; workspace?: string; budget?: string },
+  opts: { message?: string; workspace?: string; budget?: string; by?: string },
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const employee = org.byId.get(agentId);
   if (!employee) return { ok: false, error: `${agentId} is not an employee of ${org.orgId}` };
@@ -223,6 +226,15 @@ export async function openTicketSession(
   const n = ticket.doc.sessions.length + 1;
   deps.sessions.updateTitle(created.sessionId, `${ticket.doc.title} #${n}`);
   ticket.doc.sessions = [...ticket.doc.sessions, created.sessionId];
+  ticket.doc.history = [
+    ...ticket.doc.history,
+    {
+      at: new Date(deps.now?.() ?? Date.now()).toISOString(),
+      by: opts.by ?? agentPrincipal(agentId),
+      action: "session_started",
+      note: created.sessionId,
+    },
+  ];
   await deps.store.writeTicket(org.dir, ticket.ticketId, ticket.column, ticket.doc);
   deps.cache.addTicketSession(
     org.projectId,

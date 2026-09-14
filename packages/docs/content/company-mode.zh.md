@@ -35,7 +35,7 @@ id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定�
 | 员工 | 以 CEO 为根、经汇报线连成一棵树的 Agent——没有部门与岗位；每个条目带头衔、职责、工作区和月度预算 | `org_chart.yaml` |
 | 工位会话 | 每个员工一个常设会话：日程项、频道里的提及与人都发到这里；它负责调度、发起工单会话，不亲自做工单 | `desks.toml`（服务端写入） |
 | 日程 | 按员工分组的日程项，格式同定时任务、去掉目标字段——唯一的周期性驱动 | `calendar/<agent_id>/<event>.toml` |
-| 工单 | 一个工单一个 Markdown 文件，所在列目录即状态 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
+| 工单 | 一个工单一个 Markdown 文件——YAML frontmatter（`title`、`status`、`owner`、`notify`、`priority`、`due`、`blocked`、`sessions`、`history`）加 `## Goal`、`## Acceptance criteria`、`## Progress`、`## Result` 四节；所在列目录即状态，slug 为用连字符连接的小写英文单词 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
 | 频道 | 一个频道一个目录：一份写有名称、用途与成员的意图文件，加上一行一条消息、按天分的 JSON Lines | `channels/<channel_id>/channel.toml`、`channels/<channel_id>/<yyyy-mm-dd>.jsonl` |
 | 公共工作区 | 公司的工作目录；根目录放共享输入、不是任何人的工位——CEO 在 `ceo/` 里工作，新员工不另行指定就落在以其 Agent id 命名的子目录里；相对子目录在指定时由服务端建好，绝对路径必须已经存在 | `workspace/` |
 | 组织手册 | 公司知识库；根部 `README.md` 是每个工作轮先读的索引，其余文档在索引中列出、按需读取 | `handbook/` |
@@ -47,9 +47,9 @@ id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定�
 ## 工作怎么流转
 
 1. **触发到达工位。** 日程项到期、有人在它所在的频道里 @ 了这位员工、或有人直接同工位说话——就这三种。服务端向工位会话发送一条以 `[org_trigger]` 块开头的消息——组织、员工、触发种类、该员工的支出与预算——后面跟着触发内容。Web App 把块折叠成一行提示，Trace 原样保留。**工单的变化从不启动一轮运行**：指派负责人、标记阻塞、阻塞解除、完成、拒绝，都只被记录下来，列在该员工下一次日历巡检正文的 `## Since your last sweep` 一节里——一条变化一行，写明工单、标题、发生了什么，以及工单自身带的理由或阻塞方。
-2. **工位负责调度。** 员工按 `company-employee` Skill 先读手册，再看看板，为该推进的工单各发起一个**工单会话**（`penguin org ticket start <id>`）——同一 Agent 在工位工作区里的另一个普通会话。工位自己绝不动工单的文件：一旦要动，就发起工单会话交给它做。**一张工单的会话只能由它的负责人的工位、或由人发起**——员工对别人的工单发起会话会得到 `403 not_ticket_owner`。要把活交给别的员工，就改派负责人（`penguin org ticket assign <id> --owner agent:<员工>`），新负责人的工位在下一次巡检时接手；反过来，要拉同事来帮自己的工单，则由负责人用 `--agent-id <同事>` 发起会话。一个工单可以由多个会话、多名员工共同贡献，每个会话都记录在工单头部的 `Sessions` 字段。
-3. **工单会话做事并回写。** 它以自己的处境开场——工作区、「一切引用与交付物都写完整路径」的规则，以及工单原文。结束前追加进展（`penguin org ticket progress`）并移列（`penguin org ticket move`）。声称做了活的写入——一条进展、正文编辑、移入审核中——会把该会话记为这张工单的贡献会话，其成本因此摊到工单上；接受、关闭、阻塞与解除阻塞都不记。卡住了——等人拍板、等另一个工单、缺 key——就给工单标记阻塞、写明原因与等谁解开（`penguin org ticket block`），然后停手；被阻塞的工单会被每一次巡检跳过，直到解除。
-4. **结束即通知。** 工单进入已完成或已拒绝时通知它的 `Notify` 名单，发起人是员工时也通知发起人：员工在下一次巡检的清单里看到，人收到全员频道里 @ 自己的系统消息。人开的工单在完成时不会 @ 他——那条系统消息照样写进全员频道，董事会正是在那里读到完成；想收到通知就把自己列进 `Notify`。等着它的工单会告诉负责人「阻塞已解除」。
+2. **工位负责调度。** 员工按 `company-employee` Skill 先读手册，再看看板，为该推进的工单各发起一个**工单会话**（`penguin org ticket start <id>`）——同一 Agent 在工位工作区里的另一个普通会话。工位自己绝不动工单的文件：一旦要动，就发起工单会话交给它做。**一张工单的会话只能由它的负责人的工位、或由人发起**——员工对别人的工单发起会话会得到 `403 not_ticket_owner`。要把活交给别的员工，就改派负责人（`penguin org ticket assign <id> --owner agent:<员工>`），新负责人的工位在下一次巡检时接手；反过来，要拉同事来帮自己的工单，则由负责人用 `--agent-id <同事>` 发起会话。一个工单可以由多个会话、多名员工共同贡献，每个会话都记录在工单的 `sessions` 列表里。
+3. **工单会话做事并回写。** 它以自己的处境开场——工作区、「一切引用与交付物都写完整路径」的规则，以及工单原文。结束前追加进展（`penguin org ticket progress`）——一句大白话，写清做了什么、东西在哪，不写 id 也不写人名，因为谁写的、什么时候写的由服务端记进 `history`——并移列（`penguin org ticket move`）。声称做了活的写入——一条进展、正文编辑、移入审核中——会把该会话记为这张工单的贡献会话，其成本因此摊到工单上；接受、关闭、阻塞与解除阻塞都不记。卡住了——等人拍板、等另一个工单、缺 key——就给工单标记阻塞、写明原因与等谁解开（`penguin org ticket block`），然后停手；被阻塞的工单会被每一次巡检跳过，直到解除。
+4. **结束即通知。** 工单进入已完成或已拒绝时通知它的 `notify` 名单，负责人是员工时也通知负责人：各自在自己下一次巡检的清单里看到。**工单的变化从不发到频道里**——频道装的是人和员工彼此说的话，一块自己讲述自己的看板只会把对话淹掉。完成的事，你在看板上看，也在组织概览的 inbox 里看（它列出本周期内关闭的工单）。等着它的工单会告诉负责人「阻塞已解除」。
 5. **人在频道与看板上拍板。** CEO 不会擅自做重大决定：招募计划、预算、拒绝他人的工单、任何触及组织之外的动作，都先在全员频道里 @ 你提案，等你答复后才执行。只有 `@<员工>` 和 `@all` 会把消息投递到工位，且只在该频道的成员范围内生效：触发块写明消息来自哪个频道，员工也回到那里作答。提及了不在该频道的人，整条消息会被拒收，而不是写下去却投递不出；达到 @ 连锁上限的消息只记录不投递，两个员工不会无休止地互相 @。接受、拒绝与审核工单由你或 CEO 决定，规则写在组织手册里。
 
 预算是每个员工的月度上限，口径是本人加全部下属的会话——CEO 的预算就是整家公司。到 80% 时全员频道里出现一条系统消息；到 100% 时该员工（及其下属）的日程暂停，直到下个月或上调预算。@提及和直接对话照常，你随时可以告诉一个被暂停的员工该做什么。
@@ -100,7 +100,7 @@ id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定�
 penguin org show                                  # 员工、看板计数、支出对预算
 penguin org hire --new-agent <id> --title <s> --reports-to <agent_id> [--workspace <sub>] [--budget <usd>]
 penguin org calendar add <name> --prompt <s> --start-at 2026-09-03T09:00:00+08:00 --period 1d   # 排班：各占时刻，按角色定节奏
-penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>] [--initiator <principal>]
+penguin org ticket create --title <s> --goal <s> [--owner agent:<id>] [--parent <ticket_id>] [--slug <words>]
 penguin org ticket start <ticket_id> [-m <note>] [--agent-id <员工>]   # 为自己名下的工单发起工单会话，打印会话 id
 penguin org ticket progress <ticket_id> -m <text>
 penguin org ticket move <ticket_id> --to review|done|rejected [--reason <s>]

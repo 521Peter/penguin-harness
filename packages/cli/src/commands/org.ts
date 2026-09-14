@@ -173,23 +173,42 @@ function callerSessionId(): string | undefined {
   return process.env.PENGUIN_SESSION_ID?.trim() || undefined;
 }
 
-/** `{ sessionId }` for a write body inside a session, so the file records the employee rather than the token's user. */
-function actorFields(): { sessionId?: string } {
+/**
+ * Who the server records a write as: the calling session and the calling employee, both from
+ * the control environment, so the file names the employee rather than the token's user. The
+ * Agent id is the narrower fact — it names exactly the Agent whose subprocess ran the command —
+ * and the server prefers it; the session answers when there is no Agent id (a signed-in CLI
+ * outside a session sends neither and the write is the person's).
+ */
+function actorFields(): { sessionId?: string; agentId?: string } {
   const sessionId = callerSessionId();
-  return sessionId !== undefined ? { sessionId } : {};
+  const agentId = process.env.PENGUIN_AGENT_ID?.trim() || undefined;
+  return {
+    ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(agentId !== undefined ? { agentId } : {}),
+  };
 }
 
 /**
  * A `?`-prefixed query string over the entries that have a value; empty when none has.
- * `sessionId` rides here on the channel reads and the member DELETE, which have no body to
- * carry the identity {@link actorFields} puts in one — without it the server answers an
- * employee as the signed-in person, and `channel ls` shows it every channel.
+ * `sessionId` and `agentId` ride here on the channel reads and the member DELETE, which have
+ * no body to carry the identity {@link actorFields} puts in one — without them the server
+ * answers an employee as the signed-in person, and `channel ls` shows it every channel.
  */
 function query(entries: Array<[string, string | undefined]>): string {
   const parts = entries
     .filter((entry): entry is [string, string] => entry[1] !== undefined)
     .map(([key, value]) => `${key}=${enc(value)}`);
   return parts.length > 0 ? `?${parts.join("&")}` : "";
+}
+
+/** The identity {@link actorFields} carries in a body, as query entries for the reads that have none. */
+function actorQuery(): Array<[string, string | undefined]> {
+  const fields = actorFields();
+  return [
+    ["sessionId", fields.sessionId],
+    ["agentId", fields.agentId],
+  ];
 }
 
 /** `--channel`, trimmed; the all-hands channel when the flag is absent or empty. */
@@ -376,15 +395,44 @@ function renderChart(res: OrgChartResponse, t: Messages): string {
   );
 }
 
-/** `ticket show`: the derived figures the file cannot carry, then the file itself. */
+/** `ticket show`: the derived figures, the ticket's fields, its prose sections, then its history. */
 function renderTicket(d: OrgTicketDetail, t: Messages): string {
+  const label = t.org.ticketFields();
+  const field = (key: string, value: string): string => `${key}: ${value}`;
   const head = [
     t.org.ticketHead(d.ticketId, d.status, d.running, isBlocked(d) ? d.blocked : undefined),
     t.org.ticketFigures(usd(d.cost), usd(d.rolledUpCost), d.sessions.length, d.children.length),
     ...(d.invalid !== undefined ? [t.org.invalid(d.invalid)] : []),
+    field(label.title, d.title),
+    field(label.owner, d.owner),
+    ...(d.parent !== undefined ? [field(label.parent, d.parent)] : []),
+    field(label.notify, d.notify.join(", ")),
+    field(label.priority, d.priority),
+    ...(d.due !== undefined ? [field(label.due, d.due)] : []),
+    ...(isBlocked(d) ? [field(label.blocked, d.blocked ?? "")] : []),
+    ...(d.blockedBy !== undefined && d.blockedBy !== ""
+      ? [field(label.blockedBy, d.blockedBy)]
+      : []),
+    field(label.sessions, d.sessions.join(", ")),
   ];
-  const body = d.body.endsWith("\n") ? d.body : `${d.body}\n`;
-  return `${head.join("\n")}\n\n${body}`;
+  // The section headings are the file's own: what `show` prints and what an employee edits
+  // with its file tools have to read as the same document.
+  const prose = [
+    `## Goal\n${d.goal}`,
+    `## Acceptance criteria\n${d.acceptanceCriteria}`,
+    `## Progress\n${d.progress.map((line) => `- ${line}`).join("\n")}`,
+    `## Result\n${d.result}`,
+  ].map((section) => section.trimEnd());
+  // The actions stay in English: they are field values, like the column and the priority.
+  const history = d.history.map(
+    (h) => `${h.at} ${h.by} ${h.action}${h.note !== undefined ? `: ${h.note}` : ""}`,
+  );
+  const blocks = [
+    head.join("\n"),
+    ...prose,
+    ...(history.length > 0 ? [`${t.org.ticketHistory()}\n${history.join("\n")}`] : []),
+  ];
+  return `${blocks.join("\n\n")}\n`;
 }
 
 /** `finance`: employees along the reporting line, then tickets, then the total. */
@@ -982,7 +1030,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       .command("create")
       .description(t.org.ticketCreateDesc)
       .requiredOption("--title <title>", t.org.ticketTitle)
-      .option("--initiator <principal>", t.org.ticketInitiator)
+      .option("--slug <slug>", t.org.ticketSlug)
       .option("--goal <text>", t.org.goal)
       .option("--criteria <text>", t.org.criteria)
       .option("--body-file <path>", t.org.bodyFile)
@@ -1019,7 +1067,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const notify = commaList(opts.notify);
     const detail = await scope.client.request<OrgTicketDetail>("POST", `${scope.base}/tickets`, {
       title: String(opts.title),
-      ...(opts.initiator !== undefined ? { initiator: String(opts.initiator) } : {}),
+      ...(opts.slug !== undefined ? { slug: String(opts.slug) } : {}),
       ...(opts.goal !== undefined ? { goal: String(opts.goal) } : {}),
       ...(opts.criteria !== undefined ? { acceptanceCriteria: String(opts.criteria) } : {}),
       ...(body !== undefined ? { body } : {}),
@@ -1156,10 +1204,12 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       "POST",
       `${scope.base}/tickets/${enc(ticketId)}/start`,
       {
+        // `agentId` last: here it is the employee the ticket session RUNS AS, which the
+        // owner may point at a colleague, and it must not be overwritten by the caller's own.
+        ...actorFields(),
         ...(agentId !== undefined ? { agentId } : {}),
         ...(opts.message !== undefined ? { message: String(opts.message) } : {}),
         ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),
-        ...actorFields(),
       },
     );
     // Like `run --background`: the bare session id is what `penguin input` / `penguin logs` address later.
@@ -1182,10 +1232,13 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     const scope = await orgScope(opts, t);
     if (scope === null) return;
     const sessionId = await resolveSessionRef(scope.client, scope.projectId, ref, t);
+    // `sessionId` here is the Session to attach, not the caller's — so only the Agent id of
+    // {@link actorFields} rides along, and it is what the history entry is recorded under.
+    const { agentId } = actorFields();
     const detail = await scope.client.request<OrgTicketDetail>(
       "POST",
       `${scope.base}/tickets/${enc(ticketId)}/attach`,
-      { sessionId },
+      { sessionId, ...(agentId !== undefined ? { agentId } : {}) },
     );
     if (opts.json === true) printJson(detail);
     else printLine(t.org.ticketAttached(detail.ticketId, sessionId));
@@ -1222,7 +1275,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (scope === null) return;
     const res = await scope.client.request<OrgChannelsResponse>(
       "GET",
-      `${scope.base}/channels${query([["sessionId", callerSessionId()]])}`,
+      `${scope.base}/channels${query(actorQuery())}`,
     );
     if (opts.json === true) {
       printJson(res);
@@ -1264,7 +1317,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       if (scope === null) return;
       const detail = await scope.client.request<OrgChannelDetail>(
         "GET",
-        `${scope.base}/channels/${enc(channelId)}${query([["sessionId", callerSessionId()]])}`,
+        `${scope.base}/channels/${enc(channelId)}${query(actorQuery())}`,
       );
       if (opts.json === true) printJson(detail);
       else process.stdout.write(renderChannelDetail(detail, t));
@@ -1318,9 +1371,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       const principal = await callerPrincipal(scope.client);
       await scope.client.request(
         "DELETE",
-        `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query([
-          ["sessionId", callerSessionId()],
-        ])}`,
+        `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query(actorQuery())}`,
       );
       if (opts.json === true) printJson({ channelId, principal });
       else printLine(t.org.channelLeft(channelId));
@@ -1336,9 +1387,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     if (scope === null) return;
     await scope.client.request(
       "DELETE",
-      `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query([
-        ["sessionId", callerSessionId()],
-      ])}`,
+      `${scope.base}/channels/${enc(channelId)}/members/${enc(principal)}${query(actorQuery())}`,
     );
     if (opts.json === true) printJson({ channelId, principal });
     else printLine(t.org.channelMemberRemoved(channelId, principal));
@@ -1373,7 +1422,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       "GET",
       `${scope.base}/channels/${enc(channelId)}/messages${query([
         ["date", opts.date !== undefined ? String(opts.date) : undefined],
-        ["sessionId", callerSessionId()],
+        ...actorQuery(),
       ])}`,
     );
     const messages = res.messages.slice(-count);
