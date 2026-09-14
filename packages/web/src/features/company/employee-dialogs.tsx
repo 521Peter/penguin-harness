@@ -195,10 +195,11 @@ export function HireDialog({
         widthClass="sm:max-w-lg"
         footer={
           <>
-            <Button onClick={onClose} disabled={busy}>
+            <Button size="sm" onClick={onClose} disabled={busy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={busy}
               onClick={() => {
@@ -472,10 +473,11 @@ export function EmployeeEditDialog({
         onClose={onClose}
         footer={
           <>
-            <Button onClick={onClose} disabled={busy}>
+            <Button size="sm" onClick={onClose} disabled={busy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={busy}
               onClick={() => {
@@ -653,10 +655,10 @@ export function DeskRenewDialog({
       onClose={() => (busy ? undefined : onClose())}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void confirm()}>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void confirm()}>
             {S.company.chart.renewDesk}
           </Button>
         </>
