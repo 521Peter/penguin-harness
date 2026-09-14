@@ -2587,14 +2587,12 @@ Scenarios:
     noBudget: "Unbounded",
     budgetUnit: (symbol: string): string => `${symbol} / month`,
     budgetStoredAs: (amount: string): string => `Stored as ${amount} / month`,
-    /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
+    /** The 工位 group under the company sidebar's channel list: one row per employee. */
     sessionList: {
       desks: (n: number): string => `Desks (${n})`,
-      ticketSessions: (n: number): string => `Ticket sessions (${n})`,
       deskOf: (name: string): string => `${name}'s desk`,
       running: "Running",
       noEmployees: "This organization has no employees yet",
-      noTicketSessions: "No ticket sessions yet",
       untitledSession: "Untitled session",
       loadFailed: "The employee list could not be loaded",
     },
@@ -3026,6 +3024,9 @@ Scenarios:
       join: "Join",
       joining: "Joining…",
       joined: "Joined the channel",
+      joinTitle: "Join channel",
+      joinConfirm:
+        "Once you join, messages in this channel that @ you reach you, and you can post here.",
       mentionChip: "@me",
       badgeUnread: (n: number): string => `${n} unread`,
       badgeMentions: (n: number): string => `${n} mentioning me`,

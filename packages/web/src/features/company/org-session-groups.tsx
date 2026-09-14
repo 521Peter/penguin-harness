@@ -1,21 +1,29 @@
 /**
- * The two session groups under the company sidebar's channel list, and the collapsed rail's
- * desk twins.
+ * The 工位 group under the company sidebar's channel list, and the collapsed rail's twin.
  *
- * 工位 is one row per employee, in chart order, expanded by default: the organization's
- * people are its primary objects, and a desk is where a person is talked to. A row whose
- * employee has never had a desk opened still stands there and opens one on click, exactly as
- * the org chart's card does. 工单会话 holds the sessions attached to tickets, newest first
- * under the ticket that names them, collapsed by default: they are work in progress, read
- * from the board far more often than from here.
+ * One row per employee, in chart order, expanded by default: the organization's people are
+ * its primary objects, and a desk is where a person is talked to. A row whose employee has
+ * never had a desk opened still stands there and opens one on click, exactly as the org
+ * chart's card does. Ticket sessions have no group of their own — a session exists because a
+ * ticket started it, and it is read from that ticket's drawer, where the work it belongs to
+ * is on screen beside it.
  *
- * Both read the company store's caches (the organization's chart and its sessions route), so
- * opening a group costs no request; the session the shell is on is marked in place. Their run
- * marks come from the session list's live statuses wherever it holds the row — those caches
- * are only re-read on an organization event, and a run ending publishes none (org-sessions.ts).
+ * A desk that has been opened carries the development list's row menu (right-click, and the
+ * hover ellipsis), pared down to the two actions an organization leaves to the reader: copy
+ * the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
+ * the organization's — the employee names it, hiring and firing open and close it — so
+ * rename, archive, delete and pin are not offered here. The binding's own indicator is read
+ * from the session list store: the organization's sessions route does not carry it.
+ *
+ * The group reads the company store's caches (the organization's chart and its sessions
+ * route), so opening it costs no request; the session the shell is on is marked in place. The
+ * run marks come from the session list's live statuses wherever it holds the row — those
+ * caches are only re-read on an organization event, and a run ending publishes none
+ * (org-sessions.ts).
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -23,33 +31,57 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { useLiveSessionStatuses } from "../../state/sessions";
+import { useLiveSessionStatuses, useSessions } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
-import { FolderSection } from "../../components/ui/group-list";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { useRowContextMenu } from "../../components/ui/context-menu";
+import { writeClipboard } from "../../components/ui/copy-button";
+import { Dropdown } from "../../components/ui/dropdown";
+import { FolderSection, Icon } from "../../components/ui/group-list";
+import { MESSAGING_RELAY_ICON } from "../../components/ui/icons";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
+import {
+  DESK_ROW_ACTIONS,
+  SessionRowHoverActions,
+  SessionRowMenuRows,
+} from "../../components/ui/session-row-menu";
+import type { SessionRowAction, SessionRowState } from "../../components/ui/session-row-menu";
 import { SkeletonList } from "../../components/ui/skeleton";
-import { toastError } from "../../components/ui/toast";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
-import { NAV_ICONS } from "../../components/ui/icons";
+import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
-import { deskRows, orgRowActivity, ticketSessionRows } from "./org-sessions";
+import { deskRows, orgRowActivity } from "./org-sessions";
+import type { OrgDeskRow } from "./org-sessions";
 
-/** A row of either group, at the channel rows' density so the whole sidebar reads as one list. */
-const rowClass = (active: boolean) =>
-  `flex w-full min-w-0 items-center ${ICON_GAP.row} rounded-md px-2.5 py-1.5 text-left text-sm transition-colors duration-150 ${
-    active
-      ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "text-gray-600 hover:bg-gray-200/50 dark:text-gray-400 dark:hover:bg-gray-800/70"
+/**
+ * The row's surface — the hover and active fill — on the wrapper rather than on the button,
+ * so the row's menu affordances sit inside the same lit box the reader is pointing at, and
+ * `group` reaches them.
+ */
+const rowSurface = (active: boolean) =>
+  `group flex select-none items-center rounded-md pr-1 transition-colors duration-150 ${
+    active ? "bg-gray-200/70 dark:bg-gray-800" : "hover:bg-gray-200/50 dark:hover:bg-gray-800/70"
   }`;
+
+/** The row's own button, at the channel rows' density so the whole sidebar reads as one list. */
+const rowButton = (active: boolean) =>
+  `flex min-w-0 flex-1 items-center ${ICON_GAP.row} px-2.5 py-1.5 text-left text-sm transition-colors duration-150 disabled:opacity-60 ${
+    active ? "font-medium text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"
+  }`;
+
+/**
+ * A desk is neither archivable nor pinnable, so the two toggles the shared menu labels read
+ * are constant here — it offers neither action (DESK_ROW_ACTIONS).
+ */
+const DESK_ROW_STATE: SessionRowState = { archived: false, pinned: false };
 
 /**
  * Opening a desk: the store's row when one exists, and otherwise the desk endpoint, which
  * creates it — the same call the org chart's card makes, so the two entry points cannot
  * disagree about what "open the desk" means.
  */
-function useOpenSession(projectId: string, orgId: string, onNavigate?: () => void) {
+function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) {
   const navigate = useNavigate();
   const company = useCompany();
   const { setCurrentAgentId } = useProject();
@@ -81,7 +113,146 @@ function useOpenSession(projectId: string, orgId: string, onNavigate?: () => voi
       setOpening(null);
     }
   };
-  return { openSession, openDesk, opening };
+  return { openDesk, opening };
+}
+
+/**
+ * One desk row. The menu hangs off a desk that exists; an employee whose desk has never been
+ * opened has no Session to copy or bind, so the row stays a plain button until the first click
+ * creates one.
+ */
+function DeskRow({
+  row,
+  active,
+  opening,
+  messagingChannel,
+  onOpen,
+  onMessaging,
+}: {
+  row: OrgDeskRow;
+  active: boolean;
+  /** This row's desk is being created right now (the click that creates it is in flight). */
+  opening: boolean;
+  /** The enabled messaging binding of this desk's Session, from the session list store. */
+  messagingChannel: MessagingChannel | undefined;
+  onOpen: () => void;
+  onMessaging: (sessionId: string) => void;
+}) {
+  const ctx = useRowContextMenu();
+  const sessionId = row.sessionId;
+  const activity = orgRowActivity(row.status);
+  const deskName = S.company.sessionList.deskOf(row.name);
+  const label =
+    activity === "running" ? `${deskName} · ${S.company.sessionList.running}` : deskName;
+
+  /** Run one action on this desk's Session, closing the menu first if it was open. */
+  const run = (action: SessionRowAction) => {
+    ctx.close();
+    if (sessionId === null) return;
+    if (action === "messaging") {
+      onMessaging(sessionId);
+      return;
+    }
+    if (action === "copy") {
+      // The panel closes under the click, so the confirmation is a toast rather than
+      // feedback on the row that ran it — the development list's rule for the same action.
+      writeClipboard(sessionId);
+      toastSuccess(S.common.copied);
+    }
+  };
+  /**
+   * Menu items hand focus back to the row before acting: the panel unmounts under the user,
+   * and the menu is the only keyboard route to these actions.
+   */
+  const runFromMenu = (action: SessionRowAction) => {
+    ctx.returnFocus()?.focus();
+    run(action);
+  };
+
+  return (
+    <li>
+      <div
+        ref={sessionId === null ? undefined : ctx.rowRef}
+        // Right-click / Shift+F10 / press-and-hold open the row's menu; the native menu is
+        // suppressed inside that handler only, so the rest of the app keeps the browser's own.
+        {...(sessionId === null ? {} : ctx.rowProps)}
+        className={rowSurface(active)}
+      >
+        <button
+          type="button"
+          aria-current={active ? "true" : undefined}
+          disabled={opening}
+          title={row.jobTitle !== "" ? `${row.name} · ${row.jobTitle}` : row.name}
+          aria-label={label}
+          // A press-and-hold that opened the menu must not also open the desk: touch screens
+          // replay the held press as a click once the finger lifts.
+          onClick={() => {
+            if (ctx.consumeLongPressClick()) return;
+            onOpen();
+          }}
+          className={rowButton(active)}
+        >
+          <AgentAvatar
+            id={row.agentId}
+            name={row.name}
+            size={ICON_SIZE.rowLead}
+            className="shrink-0 rounded"
+          />
+          <Truncated text={row.name} className="min-w-0 flex-1" />
+          {/* Enabled-messaging indicator, the development row's own mark: one glyph for every
+              channel, the channel named in the tooltip and the screen-reader text. */}
+          {messagingChannel !== undefined && (
+            <span
+              title={S.messaging.enabledIndicator[messagingChannel]}
+              className="shrink-0 text-gray-400 dark:text-gray-500"
+            >
+              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
+              <span className="sr-only">{S.messaging.enabledIndicator[messagingChannel]}</span>
+            </span>
+          )}
+          {activity !== null && <SessionActivityIcon activity={activity} />}
+        </button>
+        {/* The menu affordance's slot, laid out rather than overlaid and reserved on every row
+            — including a desk that does not exist yet — so the names line up down the group
+            and nothing floats over the run mark. No direct hover action goes in it: a desk has
+            none that is both safe and one click, so it holds the ellipsis alone, which is also
+            the pointer's way into a menu right-click leaves undiscoverable. */}
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+          {sessionId !== null && (
+            <SessionRowHoverActions
+              actions={[]}
+              state={DESK_ROW_STATE}
+              onRun={run}
+              onMore={ctx.openAt}
+            />
+          )}
+        </span>
+        {sessionId !== null && (
+          <>
+            {/* `contents` keeps this wrapper out of the row's flex layout: it draws no box of
+                its own and the panel is portaled against the point the gesture landed on. */}
+            <Dropdown
+              open={ctx.open}
+              setOpen={ctx.setOpen}
+              portal={{ direction: "down", align: "left" }}
+              anchorRect={ctx.anchor}
+              anchorOwner={ctx.anchorOwner}
+              returnFocus={ctx.returnFocus}
+              className="contents"
+              menuClass="w-36"
+              button={null}
+            >
+              <SessionRowMenuRows
+                actions={DESK_ROW_ACTIONS}
+                state={DESK_ROW_STATE}
+                onRun={runFromMenu}
+              />
+            </Dropdown>
+          </>
+        )}
+      </div>
+    </li>
+  );
 }
 
 export function OrgSessionGroups({
@@ -92,21 +263,31 @@ export function OrgSessionGroups({
 }: {
   projectId: string;
   orgId: string;
-  /** The Session the shell is on, so the groups can mark it. */
+  /** The Session the shell is on, so the group can mark it. */
   activeSessionId: string | null;
   onNavigate?: () => void;
 }) {
   const company = useCompany();
   const [desksOpen, setDesksOpen] = useState(true);
-  const [ticketsOpen, setTicketsOpen] = useState(false);
+  /** The desk whose messaging binding is open in the dialog; null when none is. */
+  const [messagingSessionId, setMessagingSessionId] = useState<string | null>(null);
   const live = useLiveSessionStatuses();
-  const sessions = company.orgSessions.get(orgKey(projectId, orgId));
-  const desks = deskRows(company.orgChart, sessions, live);
-  const tickets = ticketSessionRows(sessions, live);
-  const { openSession, openDesk, opening } = useOpenSession(projectId, orgId, onNavigate);
+  const { sessions, replace } = useSessions();
+  // Which desks relay to a bot. The organization's sessions route has no such field, so the
+  // session list store is the only source — a desk it has not loaded simply shows no mark.
+  const messaging = useMemo(() => {
+    const map = new Map<string, MessagingChannel>();
+    for (const s of sessions) {
+      if (s.messagingChannel !== undefined) map.set(s.sessionId, s.messagingChannel);
+    }
+    return map;
+  }, [sessions]);
+  const orgSessions = company.orgSessions.get(orgKey(projectId, orgId));
+  const desks = deskRows(company.orgChart, orgSessions, live);
+  const { openDesk, opening } = useOpenDesk(projectId, orgId, onNavigate);
   // Nothing has been read for this organization yet: a skeleton, not an "empty" claim.
   const chartFailed = company.orgChart === null && company.orgChartError !== null;
-  const loading = company.orgChart === null && sessions === undefined && !chartFailed;
+  const loading = company.orgChart === null && orgSessions === undefined && !chartFailed;
 
   return (
     <div className="mt-1">
@@ -130,90 +311,36 @@ export function OrgSessionGroups({
           </p>
         ) : (
           <ul className="space-y-0.5">
-            {desks.map((d) => {
-              const active = d.sessionId !== null && d.sessionId === activeSessionId;
-              const activity = orgRowActivity(d.status);
-              const note = activity === "running" ? S.company.sessionList.running : null;
-              return (
-                <li key={d.agentId}>
-                  <button
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    disabled={opening === d.agentId}
-                    title={d.jobTitle !== "" ? `${d.name} · ${d.jobTitle}` : d.name}
-                    aria-label={
-                      note !== null
-                        ? `${S.company.sessionList.deskOf(d.name)} · ${note}`
-                        : S.company.sessionList.deskOf(d.name)
-                    }
-                    onClick={() => void openDesk(d.agentId, d.sessionId)}
-                    className={`${rowClass(active)} disabled:opacity-60`}
-                  >
-                    <AgentAvatar
-                      id={d.agentId}
-                      name={d.name}
-                      size={ICON_SIZE.rowLead}
-                      className="shrink-0 rounded"
-                    />
-                    <Truncated text={d.name} className="min-w-0 flex-1" />
-                    {activity !== null && <SessionActivityIcon activity={activity} />}
-                  </button>
-                </li>
-              );
-            })}
+            {desks.map((d) => (
+              <DeskRow
+                key={d.agentId}
+                row={d}
+                active={d.sessionId !== null && d.sessionId === activeSessionId}
+                opening={opening === d.agentId}
+                messagingChannel={d.sessionId === null ? undefined : messaging.get(d.sessionId)}
+                onOpen={() => void openDesk(d.agentId, d.sessionId)}
+                onMessaging={setMessagingSessionId}
+              />
+            ))}
           </ul>
         )}
       </FolderSection>
-      <FolderSection
-        label={S.company.sessionList.ticketSessions(tickets.length)}
-        open={ticketsOpen}
-        onToggle={() => setTicketsOpen((v) => !v)}
-      >
-        {tickets.length === 0 ? (
-          <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
-            {S.company.sessionList.noTicketSessions}
-          </p>
-        ) : (
-          <ul className="space-y-0.5">
-            {tickets.map((t) => {
-              const active = t.sessionId === activeSessionId;
-              const activity = orgRowActivity(t.status);
-              const title = t.title === "" ? S.company.sessionList.untitledSession : t.title;
-              return (
-                <li key={`${t.ticketId}/${t.sessionId}`}>
-                  <button
-                    type="button"
-                    aria-current={active ? "true" : undefined}
-                    title={`${title} · ${t.ticketTitle}`}
-                    aria-label={`${title} · ${t.ticketTitle}`}
-                    onClick={() => openSession(t.sessionId, t.agentId)}
-                    className={`${rowClass(active)} items-start`}
-                  >
-                    <span className="mt-0.5 shrink-0 text-gray-400 dark:text-gray-500">
-                      <GlyphIcon d={NAV_ICONS.orgTickets} size={ICON_SIZE.rowLead} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <Truncated text={title} className="block" />
-                      {/* The ticket is the row's subtitle: two sessions of one ticket are
-                          told apart by their own titles, and a session is only ever read
-                          against the ticket it is working. */}
-                      <Truncated
-                        text={t.ticketTitle}
-                        className="block text-[11px] text-gray-400 dark:text-gray-500"
-                      />
-                    </span>
-                    {activity !== null && (
-                      <span className="mt-0.5">
-                        <SessionActivityIcon activity={activity} />
-                      </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </FolderSection>
+      {/* Messaging binding dialog (the row menu's "Messaging binding…"): the row's indicator
+          follows the dialog's own save/unbind outcome through the session list store. */}
+      {messagingSessionId !== null && (
+        <MessagingBindingModal
+          sessionId={messagingSessionId}
+          onClose={() => setMessagingSessionId(null)}
+          onChanged={(sessionId, channel) => {
+            const current = sessions.find((x) => x.sessionId === sessionId);
+            if (!current) return;
+            const updated = { ...current };
+            if (channel !== null) updated.messagingChannel = channel;
+            else delete updated.messagingChannel;
+            replace(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -223,7 +350,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
   const company = useCompany();
   const live = useLiveSessionStatuses();
   const desks = deskRows(company.orgChart, company.orgSessions.get(orgKey(projectId, orgId)), live);
-  const { openDesk, opening } = useOpenSession(projectId, orgId);
+  const { openDesk, opening } = useOpenDesk(projectId, orgId);
   if (desks.length === 0) return null;
   return (
     <>

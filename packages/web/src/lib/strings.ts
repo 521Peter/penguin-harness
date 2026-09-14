@@ -2535,14 +2535,12 @@ Benchmark：
      */
     budgetUnit: (symbol: string): string => `${symbol} / 月`,
     budgetStoredAs: (amount: string): string => `存为 ${amount} / 月`,
-    /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
+    /** The 工位 group under the company sidebar's channel list: one row per employee. */
     sessionList: {
       desks: (n: number): string => `工位（${n}）`,
-      ticketSessions: (n: number): string => `工单会话（${n}）`,
       deskOf: (name: string): string => `${name} 的工位`,
       running: "运行中",
       noEmployees: "这个组织还没有员工",
-      noTicketSessions: "还没有工单会话",
       untitledSession: "未命名会话",
       loadFailed: "员工列表加载失败",
     },
@@ -2943,6 +2941,8 @@ Benchmark：
       join: "加入",
       joining: "加入中…",
       joined: "已加入频道",
+      joinTitle: "加入频道",
+      joinConfirm: "加入后你会收到这个频道里 @你 的消息，也能在这里发言。",
       /** A row's badges, and the sentence they lend to its accessible name. */
       mentionChip: "@我",
       badgeUnread: (n: number): string => `${n} 条未读`,
