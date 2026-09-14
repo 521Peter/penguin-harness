@@ -1,9 +1,9 @@
 /**
- * The company sidebar's two session groups (features/company/org-sessions.ts) and the
- * development list's organization filter (session-grouping): a desk row per employee in chart
- * order whether or not a desk exists, the session list's live status winning over both
- * snapshots, ticket sessions newest first under the ticket that names them, the glyph a row
- * draws, an employee's own state read from every Session the organization attributes to it,
+ * The company sidebar's 工位 group (features/company/org-sessions.ts) and the development
+ * list's organization filter (session-grouping): a desk row per employee in chart order
+ * whether or not a desk exists, the session list's live status winning over both snapshots,
+ * the glyph a row draws, an employee's own state read from every Session the organization
+ * attributes to it — its ticket sessions included, though no list shows them as a group —
  * the split of a loaded list into the user's own rows and the organizations', and the totals
  * corrected by what that split hid.
  */
@@ -15,12 +15,7 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import {
-  deskRows,
-  liveEmployeeStates,
-  orgRowActivity,
-  ticketSessionRows,
-} from "../src/features/company/org-sessions";
+import { deskRows, liveEmployeeStates, orgRowActivity } from "../src/features/company/org-sessions";
 import {
   countsWithoutOrgSessions,
   isOrgSession,
@@ -156,28 +151,6 @@ describe("deskRows", () => {
       "idle",
       "compacting",
       "idle",
-    ]);
-  });
-});
-
-describe("ticketSessionRows", () => {
-  it("flattens every ticket's sessions newest first, carrying the ticket as the subtitle", () => {
-    expect(ticketSessionRows(sessions).map((r) => [r.sessionId, r.ticketTitle])).toEqual([
-      ["s-t3", "Site"],
-      ["s-t1", "Docs"],
-      ["s-t2", "Docs"],
-    ]);
-    expect(ticketSessionRows(sessions)[2]).toMatchObject({ title: "Write docs", agentId: "ceo" });
-    expect(ticketSessionRows(undefined)).toEqual([]);
-  });
-
-  it("takes the session list's live status over the snapshot's", () => {
-    const rows = ticketSessionRows(sessions, liveStatuses({ "s-t1": "idle", "s-t2": "running" }));
-    expect(rows.map((r) => [r.sessionId, r.status])).toEqual([
-      // Not loaded by the session list, so the snapshot's status stands.
-      ["s-t3", "idle"],
-      ["s-t1", "idle"],
-      ["s-t2", "running"],
     ]);
   });
 });

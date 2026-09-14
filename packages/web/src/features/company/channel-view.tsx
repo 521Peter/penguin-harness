@@ -1,14 +1,19 @@
 /**
- * One channel: its header, the stream of the loaded days — a separator per day (paging back
- * through earlier day files), one bubble per message, each body rendered as Markdown with its
- * @-mentions kept as chips (stronger when they address the reader), `system` messages as
- * centred banners in the reader's own language, ticket and session references as chips that
- * open them, an unread divider at the read cursor — and the composer beneath it. The view
- * follows the stream while it is at the bottom; scrolled up, new messages collect behind a
- * pill that returns to the latest. Sitting at the bottom of today marks this channel read,
- * which is what clears its badge in the sidebar and the rail. Nothing here delivers to an
- * employee unless it is @-mentioned, and only inside this channel's membership; the empty
- * state and the header's "?" say so.
+ * One channel: its header, the stream of the loaded days — a separator per day, one bubble per
+ * message, each body rendered as Markdown with its @-mentions kept as chips (stronger when
+ * they address the reader), `system` messages as centred banners in the reader's own language,
+ * ticket and session references as chips that open them, an unread divider at the read
+ * cursor — and the composer beneath it. The view follows the stream while it is at the bottom;
+ * scrolled up, new messages collect behind a pill that returns to the latest. Sitting at the
+ * bottom of today marks this channel read, which is what clears its badge in the sidebar and
+ * the rail. Nothing here delivers to an employee unless it is @-mentioned, and only inside
+ * this channel's membership; the empty state and the header's "?" say so.
+ *
+ * Opening a channel assembles its whole first screen before the first render — today's day
+ * file, then earlier ones until the stream holds enough messages or the day budget runs out
+ * (initialDaysToLoad) — so the reader lands at the bottom of real history rather than on a
+ * blank day, and without the scroll jump a prepend after the first paint would cost. Anything
+ * older stays behind "earlier", which prepends one day file per click.
  *
  * The stream is drawn the way every chat client draws one, because a channel is read the way
  * every chat is. Somebody else's run stands on the left: the avatar once, top-aligned so that
@@ -28,8 +33,9 @@
  * field existed.
  *
  * A channel the reader has not joined offers Join instead of the composer — people may read
- * every channel but post only in the ones they are in — and an archived channel says it is
- * read-only. Only the messages are essential: the chart and the Project's member list feed
+ * every channel but post only in the ones they are in; joining asks first, because it is what
+ * puts this channel's @-mentions in front of the reader from then on. An archived channel says
+ * it is read-only. Only the messages are essential: the chart and the Project's member list feed
  * names and the invite picker, so a hiccup there degrades names to ids rather than blocking
  * the page.
  */
@@ -60,6 +66,7 @@ import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
 import { noticeText } from "./channel-notices";
+import { JoinChannelConfirm } from "./channel-dialogs";
 import { DEFAULT_CHANNEL_ID, channelLabel } from "./channel-list";
 import {
   channelMentionCandidates,
@@ -76,7 +83,9 @@ import {
   dayKind,
   earlierDay,
   hopChipShown,
+  initialDaysToLoad,
   isOwnRun,
+  joinedElsewhere,
   lastMessageId,
   messageCount,
 } from "./channel-stream";
@@ -141,6 +150,7 @@ export function ChannelView() {
   const [members, setMembers] = useState<string[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [confirmJoin, setConfirmJoin] = useState(false);
   /** Messages that arrived while the view was scrolled up; shown on the pill. */
   const [pendingNew, setPendingNew] = useState(0);
   const [showJump, setShowJump] = useState(false);
@@ -152,6 +162,14 @@ export function ChannelView() {
   /** Scroll anchoring across a prepend: the height before the earlier day landed, and which day was first. */
   const heightRef = useRef(0);
   const firstDayRef = useRef<string | null>(null);
+  /**
+   * Which opening load is still the current one. The walk back through earlier days is several
+   * round trips long, and a channel switched during it would otherwise be overwritten by the
+   * stream of the channel the reader left.
+   */
+  const loadSeq = useRef(0);
+  /** What the sidebar's listing last said about this reader's membership (see joinedElsewhere). */
+  const listedMemberRef = useRef<boolean | null>(null);
   const me = user?.userId ?? "";
   const myPrincipal = `user:${me}`;
   const myKey = orgKey(projectId, orgId);
@@ -167,8 +185,10 @@ export function ChannelView() {
     setDetail(null);
     setDetailError(null);
     setPendingNew(0);
+    setConfirmJoin(false);
     markedRef.current = null;
     firstDayRef.current = null;
+    listedMemberRef.current = null;
     follow.resume();
   }, [projectId, orgId, channelId, follow]);
 
@@ -183,6 +203,9 @@ export function ChannelView() {
   }, [projectId, orgId, channelId]);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    /** Still the load this channel wants: a later one (or another channel) supersedes it. */
+    const current = () => loadSeq.current === seq;
     // Names and invite candidates are best effort: the stream must not wait on them.
     void api
       .getOrgChart(projectId, orgId)
@@ -199,7 +222,24 @@ export function ChannelView() {
     void loadDetail();
     try {
       const res = await api.getOrgChannelMessages(projectId, orgId, channelId);
-      setDays([{ date: res.date, messages: res.messages }]);
+      if (!current()) return;
+      let loaded: ChannelDay[] = [{ date: res.date, messages: res.messages }];
+      try {
+        // Walk back one day file at a time until the first screen holds history. Sequential
+        // rather than parallel: how far back to go depends on how much each day turned out
+        // to hold, and a quiet channel would otherwise pay for seven requests it does not need.
+        for (;;) {
+          const target = initialDaysToLoad(res.days, res.date, loaded);
+          if (target === null) break;
+          const older = await api.getOrgChannelMessages(projectId, orgId, channelId, target);
+          if (!current()) return;
+          loaded = [{ date: target, messages: older.messages }, ...loaded];
+        }
+      } catch {
+        // An earlier day that fails is not fatal — today is already in hand and "earlier"
+        // stays for another attempt — so the stream renders with what the walk did reach.
+      }
+      setDays(loaded);
       setMeta((prev) => ({
         today: res.date,
         days: res.days,
@@ -209,12 +249,25 @@ export function ChannelView() {
       }));
       setError(null);
     } catch (e) {
+      if (!current()) return;
       setError(apiErrorText(e));
     }
   }, [projectId, orgId, channelId, loadDetail]);
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A Join from the sidebar's own row reloads the listing, not this detail: without this the
+  // view would keep offering Join under a channel the reader is already in (joinedElsewhere).
+  const listedMember = company.channels?.find((c) => c.channelId === channelId)?.isMember ?? null;
+  useEffect(() => {
+    // Only once there is a detail to compare against: a listing read before the first detail
+    // landed is not a membership this view has ever shown.
+    if (detail === null) return;
+    const previous = listedMemberRef.current;
+    listedMemberRef.current = listedMember;
+    if (joinedElsewhere(previous, listedMember, detail.isMember)) void loadDetail();
+  }, [listedMember, detail, loadDetail]);
 
   const loadEarlier = async () => {
     if (days === null || meta === null || loadingEarlier) return;
@@ -344,6 +397,7 @@ export function ChannelView() {
   const join = async () => {
     if (joining) return;
     setJoining(true);
+    setConfirmJoin(false);
     try {
       await api.addOrgChannelMember(projectId, orgId, channelId, { principal: myPrincipal });
       toastSuccess(S.company.channels.joined);
@@ -681,13 +735,24 @@ export function ChannelView() {
                 className={`mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-md border px-3 py-2 text-xs ${toneStrip.attention}`}
               >
                 <span>{S.company.channels.notMemberNotice}</span>
-                <Button size="sm" variant="primary" disabled={joining} onClick={() => void join()}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={joining}
+                  onClick={() => setConfirmJoin(true)}
+                >
                   {joining ? S.company.channels.joining : S.company.channels.join}
                 </Button>
               </div>
             ) : null}
           </div>
         </div>
+        <JoinChannelConfirm
+          open={confirmJoin}
+          busy={joining}
+          onClose={() => setConfirmJoin(false)}
+          onConfirm={() => void join()}
+        />
       </div>
     </ChannelReaderProvider>
   );

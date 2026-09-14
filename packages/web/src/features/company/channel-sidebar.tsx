@@ -2,12 +2,12 @@
  * Company mode's channel list — the sidebar block that stands where development mode lists
  * conversations, and the collapsed rail's icon-only twin. The all-hands channel is pinned at
  * the top under its localized label, then the channels the person is in, then the ones it is
- * not (each with a Join action — people may join any channel), then the archived ones folded
- * away. A row carries its unread count and, when a message names the reader, an "@me" chip.
+ * not (each with a Join action, which asks first — people may join any channel), then the
+ * archived ones folded away. A row carries its unread count and, when a message names the
+ * reader, an "@me" chip.
  *
  * "New channel" is the header's own trailing action rather than a pinned row above the list;
- * the organization's desk and ticket sessions follow the list as their own groups
- * (org-session-groups.tsx).
+ * the organization's desks follow the list as their own group (org-session-groups.tsx).
  *
  * The list itself is the store's (state/company.tsx): one listing per organization, refreshed
  * when a message event says a counter moved, so the sidebar, the rail and the channel view
@@ -31,7 +31,7 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { orgChannelPath } from "./company-nav";
-import { NewChannelDialog } from "./channel-dialogs";
+import { JoinChannelConfirm, NewChannelDialog } from "./channel-dialogs";
 import { channelLabel, groupChannels, isAllHands } from "./channel-list";
 
 /** A channel (lucide hash): the mark every channel but the all-hands one wears. */
@@ -192,16 +192,21 @@ export function ChannelSidebar({
   const { user } = useAuth();
   const [archivedOpen, setArchivedOpen] = useState(false);
   const [joining, setJoining] = useState<string | null>(null);
+  /** The channel whose Join was clicked, waiting on the prompt; null when nothing is asked. */
+  const [pendingJoin, setPendingJoin] = useState<OrgChannelItem | null>(null);
   const channels = company.channels;
 
   const join = async (channel: OrgChannelItem) => {
     if (joining !== null) return;
     setJoining(channel.channelId);
+    setPendingJoin(null);
     try {
       await api.addOrgChannelMember(projectId, orgId, channel.channelId, {
         principal: `user:${user?.userId ?? ""}`,
       });
       toastSuccess(S.company.channels.joined);
+      // The listing is what the open channel's view watches to re-read its own detail, so
+      // this one reload replaces the Join prompt there too (channel-stream.joinedElsewhere).
       await company.reloadChannels();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -218,7 +223,7 @@ export function ChannelSidebar({
       orgId={orgId}
       channel={channel}
       {...(onNavigate ? { onNavigate } : {})}
-      {...(joinable ? { join: () => void join(channel) } : {})}
+      {...(joinable ? { join: () => setPendingJoin(channel) } : {})}
     />
   );
 
@@ -283,6 +288,14 @@ export function ChannelSidebar({
             )}
         </>
       )}
+      <JoinChannelConfirm
+        open={pendingJoin !== null}
+        busy={joining !== null}
+        onClose={() => setPendingJoin(null)}
+        onConfirm={() => {
+          if (pendingJoin !== null) void join(pendingJoin);
+        }}
+      />
     </>
   );
 }

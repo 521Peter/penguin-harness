@@ -24,7 +24,7 @@
  * In company mode the shape holds but the objects change: the organization switcher stands
  * where the Project switcher stands, "New channel" where "New chat" is, the organization's
  * six pages in the nav group, and the channel list where the conversation list is, followed
- * by the organization's own two groups — 工位 (one row per employee) and 工单会话
+ * by the organization's own 工位 group — one row per employee
  * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
  * development list is the user's OWN conversations only: an organization's desk and ticket
  * Sessions are filtered out of every group, bucket and folder here.
@@ -380,8 +380,9 @@ export function Sidebar({
   /**
    * The rows this list renders: the user's OWN conversations. An organization's desk and
    * ticket Sessions (marked by `orgId`, or by the durable `client === "org"` stamp once the
-   * organization is gone) are driven by its scheduler and are listed as themselves in company
-   * mode's 工位 / 工单会话 groups, so they are filtered out here — once, at the source, or a
+   * organization is gone) are driven by its scheduler and are reached as themselves in company
+   * mode — a desk from the 工位 group, a ticket session from its ticket — so they are
+   * filtered out here — once, at the source, or a
    * dropped row would still conjure the Workspace group, Agent group or time bucket it belongs
    * to. They are filtered whatever the company-mode switches say (see withoutOrgSessions):
    * this list is the user's conversations, and a switch about the shell does not turn a
@@ -1782,8 +1783,7 @@ export function Sidebar({
         {inCompany ? (
           navOrg !== null ? (
             /* Company mode: the organization's channels, where development mode lists
-               conversations, and below them its own two groups — one row per employee's
-               desk, and the sessions attached to tickets. */
+               conversations, and below them its 工位 group — one row per employee's desk. */
             <>
               <ChannelSidebar
                 projectId={navOrg.projectId}

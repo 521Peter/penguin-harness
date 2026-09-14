@@ -4,6 +4,10 @@
  * one-field edits its header menu opens — rename and purpose. Failures stay inside the
  * dialog: a rejected id lands under the id field, anything else in a strip above the footer,
  * so the fields never sit disabled behind a toast that has already gone.
+ *
+ * Plus the join prompt, which both entry points into joining raise — the channel view's
+ * "you are not a member" notice and the sidebar row's own Join — so the two cannot ask
+ * different questions.
  */
 import { useEffect, useState } from "react";
 import type { OrgChannelItem } from "@prismshadow/penguin-server/api";
@@ -12,6 +16,7 @@ import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { channelIdProblem } from "./channel-list";
@@ -256,5 +261,36 @@ export function ChannelTextDialog({
         {formError !== null && <ErrorLine message={formError} onRetry={() => void submit()} />}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * "Join this channel?". Joining is not a destructive act but it is a standing one: from then
+ * on this channel's @-mentions reach the reader, which is what the body says rather than
+ * "are you sure".
+ */
+export function JoinChannelConfirm({
+  open,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmModal
+      open={open}
+      title={S.company.channels.joinTitle}
+      tone="primary"
+      confirmLabel={S.company.channels.join}
+      busy={busy}
+      onClose={onClose}
+      onConfirm={onConfirm}
+    >
+      <p className="text-sm text-gray-600 dark:text-gray-300">{S.company.channels.joinConfirm}</p>
+    </ConfirmModal>
   );
 }

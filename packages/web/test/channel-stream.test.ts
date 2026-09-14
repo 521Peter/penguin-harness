@@ -1,19 +1,24 @@
 /**
  * channel-stream.ts unit tests: day separators and sender runs, the unread divider at the read
  * cursor, which hop counts are worth a chip, which side of the stream a run stands on and
- * where each of its bubbles falls, day arithmetic for the separators and paging, and the
- * immutable live append.
+ * where each of its bubbles falls, day arithmetic for the separators and both paging
+ * decisions — how far the opening load walks back and which day "earlier" fetches — when a
+ * join made elsewhere has to be re-read, and the immutable live append.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
+  INITIAL_DAYS_MAX,
+  INITIAL_MESSAGES,
   appendMessage,
   bubbleShape,
   buildStream,
   dayKind,
   earlierDay,
   hopChipShown,
+  initialDaysToLoad,
   isOwnRun,
+  joinedElsewhere,
   lastMessageId,
   messageCount,
   shiftDate,
@@ -107,6 +112,79 @@ describe("earlierDay", () => {
     expect(earlierDay(days, "2026-08-28")).toBeNull();
     // Today has no file yet: the list starts below it.
     expect(earlierDay(["2026-09-01"], "2026-09-02")).toBe("2026-09-01");
+  });
+});
+
+describe("initialDaysToLoad", () => {
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  /** A day file of `n` messages, all on that date. */
+  const day = (date: string, n: number) => ({
+    date,
+    messages: Array.from({ length: n }, (_, i) => msg("user:alice", `${date}T10:${pad(i)}:00Z`)),
+  });
+  const days = ["2026-09-02", "2026-09-01", "2026-08-31", "2026-08-28"];
+
+  it("steps back day by day while the opening load is short of messages", () => {
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", 2)], 5)).toBe("2026-09-01");
+    expect(
+      initialDaysToLoad(days, "2026-09-02", [day("2026-09-01", 2), day("2026-09-02", 2)], 5),
+    ).toBe("2026-08-31");
+  });
+
+  it("stops as soon as the load holds what it wanted", () => {
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", 5)], 5)).toBeNull();
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", 9)], 5)).toBeNull();
+  });
+
+  it("walks past today's empty file rather than opening a quiet channel on a blank day", () => {
+    // The whole point: today has no messages, so the first screen comes from earlier days.
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", 0)], 5)).toBe("2026-09-01");
+  });
+
+  it("stops at the start of history", () => {
+    const loaded = [day("2026-08-28", 1), day("2026-09-02", 0)];
+    expect(initialDaysToLoad(days, "2026-09-02", loaded, 30)).toBeNull();
+    // A channel with no day file at all: nothing to walk back to.
+    expect(initialDaysToLoad([], "2026-09-02", [day("2026-09-02", 0)], 30)).toBeNull();
+  });
+
+  it("spends at most its day budget, however little each day held", () => {
+    const loaded = Array.from({ length: INITIAL_DAYS_MAX }, (_, i) =>
+      day(`2026-09-${pad(i + 1)}`, 1),
+    );
+    const wide = [...loaded.map((d) => d.date)].reverse().concat("2026-08-28");
+    expect(initialDaysToLoad(wide, "2026-09-07", loaded, INITIAL_MESSAGES)).toBeNull();
+    // One day file short of the budget it still steps back.
+    expect(initialDaysToLoad(wide, "2026-09-07", loaded.slice(0, -1), INITIAL_MESSAGES)).toBe(
+      "2026-08-28",
+    );
+  });
+
+  it("wants a full screen of messages by default", () => {
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", INITIAL_MESSAGES)])).toBeNull();
+    expect(initialDaysToLoad(days, "2026-09-02", [day("2026-09-02", INITIAL_MESSAGES - 1)])).toBe(
+      "2026-09-01",
+    );
+  });
+});
+
+describe("joinedElsewhere", () => {
+  it("re-reads the detail the moment the listing says the reader joined", () => {
+    expect(joinedElsewhere(false, true, false)).toBe(true);
+  });
+
+  it("stays quiet while the two sources have always disagreed", () => {
+    // The server's own answer, not a join that just happened: re-reading it on every render
+    // would be a refetch loop.
+    expect(joinedElsewhere(true, true, false)).toBe(false);
+    // Nothing is known about the previous listing yet (a channel just opened).
+    expect(joinedElsewhere(null, true, false)).toBe(false);
+  });
+
+  it("stays quiet once the detail agrees, and when membership went the other way", () => {
+    expect(joinedElsewhere(false, true, true)).toBe(false);
+    expect(joinedElsewhere(true, false, true)).toBe(false);
+    expect(joinedElsewhere(false, null, false)).toBe(false);
   });
 });
 

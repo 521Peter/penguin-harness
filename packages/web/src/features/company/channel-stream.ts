@@ -3,8 +3,10 @@
  * order become one list of items — a separator per day, the unread divider at the read
  * cursor, `system` messages on their own, and consecutive messages by one sender folded
  * into a run under a single header — plus which side of the stream a run sits on and where
- * each of its bubbles falls inside it, the day arithmetic the separators and the "earlier"
- * paging need, and the immutable append a live message goes through.
+ * each of its bubbles falls inside it, the day arithmetic the separators and the two paging
+ * decisions need (how far the opening load walks back, and which day "earlier" fetches), the
+ * immutable append a live message goes through, and when a join made on another surface
+ * obliges the view to re-read its own detail.
  */
 import type { OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import { parsePrincipal } from "./principals";
@@ -138,6 +140,51 @@ export function dayKind(date: string, today: string): "today" | "yesterday" | "o
  */
 export function earlierDay(days: readonly string[], earliest: string): string | null {
   return days.find((d) => d < earliest) ?? null;
+}
+
+/** How many messages the opening load tries to have in hand before it stops walking back. */
+export const INITIAL_MESSAGES = 30;
+
+/** How many day files that walk may hold in total, today's included — its bound on requests. */
+export const INITIAL_DAYS_MAX = 7;
+
+/**
+ * The day file the opening load fetches next, or null when it has what it needs: enough
+ * messages, the day budget spent, or no history left. A channel is served one day file at a
+ * time, and today's may well be empty — without this walk a channel opened on a quiet day
+ * shows a blank stream with its whole history hidden behind the "earlier" button.
+ *
+ * `loaded` is what the load holds so far, oldest day first; `days` is the server's
+ * newest-first list of the day files that exist. Only today's file can come back empty (a day
+ * file is written when a message lands), so each further step adds at least one message and
+ * the walk always terminates.
+ */
+export function initialDaysToLoad(
+  days: readonly string[],
+  today: string,
+  loaded: readonly ChannelDay[],
+  want: number = INITIAL_MESSAGES,
+): string | null {
+  if (messageCount(loaded) >= want) return null;
+  if (loaded.length >= INITIAL_DAYS_MAX) return null;
+  return earlierDay(days, loaded[0]?.date ?? today);
+}
+
+/**
+ * Whether the view has to re-read its channel detail because the reader joined from somewhere
+ * else. The sidebar's own Join posts and then reloads the LISTING; the detail behind the
+ * composer is not part of that, so the view would keep offering Join until a re-navigation.
+ *
+ * Only the moment the listing flips to "member" counts. A listing that has said so all along
+ * while the detail disagrees is the server's own answer, and re-reading on every render would
+ * turn that disagreement into a refetch loop.
+ */
+export function joinedElsewhere(
+  previous: boolean | null,
+  listed: boolean | null,
+  detailIsMember: boolean,
+): boolean {
+  return previous === false && listed === true && !detailIsMember;
 }
 
 /**
