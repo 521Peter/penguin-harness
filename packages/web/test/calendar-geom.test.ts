@@ -2,9 +2,9 @@
  * calendar-geom.ts unit tests: the month grid (as many Monday-based rows as the month
  * needs), the week, the view ranges and stepping, period parsing, the expansion of an
  * event's startAt / period / endAt into the instances of a range — including which past
- * instance carries the recorded outcome — the cadence an event reads as, and the lanes
- * overlapping chips take. Dates are built with the local Date constructor, so the
- * assertions hold in every timezone.
+ * instance carries the recorded outcome — the cadence an event reads as, the lanes
+ * overlapping chips take, and how a legend entry draws under the employee filter. Dates are
+ * built with the local Date constructor, so the assertions hold in every timezone.
  */
 import { describe, expect, it } from "vitest";
 import type { OrgCalendarItem } from "@prismshadow/penguin-server/api";
@@ -17,6 +17,7 @@ import {
   dayKey,
   expandEvents,
   instancesByDay,
+  legendState,
   monthGrid,
   parsePeriodMs,
   shiftAnchor,
@@ -265,5 +266,14 @@ describe("chipLanes", () => {
       ["b", 0, 1],
     ]);
     expect(chipLanes([], slot)).toEqual([]);
+  });
+});
+
+describe("legendState", () => {
+  it("strikes through everyone the filter switched off, and nobody while it is off", () => {
+    expect(legendState("", "a")).toBe("plain");
+    expect(legendState("", "b")).toBe("plain");
+    expect(legendState("a", "a")).toBe("pressed");
+    expect(legendState("a", "b")).toBe("struck");
   });
 });

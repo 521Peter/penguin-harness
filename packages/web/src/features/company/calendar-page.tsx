@@ -13,8 +13,9 @@
  *
  * An empty slot — a month cell, an hour row — is itself the control that creates there, and it
  * says so: a real button (CREATE_SLOT_CLASS) that tints with the theme's accent and spells out
- * 「新建日程」 while it is hovered or focused, laid under the chips so an event still opens its
- * own event.
+ * 「新建日程」 while it is hovered or focused. The button is laid under the chips so an event
+ * still opens its own event; its 「新建日程」 hint is lifted back above them, on a line of the
+ * cell reserved for it, so a day that already has events still says what its empty space does.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -56,6 +57,7 @@ import {
   dayKey,
   expandEvents,
   instancesByDay,
+  legendState,
   monthGrid,
   shiftAnchor,
   timeLabel,
@@ -125,12 +127,22 @@ const CREATE_SLOT_CLASS =
 /**
  * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
  * hidden until its own slot is hovered or focused — a chip covering part of the slot takes the
- * pointer itself, so the hint never draws over an event that is already there.
+ * pointer itself, so the hint only ever answers for the bare part of a slot.
+ *
+ * It draws on the top layer (`z-10`), above the chips its own slot lies under, because a slot
+ * with events in it is exactly where the hint was needed and exactly where it used to be
+ * covered. That it never intercepts a click is `pointer-events-none`, not the stacking order:
+ * a click anywhere over the hint still reaches whatever is under it.
+ *
+ * The call site positions it — and so has to position it, since `z-10` only applies to a
+ * positioned element — and says how it stays readable over what it now covers: a month cell
+ * reserves its last line for it, an hour row centres it over the chips on a translucent
+ * backdrop.
  */
-function CreateSlotHint() {
+function CreateSlotHint({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`pointer-events-none inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400`}
+      className={`pointer-events-none z-10 inline-flex items-center ${ICON_GAP.tight} text-[10px] leading-4 text-gray-500 opacity-0 transition-opacity duration-150 group-hover/slot:opacity-100 group-focus-visible/slot:opacity-100 dark:text-gray-400 ${className}`}
     >
       <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.inlineGlyph} />
       {S.company.calendar.create}
@@ -460,7 +472,8 @@ export function CalendarPage() {
    * content (CREATE_SLOT_CLASS) — the cell IS the control, but it cannot *contain* the chips,
    * which are buttons themselves. The content above it is inert to the pointer so the create
    * button keeps the whole cell, and each chip takes its pointer events back: a click on an
-   * event opens that event, and only the bare cell creates.
+   * event opens that event, and only the bare cell creates. The chips stop one line short of
+   * the bottom, which is the line the hint draws on, above them.
    */
   const monthCell = (day: GridDay) => {
     const list = byDay.get(day.key) ?? [];
@@ -482,11 +495,13 @@ export function CalendarPage() {
           aria-label={createLabel}
           disabled={employees.length === 0}
           onClick={() => openCreate(createMs)}
-          className={`${CREATE_SLOT_CLASS} inset-0 flex items-end justify-center pb-1`}
+          className={`${CREATE_SLOT_CLASS} inset-0`}
         >
-          <CreateSlotHint />
+          <CreateSlotHint className="absolute inset-x-0 bottom-1 justify-center" />
         </button>
-        <div className="pointer-events-none relative">
+        {/* The last line of the cell belongs to the hint: the chips stop above it (pb-5), so
+            the hint has a line of its own to draw on however full the day is. */}
+        <div className="pointer-events-none relative pb-5">
           <p className="mb-1 flex h-5 items-center">
             <span
               className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
@@ -531,7 +546,8 @@ export function CalendarPage() {
    * A day column of the week and day views: hour rows that create on click — each a real button
    * that names the hour it would create at and spells out 「新建日程」 while it is under the
    * pointer — and chips placed by time and packed into lanes. The chips are siblings drawn after
-   * the rows, so they take their own clicks and cover the hint where an event already sits.
+   * the rows, so they take their own clicks; the hint rises back over them on its own layer,
+   * reading off a translucent backdrop rather than off a chip.
    */
   const timeColumn = (day: GridDay) => {
     const slots = chipLanes(byDay.get(day.key) ?? [], CHIP_SLOT_MS);
@@ -558,7 +574,9 @@ export function CalendarPage() {
               style={{ top: h * HOUR_PX, height: HOUR_PX }}
               onClick={() => openCreate(day.dayStartMs + h * 3_600_000)}
             >
-              <CreateSlotHint />
+              {/* An hour row has no spare line to reserve, so the hint reads over the chips on
+                  a wash of the page behind it. */}
+              <CreateSlotHint className="relative rounded bg-white/85 px-1 dark:bg-gray-900/85" />
             </button>
           );
         })}
@@ -726,7 +744,8 @@ export function CalendarPage() {
         </div>
       </div>
 
-      {/* Legend: one entry per employee in the chart's colour order, naming its cadence; a click filters to it. */}
+      {/* Legend: one entry per employee in the chart's colour order, naming its cadence; a click
+          filters to it, and strikes through everyone it just switched off. */}
       {employees.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-x-1 gap-y-1 text-[11px]">
           {employees.map((e) => {
@@ -736,7 +755,9 @@ export function CalendarPage() {
             );
             const shown = cadences.slice(0, 2);
             const rest = cadences.length - shown.length;
-            const active = employeeFilter === e.agentId;
+            const state = legendState(employeeFilter, e.agentId);
+            const active = state === "pressed";
+            const struck = state === "struck";
             return (
               <button
                 key={e.agentId}
@@ -747,13 +768,23 @@ export function CalendarPage() {
                 aria-pressed={active}
                 onClick={() => setEmployeeFilter(active ? "" : e.agentId)}
                 className={`inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                  active ? "bg-gray-100 dark:bg-gray-800" : ""
+                  active ? "bg-gray-100 dark:bg-gray-800" : struck ? "line-through" : ""
                 }`}
               >
-                <span className={`h-2 w-2 shrink-0 rounded-full ${colorOf(e.agentId).dot}`} />
-                <span className="font-medium text-gray-700 dark:text-gray-200">{e.name}</span>
                 <span
-                  className="truncate text-gray-500 dark:text-gray-400"
+                  className={`h-2 w-2 shrink-0 rounded-full ${colorOf(e.agentId).dot} ${struck ? "opacity-40" : ""}`}
+                />
+                <span
+                  className={
+                    struck
+                      ? "text-gray-400 dark:text-gray-500"
+                      : "font-medium text-gray-700 dark:text-gray-200"
+                  }
+                >
+                  {e.name}
+                </span>
+                <span
+                  className={`truncate ${struck ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
                   title={cadences.join(" · ")}
                 >
                   {cadences.length === 0
