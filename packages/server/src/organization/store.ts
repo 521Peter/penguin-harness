@@ -17,6 +17,8 @@ import type {
   TicketDoc,
 } from "./files.js";
 import {
+  LEGACY_TICKET_ID_PATTERN,
+  TICKET_ID_PATTERN,
   parseCalendarEvent,
   parseChannelConfig,
   parseChannelMessageLine,
@@ -356,6 +358,9 @@ export class OrgStore {
         for (const f of files) {
           if (!f.isFile() || !f.name.endsWith(".md")) continue;
           const ticketId = f.name.slice(0, -".md".length);
+          if (!TICKET_ID_PATTERN.test(ticketId) && !LEGACY_TICKET_ID_PATTERN.test(ticketId)) {
+            continue;
+          }
           const p = path.join(colDir, f.name);
           const [raw, stat] = await Promise.all([fs.readFile(p, "utf8"), fs.stat(p)]);
           out.push({

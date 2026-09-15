@@ -1034,7 +1034,7 @@ export function parseLegacyTicket(text: string): ParseResult<TicketDoc> {
 }
 
 /** Ticket ids written before the letters-only slug rule, as legacy files still reference them. */
-const LEGACY_TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
+export const LEGACY_TICKET_ID_PATTERN = /^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]{0,63}$/;
 
 // ---------------------------------------------------------------------------
 // channels/<channel_id>/channel.toml
