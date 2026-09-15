@@ -20,6 +20,13 @@
  * without them: a deleted organization that keeps the shell aimed at it costs a broken
  * sidebar on every later visit.
  *
+ * The open ticket lives here too. A ticket's detail is a dialog opened in place from every
+ * company surface — the board, the finance ledger, the overview's inbox, a channel's ticket
+ * reference — so which ticket is open is shell state rather than one page's, and the single
+ * host (features/company/org-layout.tsx) renders whatever this says. Following a parent or a
+ * child inside the dialog pushes the ticket left behind onto a stack, which is what the
+ * dialog's back control pops.
+ *
  * Company events ride the same user-level event stream the session list consumes
  * (state/sessions.tsx forwards them through `publishCompanyEvent`): the store keeps the
  * channel counters of the open organization in step and bumps a version per event family,
@@ -95,6 +102,13 @@ export function useCompanyEvents(handler: CompanyEventListener): void {
   useEffect(() => subscribeCompanyEvents((ev) => ref.current(ev)), []);
 }
 
+/** Which ticket the detail dialog is showing; a ticket is always read inside one organization. */
+export interface TicketDialogTarget {
+  projectId: string;
+  orgId: string;
+  ticketId: string;
+}
+
 /** Version counters, one per event family: a page refetches when the one it depends on moves. */
 export interface CompanyVersions {
   /** The organization list (an org's summary counts changed: a budget pause, a run). */
@@ -150,6 +164,13 @@ interface CompanyStoreState {
   orgChart: OrgChartResponse | null;
   /** The last chart read's failure, kept beside whatever the roster still holds. */
   orgChartError: string | null;
+  /** The ticket whose detail dialog is open, from wherever it was opened; null when none is. */
+  ticketDialog: TicketDialogTarget | null;
+  /**
+   * The tickets the open one was reached from, oldest first — one entry per parent or child
+   * followed inside the dialog. Ids only: they name tickets of the open organization.
+   */
+  ticketStack: readonly string[];
   versions: CompanyVersions;
 
   setWorkMode: (mode: WorkMode) => void;
@@ -161,6 +182,10 @@ interface CompanyStoreState {
   forgetMissingOrganizations: () => void;
   reloadOrgSessions: (projectId: string) => Promise<void>;
   reloadOrgChart: (projectId: string, orgId: string) => Promise<void>;
+  openTicket: (projectId: string, orgId: string, ticketId: string) => void;
+  closeTicket: () => void;
+  backTicket: () => void;
+  ticketsChanged: () => void;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
 }
 
@@ -196,6 +221,8 @@ export function createCompanyStore() {
     orgSessions: new Map(),
     orgChart: null,
     orgChartError: null,
+    ticketDialog: null,
+    ticketStack: [],
     versions: { orgs: 0, messages: 0, tickets: 0, runs: 0, budget: 0 },
 
     setWorkMode: (mode) => {
@@ -229,7 +256,7 @@ export function createCompanyStore() {
       const prev = get();
       if (key === prev.currentOrgKey) return;
       // Leaving one organization for another drops its channels and their counters: both
-      // belong to the organization they were read for.
+      // belong to the organization they were read for, and so does an open ticket.
       set({
         currentOrgKey: key,
         channels: null,
@@ -239,6 +266,8 @@ export function createCompanyStore() {
         channelMentions: 0,
         orgChart: null,
         orgChartError: null,
+        ticketDialog: null,
+        ticketStack: [],
       });
       if (key === null || key === prev.lastOrgKey) return;
       storeLastOrgKey(key);
@@ -380,6 +409,53 @@ export function createCompanyStore() {
       }
     },
 
+    /**
+     * Opens a ticket's detail dialog. Another ticket of the organization already on screen is
+     * pushed onto the back stack — that is a parent or a child followed from inside the dialog,
+     * and the reader has to be able to come back — while a ticket of another organization, or
+     * the first one opened, starts a fresh stack. Re-opening the ticket already shown does
+     * nothing, so a deep link the page has just written into its own query cannot stack a
+     * ticket on top of itself.
+     */
+    openTicket: (projectId, orgId, ticketId) => {
+      const open = get().ticketDialog;
+      const target = { projectId, orgId, ticketId };
+      if (open === null || open.projectId !== projectId || open.orgId !== orgId) {
+        set({ ticketDialog: target, ticketStack: [] });
+        return;
+      }
+      if (open.ticketId === ticketId) return;
+      set({ ticketDialog: target, ticketStack: [...get().ticketStack, open.ticketId] });
+    },
+
+    closeTicket: () => {
+      if (get().ticketDialog === null) return;
+      set({ ticketDialog: null, ticketStack: [] });
+    },
+
+    /** Back to the ticket this one was opened from; nothing to do with an empty stack. */
+    backTicket: () => {
+      const { ticketDialog, ticketStack } = get();
+      const previous = ticketStack[ticketStack.length - 1];
+      if (ticketDialog === null || previous === undefined) return;
+      set({
+        ticketDialog: { ...ticketDialog, ticketId: previous },
+        ticketStack: ticketStack.slice(0, -1),
+      });
+    },
+
+    /**
+     * A ticket was written from this browser (the dialog's saves, the board's moves). The
+     * writer's own request carries the change back to it alone, so the version the other
+     * surfaces watch is bumped here exactly as the scheduler's event would bump it — the board,
+     * the finance ledger and the organization summaries refetch off one signal instead of each
+     * writer reloading its neighbours by hand.
+     */
+    ticketsChanged: () => {
+      const versions = get().versions;
+      set({ versions: { ...versions, tickets: versions.tickets + 1, orgs: versions.orgs + 1 } });
+    },
+
     applyCompanyEvent: (ev, userId) => {
       const state = get();
       const key = orgKey(ev.projectId, ev.orgId);
@@ -460,6 +536,15 @@ interface CompanyContextValue {
   orgChart: OrgChartResponse | null;
   orgChartError: string | null;
   reloadOrgChart: () => Promise<void>;
+  /** The ticket the detail dialog is showing; null when it is closed. */
+  ticketDialog: TicketDialogTarget | null;
+  /** How many tickets the dialog can go back through (the parents and children followed inside it). */
+  ticketBackDepth: number;
+  openTicket: (projectId: string, orgId: string, ticketId: string) => void;
+  closeTicket: () => void;
+  backTicket: () => void;
+  /** Say that a ticket was written here, so every surface that lists tickets refetches. */
+  ticketsChanged: () => void;
   versions: CompanyVersions;
   reloadOrganizations: () => Promise<void>;
   reloadOrgSessions: () => Promise<void>;
@@ -620,6 +705,12 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
         const open = parseOrgKey(state.currentOrgKey);
         return open === null ? Promise.resolve() : state.reloadOrgChart(open.projectId, open.orgId);
       },
+      ticketDialog: state.ticketDialog,
+      ticketBackDepth: state.ticketStack.length,
+      openTicket: state.openTicket,
+      closeTicket: state.closeTicket,
+      backTicket: state.backTicket,
+      ticketsChanged: state.ticketsChanged,
       versions: state.versions,
       reloadOrganizations: () =>
         state.reloadOrganizations(projectIdsKey === "" ? [] : projectIdsKey.split(",")),

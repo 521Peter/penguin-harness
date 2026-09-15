@@ -61,7 +61,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
-import { orgKey, orgPagePath } from "./company-nav";
+import { orgKey } from "./company-nav";
 import { ChannelComposer } from "./channel-composer";
 import { ChannelHeader } from "./channel-header";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
@@ -434,8 +434,9 @@ export function ChannelView() {
   const earlier =
     days !== null && meta !== null ? earlierDay(meta.days, days[0]?.date ?? meta.today) : null;
 
-  const openTicket = (ticketId: string) =>
-    navigate(`${orgPagePath(projectId, orgId, "tickets")}?ticket=${encodeURIComponent(ticketId)}`);
+  // A ticket named in a message opens as the dialog over the channel: the reader stays in
+  // the conversation they were reading. A session has no in-place form and still navigates.
+  const openTicket = (ticketId: string) => company.openTicket(projectId, orgId, ticketId);
   const scrollToMessage = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 

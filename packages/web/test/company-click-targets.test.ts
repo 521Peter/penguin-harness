@@ -44,7 +44,7 @@ const MODULES = [
   "features/company/org-layout.tsx",
   "features/company/overview-page.tsx",
   "features/company/shared.tsx",
-  "features/company/ticket-drawer.tsx",
+  "features/company/ticket-dialog.tsx",
   "features/company/tickets-page.tsx",
 ];
 

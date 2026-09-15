@@ -13,6 +13,11 @@
  * label) — and stays so after these routes unmount, since a desk conversation is one of the
  * organization's own surfaces even though it lives at `/chat/:sessionId`.
  *
+ * The organization layout is also where the ticket dialog is mounted, once: a ticket's detail
+ * is read in place from whichever surface named it — the board, the finance ledger, the
+ * overview's inbox, a channel's reference — so the window belongs to the shell around the
+ * pages rather than to any one of them.
+ *
  * The page primitives live here too — `OrgPage`, `OrgSection`, `OrgEmptyLine` and the
  * skeleton — so every organization page shares one frame, one header row and one section
  * rule instead of each drawing its own.
@@ -34,6 +39,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { orgKey, orgPagePath, resolveOrgLanding } from "./company-nav";
 import { CreateOrganizationDialog, useOrganizationCreated } from "./org-dialogs";
 import { ORG_EXAMPLES } from "./org-examples";
+import { TicketDialogHost } from "./ticket-dialog";
 
 export interface OrgContextValue {
   projectId: string;
@@ -261,6 +267,7 @@ export function OrgLayout() {
   return (
     <OrgContext.Provider value={{ projectId, orgId, org }}>
       <Outlet />
+      <TicketDialogHost />
     </OrgContext.Provider>
   );
 }

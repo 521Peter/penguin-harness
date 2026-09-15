@@ -10,7 +10,8 @@
  * in place (typed in the reader's currency, written to the employee in USD) — and the ticket
  * ledger rolls costs up along parent tickets, opening on its roots alone with each parent's
  * children behind a chevron that says how many it hides, and every title a text button that
- * opens the ticket (the rest of the row reads; it does not navigate). The period's warnings and
+ * opens the ticket's detail dialog over this page (the rest of the row reads; nothing here
+ * carries the reader to another page). The period's warnings and
  * pauses close the page full width, listed by state with how a pause is lifted. `?period=yyyy-mm`
  * switches between this period and the previous one.
  *
@@ -26,7 +27,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import type {
   OrgBudgetAlert,
   OrgEmployeeState,
@@ -56,7 +57,6 @@ import { noAutofill } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TrendChart } from "../usage/trend-chart";
-import { orgPagePath } from "./company-nav";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
 import {
   INVALID_ICON,
@@ -293,7 +293,6 @@ function AlertRow({
 
 export function FinancePage() {
   const { projectId, orgId, org } = useOrg();
-  const navigate = useNavigate();
   const company = useCompany();
   const { currency } = useTheme();
   const [params, setParams] = useSearchParams();
@@ -437,8 +436,7 @@ export function FinancePage() {
   const alerts = groupAlerts(data.alerts);
   // A period switch keeps the last data on screen, dimmed, until the new one lands.
   const stale = target !== "" && data.period !== target;
-  const openTicket = (ticketId: string) =>
-    navigate(`${orgPagePath(projectId, orgId, "tickets")}?ticket=${encodeURIComponent(ticketId)}`);
+  const openTicket = (ticketId: string) => company.openTicket(projectId, orgId, ticketId);
 
   return (
     <OrgPage title={S.nav.org.finance} info={S.company.finance.info} actions={periodSwitch}>
