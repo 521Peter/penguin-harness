@@ -311,6 +311,7 @@ describe("countsWithoutOrgSessions", () => {
       active: 2,
       subagent: 0,
       schedule: 0,
+      benchmark: 0,
       archived: 0,
     });
     // Another Agent's totals are untouched, and the store's own maps are never written into.
