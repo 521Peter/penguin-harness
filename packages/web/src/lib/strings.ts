@@ -2776,9 +2776,10 @@ Benchmark：
     switchToCompany: "切换到公司模式",
     switchToDev: "切换到开发模式",
     /**
-     * Company mode is a beta, said in three shapes: the pill beside the organization
-     * switcher's name, the pill's tooltip, and the one sentence shown both under the admin's
-     * master switch and as the notice a person gets the first time they enter the mode.
+     * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
+     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
+     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * and as the notice a person gets the first time they enter the mode.
      */
     beta: "内测版",
     betaTitle: "公司模式是内测功能，可能有不稳定的现象",

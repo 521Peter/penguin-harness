@@ -75,7 +75,8 @@ test("company mode: create the organization, meet the CEO, see the board and the
   // The mode switch sits above the Project switcher; company mode shows the organization switcher.
   const modeSwitch = page.getByRole("group", { name: "工作模式" });
   await expect(modeSwitch).toBeVisible();
-  await modeSwitch.getByRole("button", { name: "公司", exact: true }).click();
+  // The option's accessible name carries the beta tag as a suffix ("公司 · 内测版").
+  await modeSwitch.getByRole("button", { name: /^公司/ }).click();
   await expect(page).toHaveURL(/\/org/);
   // With no organization yet, the landing page offers creation directly (the switcher does too).
   await page.getByRole("button", { name: "新建组织", exact: true }).first().click();

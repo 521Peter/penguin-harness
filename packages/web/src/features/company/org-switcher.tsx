@@ -6,8 +6,6 @@
  * entries that make and shape one — "New organization" (success makes the new organization
  * the shell's current one and lands in its CEO's desk session) and "Organization settings".
  * Same Dropdown, same menu rows as the Project switcher, so the two modes read as one shell.
- * The 内测版 pill rides beside the name (beta-badge.tsx): the mode is a beta, and this corner
- * is the one part of the company shell that is on screen on every one of its pages.
  *
  * Beside it lives what the sidebar shows in place of a channel list while the user has no
  * organization at all — the same create dialog, reached from the slot where the list would be.
@@ -25,7 +23,6 @@ import { Button } from "../../components/ui/button";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, GEAR_ICON, PlusIcon } from "../../components/ui/icons";
-import { BetaBadge } from "./beta-badge";
 import { groupOrganizationsByProject, orgKey, orgPagePath, parseOrgKey } from "./company-nav";
 import {
   CreateOrganizationDialog,
@@ -92,9 +89,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
             type="button"
             onClick={() => setOpen(!open)}
             title={triggerLabel}
-            // An aria-label hides every descendant from the accessible name, so the beta pill
-            // inside would go unannounced unless the name says it too.
-            aria-label={`${triggerLabel} · ${S.company.beta}`}
+            // The count beside the name renders aria-hidden — it is a bare `@3` — so the
+            // accessible name has to carry the same fact in words.
+            aria-label={triggerLabel}
             aria-haspopup="menu"
             aria-expanded={open}
             className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
@@ -109,9 +106,6 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                       ? S.company.noOrganizations
                       : S.common.loading}
                 </span>
-                {/* The mode is a beta, and this is the corner that is on screen wherever the
-                    shell stands — including before there is any organization to name. */}
-                <BetaBadge />
               </span>
               {/* The Project the organization belongs to: the second line, so the name stays the headline. */}
               {current !== null && (

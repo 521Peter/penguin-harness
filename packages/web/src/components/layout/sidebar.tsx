@@ -184,6 +184,7 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
 import { NoOrganizationsSidebar, OrgSwitcher } from "../../features/company/org-switcher";
+import { BetaBadge } from "../../features/company/beta-badge";
 import { ChannelSidebar } from "../../features/company/channel-sidebar";
 import { OrgSessionGroups } from "../../features/company/org-session-groups";
 import { COMPANY_NAV_ICONS } from "../../features/company/company-nav-icons";
@@ -1665,13 +1666,19 @@ export function Sidebar({
     <div className="flex h-full w-full flex-col">
       {/* The work-mode switch, above the Project switcher: 开发 | 公司. Rendered only while
           company mode is available (the admin master switch and the user's own switch both
-          on); the choice persists per user. */}
+          on); the choice persists per user. The 内测版 tag rides on 公司 — the switch is the
+          one control that names the mode, so the mark stands on the word it qualifies rather
+          than somewhere inside the mode it describes. */}
       {company.available && (
         <div className="shrink-0 px-2 pt-2" role="group" aria-label={S.company.workMode}>
           <Segmented
             options={[
               { value: "dev" as const, label: S.company.modeDev },
-              { value: "company" as const, label: S.company.modeCompany },
+              {
+                value: "company" as const,
+                label: S.company.modeCompany,
+                badge: { node: <BetaBadge />, name: S.company.beta },
+              },
             ]}
             value={company.workMode}
             onChange={switchMode}

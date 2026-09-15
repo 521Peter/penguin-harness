@@ -1,11 +1,12 @@
 /**
  * Company mode says it is a beta, in the two shapes that fact takes in the shell.
  *
- * The pill — a small 内测版 / Beta tag beside the organization switcher's name, at the
- * top-left of the company shell, where it is in view on every organization page rather than
- * only on the one that happens to explain the mode. It is a plain `Badge` in the muted tone:
- * the tag labels an attribute of the whole mode, not the state of anything on screen, so it
- * must not read as a status mark competing with the organization's own status dot beside it.
+ * The tag — a mini 内测版 / Beta mark riding at the top-right of 「公司」 in the 开发 | 公司
+ * work-mode switch, which is the one control that names the mode itself and is in view on
+ * every page of both modes. A superscript rather than a `Badge`: it qualifies the word it
+ * sits on instead of reporting a state, so it must not read as a status mark, and at that
+ * size it must not push the switch's two options around either — segmented.tsx pins it out
+ * of flow and folds its text into the option's accessible name.
  *
  * The notice — the sentence a person gets the first time they switch this browser into the
  * mode (state/company.tsx's `setWorkMode`), and the once-only decision behind it. The flag
@@ -14,7 +15,6 @@
  * and a preferences round trip would decide it too late to toast on the click that caused it.
  */
 import { S } from "../../lib/strings";
-import { Badge } from "../../components/ui/badge";
 
 /** The localStorage key remembering that this browser has shown the beta notice. */
 export const BETA_NOTICE_KEY = "penguin.companyBetaNoticeShown";
@@ -51,14 +51,19 @@ export function markBetaNoticeShown(storage?: BetaNoticeStorage): void {
 }
 
 /**
- * The pill itself. The tooltip sits on the wrapper rather than on the `Badge`, which takes no
- * attributes of its own — and it is a `title` because every other tooltip in the switcher it
- * stands in is one.
+ * The tag itself: the smallest legible rung, in the muted ink and border that keep it from
+ * reading as a status mark. The px size is deliberate — this is a superscript over a
+ * `text-xs` option, and there is no rung below `text-xs` to step down to. Its host hides it
+ * from the accessible name, so the tooltip is the only thing it says on its own, and it is a
+ * `title` because the switch it rides on carries no `Tooltip` of any kind.
  */
 export function BetaBadge() {
   return (
-    <span className="shrink-0" title={S.company.betaTitle}>
-      <Badge tone="gray">{S.company.beta}</Badge>
+    <span
+      title={S.company.betaTitle}
+      className="whitespace-nowrap rounded-sm border border-gray-300 px-0.5 py-px text-[9px] font-medium leading-none text-gray-500 dark:border-gray-600 dark:text-gray-400"
+    >
+      {S.company.beta}
     </span>
   );
 }
