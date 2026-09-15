@@ -34,10 +34,17 @@ number was burned. Hence the order below: a `release/**` branch proves the signe
 | `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
 | `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 
-**Do not bump in lockstep**: anything whose version already differs. The `plugins/sandbox-*`
-packages track their own line, and a private workspace package (`packages/hmr`) may have been
-created at whatever number its author typed. Bump what is already on the previous release's
-number; leave the rest and say so in the PR.
+**Anything whose version already differs is a decision, not a sweep.** Bump what sits on the
+previous release's number without thinking about it. For the rest, decide and record the decision
+in the PR body:
+
+- `plugins/sandbox-*` track their own line deliberately — leave them.
+- A package created mid-cycle at whatever number its author typed is the other case. `packages/hmr`
+  arrived from #656 at 0.2.9 and was pulled into lockstep at 0.2.12: it is `private: true` and never
+  published, so nothing ships wrong either way, and a package inside `packages/*` sitting three
+  releases behind is a puzzle for the next reader.
+
+What is not acceptable is a blanket bump that catches one of these silently.
 
 The lockfile does not record workspace versions, so a pure version bump leaves `pnpm-lock.yaml`
 alone. If it moves, something else moved with it — find out what.
