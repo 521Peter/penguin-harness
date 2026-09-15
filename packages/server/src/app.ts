@@ -100,7 +100,7 @@ import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopTrayRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -175,6 +175,8 @@ export interface AppDeps {
   config: ServerConfig;
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
+  /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
+  usersRepo: UsersRepo;
   prefsRepo: UiPrefsRepo;
   /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
@@ -497,6 +499,10 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+    // The tray-icon preference rides the same relay and the same shell-window gate: it is
+    // the Settings › Appearance switch reaching the chrome around the window it runs in.
+    app.use("/api/desktop/tray", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.route("/api/desktop/tray", desktopTrayRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
@@ -1129,6 +1135,7 @@ export function buildAppDeps(
     config,
     db,
     sessionsRepo,
+    usersRepo,
     prefsRepo,
     serverSettingsRepo,
     authService,
@@ -1295,11 +1302,11 @@ export function createApp(
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));
   app.route("/api/projects/:projectId/dirs", dirsRoutes(deps));
   app.route("/api/projects/:projectId/dir-skills", directorySkillsRoutes(deps));
+  app.route("/api/projects/:projectId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/config", agentConfigRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/vault", vaultRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/memory", memoryRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/schedules", scheduleRoutes(deps));
-  app.route("/api/projects/:projectId/agents/:agentId/benchmarks", benchmarksRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/skills", agentSkillsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/plugins", agentPluginsRoutes(deps));
   app.route("/api/projects/:projectId/agents/:agentId/hooks", agentHooksRoutes(deps));

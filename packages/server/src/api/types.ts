@@ -41,8 +41,8 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session. */
-export type SessionSource = "schedule" | "subagent";
+/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
+export type SessionSource = "schedule" | "subagent" | "benchmark";
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -55,7 +55,32 @@ export interface UserInfo {
   isAdmin: boolean;
   /** Still using the initial password (seeded/set by admin): frontend prompts the user to change it soon. */
   passwordIsInitial: boolean;
+  /**
+   * Nickname the account chose (1-32 characters), shown wherever the id would otherwise be.
+   * Omitted when unset — every account that predates the Profile page starts without one, and
+   * a surface with no value falls back to `userId`.
+   */
+  displayName?: string;
+  /**
+   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
+   * and a surface with no value draws the letter placeholder instead.
+   */
+  avatar?: string;
   createdAt: string;
+}
+
+/**
+ * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
+ * `null` clears it, a string sets it. A body naming neither field is a 400, since it can only
+ * be a mistake.
+ */
+export interface UpdateProfileRequest {
+  displayName?: string | null;
+  avatar?: string | null;
+}
+
+export interface UpdateProfileResponse {
+  user: UserInfo;
 }
 
 export interface AuthLoginRequest {
@@ -1363,7 +1388,7 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * Session list category, the sidebar's five-way split applied server-side: archived wins
  * regardless of origin (archiving is an explicit user action), then the origin's bucket,
  * and a Session with no (or an unknown) source is `active` — user-created rows.
  */
@@ -1439,6 +1464,13 @@ export interface SessionCreateRequest {
    * serve every row regardless of client.
    */
   client?: "web" | "cli";
+  /**
+   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
+   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
+   * this value is accepted from a client: `subagent` and `schedule` are written by the server
+   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   */
+  source?: "benchmark";
 }
 
 export interface SessionCreateResponse {
@@ -3221,7 +3253,7 @@ export interface AgentImportResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Benchmark scoring (read-only display)
+// Benchmark scoring (display), manual creation and deletion
 // ---------------------------------------------------------------------------
 
 /** Raw result of a single run (a scoreboard per-case runs[] entry). */
@@ -3249,6 +3281,11 @@ export interface BenchmarkCaseScore {
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
+  /**
+   * Agent under test in this round (the `agent_id` field), part of the record's label; `null`
+   * when the record carries none, as a Benchmark evaluates whichever Agents it is pointed at.
+   */
+  agentId: string | null;
   /** Evaluation summary title (a one-line conclusion; shown separately from the body summary; required when generating, tolerated as unset when displaying). */
   summaryTitle?: string;
   /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
@@ -3270,6 +3307,12 @@ export interface BenchmarkEvaluation {
   cases: BenchmarkCaseScore[];
 }
 
+/**
+ * Whether the Skill that builds a Benchmark is done with it, and how it ended; see
+ * `BenchmarkSummary.status`.
+ */
+export type BenchmarkStatus = "draft" | "published" | "failed";
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
@@ -3278,10 +3321,26 @@ export interface BenchmarkSummary {
   description?: string;
   /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
   runs?: number;
+  /**
+   * `draft` while the Skill that builds the Benchmark is still writing its cases and
+   * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
+   * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
+   * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
+   * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
+   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
+   * or any other value, reads as published.
+   */
+  status: BenchmarkStatus;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
   evaluations: BenchmarkEvaluation[];
+  /**
+   * Agents this Benchmark has evaluated: the distinct non-null `agentId`s of `evaluations`, in
+   * first-seen order. Empty while nothing has been evaluated — a Benchmark names no Agent of its
+   * own.
+   */
+  agentIds: string[];
 }
 
 export interface BenchmarksResponse {
@@ -3299,6 +3358,39 @@ export interface BenchmarkCaseSummary {
 
 export interface BenchmarkCasesResponse {
   cases: BenchmarkCaseSummary[];
+}
+
+/**
+ * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
+ * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
+ * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
+ * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
+ * already there; nothing is merged into an existing Benchmark.
+ */
+export interface BenchmarkCreateRequest {
+  /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
+  id: string;
+  title: string;
+  description?: string;
+  /** Runs per case for the optimization loop (integer ≥ 1; default 1). */
+  runs?: number;
+  /** At least one case; ids must be unique within the request. */
+  cases: BenchmarkCreateCase[];
+}
+
+export interface BenchmarkCreateCase {
+  /** Case directory name: `CASE-` followed by letters, digits, `_` and `-` (for example `CASE-001-excel-task`). */
+  id: string;
+  /** Written as the statement README's first heading, which the case list reads back as the case title. */
+  title: string;
+  /** Statement body (Markdown), written after that heading; the Target Agent sees only this side. */
+  statement: string;
+  /** Scoring rubric (Markdown, items totalling 100 points), written verbatim as `rubric/README.md`. */
+  rubric: string;
+}
+
+export interface BenchmarkCreateResponse {
+  benchmark: BenchmarkSummary;
 }
 
 // ---------------------------------------------------------------------------
@@ -3533,6 +3625,68 @@ export interface DesktopUpdaterStatusMessage {
 export interface DesktopUpdaterCommandMessage {
   type: "desktop-updater-command";
   action: "check" | "download" | "install";
+}
+
+// Desktop tray icon (desktop mode only)
+//
+// The shell keeps an icon in the system tray for as long as the app runs, and Settings ›
+// Appearance is where it is turned off and on. The switch rides the same utilityProcess
+// message channel as the client updater above: the shell pushes what it currently shows,
+// the page reads it at GET /api/desktop/tray and writes through PUT, which is relayed
+// back. The window stays a plain browser — no renderer IPC bridge.
+//
+// The page reports its UI language over the same route, so the tray menu reads in the
+// language the window does. The shell cannot see that preference itself: it lives in the
+// browser's localStorage, on the other side of a boundary this design keeps one-way.
+
+/** The two languages the Web App has; the shell's tray menu follows whichever is in use. */
+export type DesktopTrayLocale = "zh" | "en";
+
+/** What the shell is currently doing about its tray icon. */
+export interface DesktopTrayStatus {
+  /** Whether an icon is shown in the system tray while the app runs. */
+  showTrayIcon: boolean;
+  /**
+   * The language the tray menu is drawn in. Until a page reports one the shell uses the
+   * device language, so this can differ from the Web App's until the first report lands.
+   */
+  locale: DesktopTrayLocale;
+}
+
+/**
+ * What one PUT asks the shell to change. Every field is optional and a request must carry at
+ * least one: the switch and the language reach this route from different parts of the page.
+ */
+export interface DesktopTrayPatch {
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
+}
+
+/**
+ * GET / PUT /api/desktop/tray (desktop-shell sessions only): the tray preference.
+ * `status` is null until the shell's first push lands (a beat after server start); a
+ * client that finds null reads it as on, which is the shell's own default.
+ */
+export interface DesktopTrayStatusResponse {
+  status: DesktopTrayStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopTrayStatusMessage {
+  type: "desktop-tray-status";
+  status: DesktopTrayStatus;
+}
+
+/**
+ * Server → shell command over the utilityProcess message channel (relayed from PUT
+ * /api/desktop/tray). A patch, not a snapshot: the switch and the language are written by
+ * different parts of the page at different moments, and neither should have to restate the
+ * other's value to change its own.
+ */
+export interface DesktopTrayCommandMessage {
+  type: "desktop-tray-command";
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
 }
 
 /**

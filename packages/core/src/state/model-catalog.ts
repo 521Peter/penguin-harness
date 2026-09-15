@@ -42,20 +42,21 @@
  * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
  * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
- * preset base URL. The vLLM group pins one too, but as a property of the GROUP rather than
- * of each row (ModelProviderInfo.clientType, read through providerClientType): a model the
- * user adds there speaks the same protocol as the presets, and has no preset base URL to
- * inherit — see the group's own block comment.
+ * preset base URL. Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * through providerClientType), so that a model the user adds there speaks the same protocol
+ * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
+ * OpenRouter, whose do — see each group's own block comment.
  * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
  * GPT-5.6 client aimed at a gateway, and `anthropic/claude-opus-4.8` would throw outright
- * (dotted "4.8" matches neither "4-8" nor "-5"). Two protocols are pinned:
- * - `openai-chat` for most rows (AgentHub 0.4.2's canonical name for the generic Chat
- *   Completions client — the bare "openai" spelling is a deprecated upstream alias, see
- *   canonicalClientType);
- * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
- *   OpenAI Responses server (see the OpenRouter block comment for why only those rows);
+ * (dotted "4.8" matches neither "4-8" nor "-5"). Three protocols are pinned:
+ * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
+ *   every upstream at the same base URL the rows already carry, and the group pins the same
+ *   protocol so a user-added entry inherits it;
+ * - `openai-chat` for the other gateway rows (AgentHub 0.4.2's canonical name for the
+ *   generic Chat Completions client — the bare "openai" spelling is a deprecated upstream
+ *   alias, see canonicalClientType);
  * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE).
@@ -115,7 +116,7 @@ export interface ModelProviderInfo {
    * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
    *
    * Set it only where the group itself decides the answer and no other property already
-   * implies it: the gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
+   * implies it: the other gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
    * `custom` / user-defined groups deliberately declare nothing — their whole point is that
    * the protocol is detected from the endpoint or picked by hand, and a pin here would
    * take that choice away.
@@ -208,10 +209,10 @@ export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
  *
  * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
  * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
- * OpenAI-protocol clients (`openai-chat`, or `openai-responses` for the OpenRouter
- * `openai/*` rows). Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the
- * credential is blank, not the gateway's own variable names, so every gateway group records
- * the OPENAI_* pair and the env fallback hint the frontend shows is accurate either way.
+ * OpenAI-protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest).
+ * Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the credential is blank, not
+ * the gateway's own variable names, so every gateway group records the OPENAI_* pair and the
+ * env fallback hint the frontend shows is accurate either way.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -256,6 +257,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
+    // The whole group speaks the Responses API, which OpenRouter serves at the preset base
+    // URL below for every upstream — presets and user-added entries alike.
+    clientType: "openai-responses",
   },
   {
     id: "fireworks",
@@ -568,14 +572,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // every pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
   // pages and the per-model endpoints API.
   //
-  // Protocol: rows pin `openai-chat` except the `openai/*` rows, which pin
-  // `openai-responses` - OpenRouter serves the Responses API at {base}/responses (the same
-  // https://openrouter.ai/api/v1 base URL these rows already carry), and AgentHub 0.4.2
-  // verified that pairing live. The switch is deliberately limited to the OpenAI family:
-  // OpenRouter will translate /responses for any upstream, but the Responses client leans on
-  // OpenAI-specific reasoning-item round-tripping (replaying encrypted_content / signature /
-  // summary and the assistant `phase`), which is only guaranteed when the upstream is
-  // genuinely OpenAI. Non-OpenAI rows therefore stay on Chat Completions.
+  // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
+  // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
+  // the rows already carry, and the group pins the same protocol so an entry added to it by
+  // hand inherits it. The generic Responses client sends a text-only tool result as a plain
+  // string (AgentHub 0.4.11) and replays reasoning items only where the upstream returned
+  // them.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
@@ -604,7 +606,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -614,7 +616,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -624,7 +626,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -634,7 +636,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -644,7 +646,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.2, 2.5, 10),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -660,7 +662,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.006, 0.3, 1.2),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -670,7 +672,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0157192, 0.078596, 0.157192),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -680,7 +682,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0168, 0.0679, 0.168),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -695,7 +697,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.007, 0.22, 0.66),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -708,7 +710,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -718,7 +720,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -733,7 +735,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.15, 1.5, 7.5),
     discount: 0.5,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -749,7 +751,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.15, 1.5, 7.5),
     discount: 0.5,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -768,7 +770,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.15, 1.5, 7.5),
     discount: 0.5,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -781,7 +783,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -793,7 +795,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -804,7 +806,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -814,7 +816,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.3, 3, 15),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -824,7 +826,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.0992, 0.589, 2.48),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -834,12 +836,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
-  // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
-  // gateway rows on the Responses protocol (see the block comment). Their context windows
-  // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  // The openai/* rows below mirror the direct OpenAI group one-for-one. Their context
+  // windows are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
   {
     // Read 2026-09-09 from the models API and the per-model endpoints API: the default
     // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /
@@ -968,7 +969,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 128000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -978,7 +979,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.25, 2.5, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -988,7 +989,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -999,7 +1000,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 256000,
     pricing: usd(0.04, 0.2, 1.15),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1014,7 +1015,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.042, 0.834, 2.501),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1024,7 +1025,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.033, 0.132, 0.528),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1037,7 +1038,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.17, 1, 4.05),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1049,7 +1050,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.5, 2, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1059,7 +1060,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.3, 2, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1069,7 +1070,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.0028, 0.14, 0.28),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1082,7 +1083,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.26, 1.4, 4.4),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1090,14 +1091,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // promotion through 2026-09-09 16:00 UTC (Z.AI's own price list names the same window as
     // 24:00 on 2026-09-09, UTC+8). Stored at the discounted rate the gateway actually bills;
     // when it lapses, restore 0.03 / 0.15 / 0.5. The listing takes text, images and video,
-    // and the generic openai-chat client it pins converts image_url parts.
+    // and the generic Responses client it pins carries image parts through.
     modelId: "z-ai/glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.015, 0.075, 0.25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -1107,7 +1108,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.1261, 0.679, 2.134),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   // -- Fireworks AI (gateway, standard serverless USD pricing: cached input / uncached
@@ -2170,6 +2171,10 @@ export function providerInfo(providerId: string): ModelProviderInfo | undefined 
  * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
  * undefined when the group pins none — an unknown id (a user-defined group) included.
  *
+ * Two groups pin: vLLM, whose models are served by the user's own vLLM adapter, and
+ * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
+ * URL.
+ *
  * The single entry point for the pin, so the places that decide a saved model's client_type
  * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
  * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
@@ -2357,8 +2362,8 @@ export function fastModeProtocol(
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * always pin a client_type — openai-chat, or openai-responses for the OpenRouter openai/*
- * rows — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
+ * always pin a client_type — openai-responses for the OpenRouter rows, openai-chat for the
+ * rest — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
  * endpoint. No secrets are included, so only an API key is needed.
  *
  * Pricing is written as the EFFECTIVE rate (effectivePricing: list less any running

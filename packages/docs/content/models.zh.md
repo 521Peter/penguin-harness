@@ -77,7 +77,7 @@ api_key = "sk-..."
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；定价取各模型页官方牌价(预览模型仅配额倍率促销、无牌价) |
 | custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点 |
 
-网关分组(openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan)经 AgentHub 的通用 OpenAI 协议客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。多数网关预置固定 Chat Completions 客户端(`client_type = "openai-chat"`)；OpenRouter 的 `openai/*` 预置则固定 Responses 客户端(`client_type = "openai-responses"`)——OpenRouter 在同一 base URL 上提供 Responses API，且这些条目的上游本就是 OpenAI。两种客户端读取相同的 `OPENAI_*` 变量，凭证规则完全一致。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
+网关分组(openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan)经 AgentHub 的通用 OpenAI 协议客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。OpenRouter 分组整体使用 Responses 客户端(`client_type = "openai-responses"`)——预置条目与你自行添加进该分组的模型都是——因为 OpenRouter 为其转售的每一个模型都在同一 base URL 上提供 Responses API；其余网关预置则固定 Chat Completions 客户端(`client_type = "openai-chat"`)。两种客户端读取相同的 `OPENAI_*` 变量，凭证规则完全一致。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
@@ -140,6 +140,8 @@ Custom 与自建分组走 AgentHub 的通用协议客户端，Web 对话框会�
 这些分组不会从 model id 推断任何东西。在自定义分组里填 `claude-sonnet-5` 不代表就走 Anthropic 客户端、读 `ANTHROPIC_*`——Custom 与自建分组一律回退到兼容客户端(`openai-chat`)，API Key 提示也据此显示。检测只是锦上添花，不是关卡：若检测无结果，模型仍会按 `openai-chat` 保存，并以 toast 说明。厂商与网关分组不受影响——它们的 id 在内置目录里，仍按 id 路由或沿用预设。
 
 「新增分组」对话框在分组名下方提供两种模式。**仅新增分组**是轻量路径：名称合法即进入该分组的新增模型对话框。**导入模型**按端点填满全新分组，沿用新增模型对话框的字段节奏——先填 API key，再填 base URL，其右上方是「检测协议」，输入框内嵌的协议菜单可手动改选。协议确定后（检测命中或手动选定）出现**「批量导入模型」**：向端点询问它服务的全部模型 id（`POST /api/projects/:id/models/list`，仅 owner——在该协议客户端上调用 AgentHub 的 `listModels()`，限时 20s），并在一次整表写入中把它们全部存为新分组的条目——base URL、协议与所填 key 内联在每条上——顺序保持端点返回的顺序。配置无法承载的 id（为空、超过 200 字符、含控制字符）以及已被占用的 id 会被跳过并计入 toast，因此单个坏条目不会让整次导入失败。端点那边只取 id：价格、上下文窗口与显示名一律留空；导入的模型在你探测或手动打开之前不声明视觉能力——与手动往该分组添加模型的起点完全一致。key 留空时沿用各处一致的按协议环境变量回退。检测失败只把后缀转为琥珀色、不阻塞任何操作——可手动选协议继续，或切回仅新增分组；列表失败（协议不支持列出模型、列表为空）只在对话框内呈现且不落盘。
+
+页头的**用 AI 创建**（仅 owner）补上导入读不到的那些：模型列表页不是 OpenAI 兼容的 `/models` 端点、只能用文字描述的服务，或要加进既有分组的厂商模型。提示词发给 Project 的默认 Agent，固定尾巴要求它用 `penguin-config` 技能——每个模型执行一次 `penguin config model add --provider <分组> --model-id <上游 id> --project-id <Project> --root <数据根目录>`（OpenAI 兼容端点加 `--client-type openai --base-url <端点>`；数据根目录要写明，因为命令的环境里没有它），来源是网页时先抓取并优先加你点名的模型（否则取最常用的、至多十个左右），缺 API key 只问一次、不给则留空由你到模型库页补填，不读写 `.project_config.toml`，最后 `penguin config model list`。页面每次进入都重新加载模型表，从对话回来即能看到新分组。
 
 ### 视觉能力检测
 

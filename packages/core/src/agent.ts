@@ -219,8 +219,8 @@ export interface CreateSessionOptions {
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
-  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule". */
-  source?: "subagent" | "schedule";
+  /** Session origin recorded in session_meta (absent = user-created); the subagent spawn site passes "subagent", callers driven by a scheduled task pass "schedule", and a Benchmark evaluation or optimization passes "benchmark". */
+  source?: "subagent" | "schedule" | "benchmark";
 }
 
 export interface ResumeSessionOptions {
@@ -252,7 +252,7 @@ interface SessionSpec {
    */
   thinkingLevel: ThinkingLevelName | null | undefined;
   subagentDepth: number;
-  source?: "subagent" | "schedule";
+  source?: "subagent" | "schedule" | "benchmark";
 }
 
 /**
@@ -716,9 +716,9 @@ export class Agent {
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
     // and contexts opened without a pin read the Agent config's chain (the same chain
     // createSession uses). The origin carries over from the original session_meta (a
-    // resumed scheduled/subagent Session stays marked); the on-disk value is untrusted: only
-    // the exact known origins pass, junk written by a third party is dropped rather than
-    // cast through.
+    // resumed subagent / scheduled / benchmark Session stays marked); the on-disk value
+    // is untrusted: only the exact known origins pass, junk written by a third party is
+    // dropped rather than cast through.
     const spec: SessionSpec = {
       sessionId,
       workspaceDir,
@@ -727,7 +727,9 @@ export class Agent {
       baseUrl,
       thinkingLevel: undefined,
       subagentDepth: 0,
-      ...(meta.source === "subagent" || meta.source === "schedule" ? { source: meta.source } : {}),
+      ...(meta.source === "subagent" || meta.source === "schedule" || meta.source === "benchmark"
+        ? { source: meta.source }
+        : {}),
     };
     // The context follows the Trace. A context a completed compaction closed is opened here
     // for the first time — nothing was produced under any configuration yet — so it is

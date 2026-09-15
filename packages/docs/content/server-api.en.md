@@ -72,6 +72,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
+| PUT | /api/me/profile | Set the avatar and nickname: `{displayName?, avatar?}` → `{user}`. A patch — an absent field keeps its stored value, `null` clears it, and a body naming neither is a `400`. `displayName` must be 1–32 characters once trimmed (counted as characters, so a CJK name may be 32 of them) and carry no control characters; `avatar` must be a `data:image/(png|jpeg|webp);base64,…` URL of at most 131072 characters whose payload decodes. Open to every authenticated session, the desktop shell's token session included — unlike the password route above, a profile has no old credential to check |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
 
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/users | List users |
+| GET | /api/admin/users | List users. Each row carries the account's nickname when it has one; avatars are deliberately left out, since the list is unpaged and one data URL per account would dwarf the rest of the response |
 | POST | /api/admin/users | Create a user: `{userId, password}` |
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
@@ -241,7 +242,6 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | GET | `/api/plugins` (global) | The plugin library by category — every plugin with its skills' metadata and hook points (any logged-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | Everything one library plugin ships as text keyed by path — each skill's installable SKILL.md and reference files under `skills/<name>/`, the hook scripts under `hooks/` — for the plugin detail view's file browser (any logged-in user) |
 | DELETE | /agents/:agentId/hooks/:name | Uninstall a hook package |
-| GET | /agents/:agentId/benchmarks | Benchmark scoring data (read-only) |
 
 ### Schedules
 
@@ -252,12 +252,25 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 Schedule writes are owner-only. A task in new-Session mode carries `modelId` and `provider` together or not at all; the pair is checked against the Project's model table when the task is saved and again when the scheduler reconciles it.
 
+### Benchmarks
+
+Benchmarks hang off the Project, not off an Agent: one Benchmark evaluates as many Agents as it is pointed at, and each evaluation names the Agent it tested (`agentId`, `null` on a record that carries none). A summary's `agentIds` lists those Agents in first-seen order. The paths below again omit the `/api/projects/:projectId` prefix.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /benchmarks | Benchmark scoring data — only directories holding a `benchmark_config.toml`; one without it (what a Benchmark deleted mid-evaluation leaves behind) is skipped; each entry carries `status` (`draft` while the Skill is still building it, `failed` when its calibration never finished, else `published`) |
+| POST | /benchmarks | Create a Benchmark by hand (owner only): `{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`. The server writes `benchmark_config.toml` (with `status = "published"`), a `scoreboard.yaml` with `evaluations: []`, and each case's `statement/README.md` (the title as its heading) and `rubric/README.md`; ids follow the agent-id alphabet, case ids start with `CASE-`; 409 `benchmark_exists` when the directory is already there |
+| DELETE | /benchmarks/:benchmarkId | Remove a Benchmark directory whole — cases, config and scoreboard (owner only; 204, 404 when absent) |
+| GET | /benchmarks/:benchmarkId/cases | Case list of one Benchmark: id and the statement README's heading. Rubrics are never returned |
+| GET | /benchmarks/:benchmarkId/cases/:caseId/files | Browse one case's `statement/`; add `/rubric` before `/files` for the rubric side |
+| GET | /benchmarks/:benchmarkId/cases/:caseId/files/content | Read one file from that material (`?path=`, `?preview=1`, `?download=1`), with the same inline hardening as Workspace files |
+
 ### Session Creation and Directory Browsing
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | List Sessions (including run state); every row is listed whichever client created it |
-| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter |
+| POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter; `source` accepts only `"benchmark"` (a Benchmark evaluation or optimization), since `subagent` and `schedule` are set by the server itself |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 
 On Session creation, `modelId` and `provider` are both-or-neither: send the complete pair to pick a model, or omit both to take the Project's default model — one without the other is a 400. The Workspace defaults to an auto-created temporary workspace, and the approval mode defaults to `allow-all`.

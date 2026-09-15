@@ -217,7 +217,9 @@ export function GroupPager({
 /**
  * Collapsed-by-default lazy folder (subagent / scheduled / archived): the toggle row
  * shows the label (typically with the group's exact server share), the body renders only
- * while open, and an optional "More" row pages the folder independently.
+ * while open, and an optional "More" row reveals and pages the folder independently. The
+ * "show less" row below it folds the folder back to its first page; the two can stand at
+ * once, since a folder revealed part-way still has rows to show AND rows to fold away.
  */
 export function FolderSection({
   label,
@@ -227,6 +229,8 @@ export function FolderSection({
   moreLabel,
   pending = false,
   onMore,
+  less = false,
+  onLess,
   children,
 }: {
   label: string;
@@ -243,6 +247,9 @@ export function FolderSection({
   /** The folder's "More" fetch in flight. */
   pending?: boolean;
   onMore?: () => void;
+  /** Show the folder's "show less" row (it is revealed past its first page and has rows to fold away). */
+  less?: boolean;
+  onLess?: () => void;
   children?: ReactNode;
 }) {
   return (
@@ -259,6 +266,9 @@ export function FolderSection({
           pending={pending}
           onClick={() => onMore?.()}
         />
+      )}
+      {open && less && (
+        <MoreRow label={S.chat.showLess} ariaLabel={S.chat.showLess} onClick={() => onLess?.()} />
       )}
     </div>
   );
@@ -282,6 +292,7 @@ export function GroupHeader({
   icon,
   label,
   uppercase = false,
+  muted = false,
   count,
   title,
   actions,
@@ -299,6 +310,8 @@ export function GroupHeader({
   label: string;
   /** Agent names render uppercase-tracked (sidebar convention); a directory basename's casing is meaningful, so workspace groups don't. */
   uppercase?: boolean;
+  /** Dim the label one step (folder-only groups: nothing active of their own); the count keeps its own class. */
+  muted?: boolean;
   /** Optional trailing count (workspace groups: the group's active total). */
   count?: number;
   /** Optional tooltip (workspace groups: the full path). */
@@ -337,7 +350,7 @@ export function GroupHeader({
         <span
           className={`min-w-0 truncate text-xs font-semibold ${
             uppercase ? "uppercase tracking-wide " : ""
-          }text-gray-500 dark:text-gray-400`}
+          }${muted ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
         >
           {label}
         </span>

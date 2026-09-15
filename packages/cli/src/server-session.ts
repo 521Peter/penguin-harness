@@ -60,6 +60,8 @@ export interface CreateSessionArgs {
   modelId?: string;
   provider?: string;
   approvalMode?: string;
+  /** Marks the new Session as created by a Benchmark evaluation (the only origin a client may set). */
+  source?: "benchmark";
 }
 
 /** POST .../sessions with the CLI's client hint. */

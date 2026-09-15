@@ -238,7 +238,13 @@ export class SessionService {
     }
 
     const want = paging ? paging.offset + paging.limit : Infinity;
-    const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const counts: SessionCategoryCounts = {
+      active: 0,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
     const workspaceLatest: Record<string, string> = {};
     const matched: SessionRow[] = [];
@@ -251,6 +257,7 @@ export class SessionService {
           active: 0,
           subagent: 0,
           schedule: 0,
+          benchmark: 0,
           archived: 0,
         });
         ws[cat] += 1;
@@ -328,8 +335,12 @@ export class SessionService {
     provider?: string;
     workspace?: string;
     approvalMode?: ApprovalMode;
-    /** Session source marker (schedule when triggered by a scheduled task; defaults to user-created). */
-    source?: "schedule";
+    /**
+     * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` when
+     * created by a Benchmark evaluation or optimization (the only value a client may send);
+     * defaults to user-created.
+     */
+    source?: "schedule" | "benchmark";
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
      * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer

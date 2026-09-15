@@ -876,17 +876,19 @@ describe("trace-service", () => {
     expect(byId.get(S)!.workspace).toBe("/ws/one");
     expect(byId.get(s2)!.category).toBe("subagent"); // untracked but registry-known
     expect(byId.get(s3)!.category).toBe("active");
-    expect(res.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 1 });
+    expect(res.counts).toEqual({ active: 1, subagent: 1, schedule: 0, benchmark: 0, archived: 1 });
     expect(res.workspaceCounts!["/ws/one"]).toEqual({
       active: 0,
       subagent: 0,
       schedule: 0,
+      benchmark: 0,
       archived: 1,
     });
     expect(res.workspaceCounts!["/ws/two"]).toEqual({
       active: 1,
       subagent: 0,
       schedule: 0,
+      benchmark: 0,
       archived: 0,
     });
 
@@ -899,7 +901,13 @@ describe("trace-service", () => {
     );
     expect(active.sessions!.map((x) => x.sessionId)).toEqual([s3]);
     expect(active.totalSessions).toBe(1);
-    expect(active.counts).toEqual({ active: 1, subagent: 1, schedule: 0, archived: 1 });
+    expect(active.counts).toEqual({
+      active: 1,
+      subagent: 1,
+      schedule: 0,
+      benchmark: 0,
+      archived: 1,
+    });
     const archived = await h.service.agentTraces(
       P,
       A,
@@ -922,7 +930,13 @@ describe("trace-service", () => {
     const first = await service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(first.sessions![0]!.category).toBe("subagent");
     expect(first.sessions![0]!.workspace).toBe("/ws/child");
-    expect(first.counts).toEqual({ active: 0, subagent: 1, schedule: 0, archived: 0 });
+    expect(first.counts).toEqual({
+      active: 0,
+      subagent: 1,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    });
     // The observation landed in the shared registry (single source of truth) at registration.
     expect(harness.sources.get(S)).toBe("subagent");
     const reads = harness.traceIndex.counters.headReads;
@@ -955,7 +969,13 @@ describe("trace-service", () => {
     const listed = await h.service.agentTraces(P, A, { offset: 0, limit: 10 });
     expect(listed.sessions!.map((x) => x.sessionId)).toEqual([childSid, cliSid, webSid]);
     expect(listed.totalSessions).toBe(3);
-    expect(listed.counts).toEqual({ active: 2, subagent: 1, schedule: 0, archived: 0 });
+    expect(listed.counts).toEqual({
+      active: 2,
+      subagent: 1,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    });
     h.close();
   });
 

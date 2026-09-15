@@ -68,6 +68,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -241,8 +242,8 @@ export function decimalOnly(v: string): string {
  * Custom keeps a generic protocol client type (protocol detection / the in-field picker
  * manage those) and otherwise switches to the generic OpenAI Chat Completions client — an
  * unroutable or vendor-pinned type must not leak into a custom group. Every other group
- * keeps the current value: a first-party group auto-routes by id, and a gateway's rows
- * carry the pin their preset already gave them.
+ * keeps the current value: a first-party group auto-routes by id, and the gateways that
+ * pin nothing at group level leave their rows on the pin their preset already gave them.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
   const pinned = providerClientType(provider);
@@ -641,7 +642,7 @@ const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 
 export function ModelsPage() {
   useDocumentTitle(S.models.title);
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
@@ -717,6 +718,8 @@ export function ModelsPage() {
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
+  const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1056,9 +1059,10 @@ export function ModelsPage() {
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
               )}
             </h1>
-            {/* The header holds search plus the owner-only "sync presets" action (add-model
-                entry points live in each group header); on narrow screens (flex-wrap wraps it
-                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
+            {/* The header holds search, the owner-only "sync presets" action and the pair of
+                create buttons — the AI path and the group form, offered side by side (per-model
+                entry points still live in each group header); on narrow screens (flex-wrap wraps
+                it to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
             <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
               <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
                 <Input
@@ -1086,6 +1090,17 @@ export function ModelsPage() {
                   {S.models.syncCatalog}
                   <span className="sr-only"> · {syncNote}</span>
                 </Button>
+              )}
+              {isOwner && (
+                <CreateButtons
+                  size="sm"
+                  // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
+                  // without it the manual button would be a dead click. The AI path is left live
+                  // precisely because a failed load is one of the things it can repair.
+                  manualDisabled={rows === null}
+                  onAi={() => setAiAddOpen(true)}
+                  onManual={() => setAddGroupOpen(true)}
+                />
               )}
             </div>
           </div>
@@ -1576,6 +1591,22 @@ export function ModelsPage() {
           </div>
         </Modal>
       )}
+      {/* The AI path for what the group import cannot read: a listing page that is not an
+          OpenAI-compatible /models endpoint, or a service described in words. The table reloads
+          on every mount, so the group the agent adds is there when the page is next visited. */}
+      {projectId !== null && (
+        <AiCreateModal
+          open={aiAddOpen}
+          onClose={() => setAiAddOpen(false)}
+          title={S.models.aiAddTitle}
+          intro={S.models.aiAddIntro}
+          placeholder={S.models.aiAddPlaceholder}
+          examples={S.models.aiAddExamples}
+          tail={S.models.aiAddTail(projectId)}
+          agents={agents}
+        />
+      )}
+
       {rows && addGroupOpen && (
         <AddGroupDialog
           projectId={projectId}
@@ -2296,13 +2327,14 @@ function ModelDialog({
         output: usdToInput(row.output, currency),
       };
     }
-    // New model: protocol follows group semantics — a group that pins one (vLLM) hands it
-    // to the new entry outright; a first-party vendor group doesn't persist client_type
-    // (AgentHub auto-routes by upstream id, with env fallback resolved live from the id);
-    // custom / user-defined groups / gateways use a fixed openai-chat protocol (env fallback
-    // OPENAI_*), and gateways additionally pre-fill their endpoint base URL. provider keeps
-    // the entry point's original value (a user-defined group must not collapse into custom),
-    // stored as a separate field from model_id, with no concatenation on save.
+    // New model: protocol follows group semantics — a group that pins one (OpenRouter,
+    // vLLM) hands it to the new entry outright; a first-party vendor group doesn't persist
+    // client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from
+    // the id); custom / user-defined groups and the remaining gateways use a fixed
+    // openai-chat protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
+    // endpoint base URL. provider keeps the entry point's original value (a user-defined
+    // group must not collapse into custom), stored as a separate field from model_id, with
+    // no concatenation on save.
     const info = providerInfo(addProvider);
     const pinnedClientType = providerClientType(addProvider);
     const vendorAdd =
@@ -2323,7 +2355,8 @@ function ModelDialog({
       fastMode: false,
       // No protocol is preselected for a custom / user-defined group: it is detected from
       // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
-      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
+      // groups auto-route by model id; a gateway takes the protocol its group pins, or the
+      // preset Chat Completions pin where the group pins nothing.
       clientType:
         pinnedClientType ?? (vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat"),
       cacheRead: "",
@@ -2744,8 +2777,9 @@ function ModelDialog({
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
-  // The protocol this group pins on every entry, user-added ones included (vLLM); undefined
-  // for every group that leaves the protocol to auto-routing, a gateway preset, or detection.
+  // The protocol this group pins on every entry, user-added ones included (OpenRouter,
+  // vLLM); undefined for every group that leaves the protocol to auto-routing, a gateway
+  // preset, or detection.
   const pinnedGroupClientType = providerClientType(form.provider);
   // First-party provider group (built-in, non-gateway, non-custom, no group-level pin):
   // adding goes through auto-routing — show a hint when the id can't be routed
@@ -3006,9 +3040,10 @@ function ModelDialog({
         {/* Adding a model: protocol note first (preset direct-vendor group = only the
             vendor's official protocol, named via the group label — the in-field suffix
             on the base URL below says which path; a group that pins a protocol = that
-            protocol, named outright, plus its own endpoint; custom / self-defined group /
-            gateway = fixed OpenAI protocol), then the identity fields ("get model id /
-            API key" links next to the respective inputs; fill in the id to test
+            protocol, named outright, with the endpoint the user's own for a self-hosted
+            group and already filled in for a gateway; custom / self-defined group / an
+            unpinned gateway = fixed OpenAI protocol), then the identity fields ("get model
+            id / API key" links next to the respective inputs; fill in the id to test
             connectivity — verify before saving). */}
         {isNew && (
           <>
@@ -3016,7 +3051,9 @@ function ModelDialog({
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
                 : pinnedGroupClientType !== undefined
-                  ? S.models.addProtocolHintPinned(pinnedGroupClientType)
+                  ? dialogProvider?.gatewayBaseUrl !== undefined
+                    ? S.models.addProtocolHintPinnedGateway(pinnedGroupClientType)
+                    : S.models.addProtocolHintPinned(pinnedGroupClientType)
                   : customLikeGroup
                     ? S.models.addProtocolHintDetect
                     : S.models.addProtocolHint}

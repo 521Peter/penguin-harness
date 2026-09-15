@@ -127,6 +127,7 @@ export const en: Strings = {
     groupPersonal: "Personal",
     groupServer: "Server",
     /** Personal pages of the settings dialog. */
+    profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
@@ -213,6 +214,17 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    notifications: "Task completion notifications",
+    notificationsInfo:
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+    notificationsDenied:
+      "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
+    notificationsUnsupported: "This browser does not support system notifications.",
+    trayIcon: "Tray icon",
+    trayIconInfo:
+      "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -362,7 +374,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -416,6 +428,10 @@ export const en: Strings = {
     hidePassword: "Hide password",
     login: "Sign in",
     logout: "Sign out",
+    /** The sign-out confirmation: dialog name and body. */
+    logoutConfirmTitle: "Sign out?",
+    logoutConfirmBody:
+      "This ends your session here and returns to the login page. Running conversations keep going on the server.",
     admin: "Admin",
     defaultAdminNote:
       "First run: the server prints a first-login link in its startup output — open it to claim the built-in admin “admin” and set a password. No initial password exists to type here",
@@ -430,6 +446,35 @@ export const en: Strings = {
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
       "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
+  },
+
+  /**
+   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * session, the desktop shell's own window included: a profile needs no password to change.
+   */
+  profile: {
+    /** Avatar row: its label, and the two actions beside the preview. */
+    avatar: "Avatar",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    changeAvatar: "Change avatar",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "Restore default",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
+    /** The picked image could not be brought under the size limit even as JPEG. */
+    avatarTooLarge: "That image is too large. Please pick a smaller one.",
+    /** The picked file could not be decoded as an image at all. */
+    avatarUnreadable: "That image could not be read. Please pick another file.",
+    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    displayName: "Nickname",
+    displayNameHint: "1–32 characters; leave blank to clear",
+    displayNamePlaceholder: "Blank shows the username",
   },
 
   account: {
@@ -583,6 +628,57 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    aiCreateTitle: "Create an agent with AI",
+    aiCreateIntro:
+      "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
+    aiCreatePlaceholder: "e.g. Create an agent that turns my meeting recordings into to-do lists…",
+    aiExamples: [
+      {
+        key: "jotting",
+        label: "Jotting agent",
+        description: "Fragments of thought filed into a Markdown file system",
+        prompt:
+          "Create a jotting agent: I will keep sending it fragments of thoughts and half-sentences, and it organizes them into a Markdown file system in the Workspace (one file per topic, an index file it maintains, duplicates merged, a timeline kept), replying after each message with where it filed the content.",
+      },
+      {
+        key: "finance",
+        label: "Financial Copilot",
+        description: "Fundamentals and valuation from filings, quotes and news",
+        prompt:
+          "Create a financial Copilot agent: it reads the filings, market data and news links I give it, does fundamental and valuation analysis, presents conclusions as tables and bullet points, flags uncertainty and cites data sources, and never gives direct buy or sell advice.",
+      },
+      {
+        key: "rag",
+        label: "Document RAG agent",
+        description: "Indexes docs/ first, then answers with citations",
+        prompt:
+          "Create a document Q&A agent: I will put material into the Workspace's docs/ directory; it first builds an index (a summary per file and section), cites the specific file and passage in every answer, and says plainly that it does not know when the material gives no basis for an answer.",
+      },
+      {
+        key: "research",
+        label: "Deep research report agent",
+        description: "Outline, multi-round search, cross-checked, a cited report",
+        prompt:
+          "Create a deep research report agent: given a topic, it first drafts a research outline, then searches and reads sources over several rounds and cross-checks the facts, and finally writes a Markdown report in the Workspace with a table of contents, citations and appendices.",
+      },
+      {
+        key: "report-writer",
+        label: "Report-writing agent",
+        description: "Structured reports from loose material; id report-writer",
+        prompt:
+          "Create a report-writing agent with the agent id report-writer: it turns loose material into structured business or technical reports (summary, background, analysis, conclusions and recommendations), produces Markdown files, and attaches a writing checklist.",
+      },
+    ],
+    aiCreateTail: [
+      "Use the agent-initialization skill to create a new agent in the current Project from the description above:",
+      "- Use the agent id given above if there is one; otherwise pick a short semantic id (starting with a lowercase letter; letters, digits, underscores or hyphens). If the target directory already exists, stop and tell me instead of overwriting it.",
+      "- Start from default_agent's system_config.yaml, set its name, description and version, and write the role and rules into its agent_state/AGENTS.md.",
+      "- Copy only the skills it really needs from the plugin library (the skill directories default_agent carries); do not over-equip it.",
+      "- Do not touch any other agent; run the skill's validation when done.",
+      "Finish by telling me the new agent's id, the skills you installed, and how to start a conversation with it (the New chat button on its card on the Agents page).",
+    ].join("\n"),
+    firstAgentTitle: "No agent of your own yet",
+    firstAgentDesc: "Describe the agent you want and let AI create it — or set one up manually.",
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
@@ -812,6 +908,8 @@ export const en: Strings = {
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
@@ -852,6 +950,51 @@ export const en: Strings = {
     syncDone: (added: number, updated: number) =>
       `Presets synced: ${added} added, ${updated} updated`,
     syncUpToDate: "Presets are already up to date",
+    aiAddTitle: "Add a model group with AI",
+    aiAddIntro:
+      "Hand the agent a model listing page or a description of the service, and it adds the models as one group with penguin config commands. For an OpenAI-compatible endpoint that lists its own models, Add group → Import models is faster.",
+    aiAddPlaceholder:
+      "Paste the URL of a model listing page, or describe the service to connect (gateway URL, authentication, model ids)…",
+    aiAddExamples: [
+      {
+        key: "openrouter",
+        label: "OpenRouter's popular models",
+        description: "Reads the listing page, adds one group",
+        prompt:
+          "Add the popular models on https://openrouter.ai/models as an OpenRouter group (ask me for the API key first).",
+      },
+      {
+        key: "vllm",
+        label: "A self-hosted vLLM server",
+        description: "OpenAI-compatible endpoint plus a model id",
+        prompt:
+          "Connect my self-hosted vLLM server at http://10.0.0.5:8000/v1, model id qwen3-32b, as a vllm group.",
+      },
+      {
+        key: "ollama",
+        label: "Local Ollama",
+        description: "Adds the models already pulled locally",
+        prompt:
+          "Add the models already available on my local Ollama (http://localhost:11434) as an ollama group.",
+      },
+      {
+        key: "deepseek",
+        label: "DeepSeek's official model",
+        description: "Into the deepseek group, set as the default",
+        prompt:
+          "Add DeepSeek's official deepseek-v4-pro to the deepseek group and make it the default model.",
+      },
+    ],
+    aiAddTail: (projectId: string): string =>
+      [
+        "Use the penguin-config skill for the configuration above:",
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` configures a different one and nothing reaches this Project.",
+        `- Run \`penguin config model add --provider <group> --model-id <upstream id> --project-id ${projectId} --root <data root> [--base-url <endpoint>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\` once per model: \`--provider\` is mandatory, \`--model-id\` takes the gateway's own model id, and an OpenAI-compatible endpoint gets \`--client-type openai --base-url <endpoint>\`.`,
+        "- When the source is a web page, fetch it first: add the models I named, or the most popular ones when I named none, about 10 at most.",
+        "- When an API key is needed and I did not give one, ask me once; if I do not provide it, leave the key empty and tell me to fill it in on the Models page.",
+        "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
+        `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
+      ].join("\n"),
     platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
@@ -1161,6 +1304,41 @@ export const en: Strings = {
     keyHint: "Letters, digits and underscores; must not start with a digit",
     keyInvalid: "Invalid name: only letters, digits and underscores, not starting with a digit",
     valueRequired: "Value must not be empty",
+    aiAddTitle: "Add secrets with AI",
+    aiAddIntro:
+      "A secret value typed here is sent to the model provider, recorded in the conversation's Trace, and shown again in the command the agent runs. The safer way is to let AI create only the key names and tell you what each is for, then fill in the values in the vault by hand.",
+    aiAddPlaceholder: "Ask which API keys this agent needs, or name the keys to create…",
+    aiAddExamples: [
+      {
+        key: "audit",
+        label: "Find the keys this agent needs",
+        description: "Key names now, values filled in by hand",
+        prompt:
+          "Check which API keys this agent's installed skills need, create the key names now, and tell me what each one is for and where to apply for it — I will fill in the values in the vault myself.",
+      },
+      {
+        key: "rotate",
+        label: "Reset an expired token",
+        description: "Clears the value; you paste the new one",
+        prompt:
+          "GH_TOKEN has expired. Reset it to a placeholder value and tell me where to issue a new one — I will paste the new token in the vault myself.",
+      },
+      {
+        key: "endpoint",
+        label: "Connect an internal service",
+        description: "Address set now, token left for you",
+        prompt:
+          "This agent will call our internal Gitea at https://git.example.com. Set GITEA_BASE_URL to that address, create GITEA_TOKEN with a placeholder value, and tell me where to issue the token.",
+      },
+    ],
+    aiAddTail: (agentId: string, projectId: string): string =>
+      [
+        `Use the penguin-config skill to write the secrets above into the vault of agent ${agentId} (Project ${projectId}):`,
+        "- Every command below carries `--root <data root>`, the parent directory of the App Data Dir in your Environment section. Your command environment does not name that root, so a command without `--root` writes into a different one and this agent's vault stays empty.",
+        `- Run \`penguin config vault set --key <NAME> --value <value> --agent-id ${agentId} --project-id ${projectId} --root <data root>\` once per secret; when only the key name is wanted, store the placeholder value TODO and tell me what the key is for and where to apply for it.`,
+        "- Never repeat a value back in your reply, and never read .vault.toml.",
+        `- Finish with \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <data root>\` to list the key names.`,
+      ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "Enable vault",
@@ -1263,7 +1441,7 @@ export const en: Strings = {
       next: (when: string): string => `Next: ${when}`,
       today: (time: string): string => `today ${time}`,
       tomorrow: (time: string): string => `tomorrow ${time}`,
-      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      /** `monthDay` is formatMonthDay's output (9月3日 / Sep 3). */
       onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${monthDay}, ${year}, ${time}`,
@@ -2017,6 +2195,9 @@ Scenarios:
     contextBreakdownFailed: "Could not read the context composition",
     contextThresholdCutter: "Compaction threshold",
     contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
+    /** Tooltip of the hatched stretch of the bar past the cutter: room the model has, unusable before compaction fires. */
+    contextBeyondThreshold:
+      "Room past the compaction threshold: compaction fires first, so this part is not usable yet",
     contextThresholdTitle: "Change the compaction threshold",
     contextThresholdBody: (agentName: string, old: string): string =>
       `Change ${agentName}'s compaction threshold from ${old} to the value below? It takes effect immediately, including the running conversation.`,
@@ -2157,8 +2338,12 @@ Scenarios:
     folderGroups: {
       subagent: (n: number) => `Subagents (${n})`,
       schedule: (n: number) => `Scheduled (${n})`,
+      benchmark: (n: number) => `Evaluations (${n})`,
       archived: (n: number) => `Archived (${n})`,
     },
+    /** Tooltip of a folder-only group's header (nothing active of its own): what its folders hold, plus the Workspace path where the header has one. */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `Folded tasks only: ${n} conversation${n === 1 ? "" : "s"}${path ? ` (${path})` : ""}`,
     skillsBanner: (names: string[]): string =>
       `Using skill${names.length === 1 ? "" : "s"}: ${names.join(", ")}`,
     attachedFilesBanner: (names: string[]): string =>
@@ -2708,7 +2893,8 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    truncatedNote: (shown: number, total: number) => `Showing first ${shown} / ${total} messages`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",
@@ -2730,9 +2916,60 @@ Scenarios:
 
   benchmark: {
     title: "Evaluation Center",
-    selectBenchmark: "Select a Benchmark on the left",
-    emptyAgent: "No Benchmarks for this agent",
+    guideFlow: [
+      {
+        title: "Create",
+        text: "Press Create with AI at the top right to have AI write a set of cases for an agent and take its baseline score, or Create manually to write the cases yourself.",
+      },
+      {
+        title: "Evaluate",
+        text: "Pick a Benchmark, press Use → Evaluate, choose the agent under test and send the prefilled conversation to get one labelled score.",
+      },
+      {
+        title: "Optimize",
+        text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
+      },
+    ],
+    searchPlaceholder: "Search titles, descriptions or tested agents",
+    noMatches: "No Benchmark matches",
+    filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
+    clearFilter: "Show all",
+    emptyTitle: "No Benchmarks yet",
+    emptyDescription:
+      "Start by letting AI write cases for an agent and take a baseline. Score curves and per-case detail appear here afterwards, with optimization one click away.",
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
+    runsPerCase: (n: number): string => `${n} run${n === 1 ? "" : "s"} per case`,
+    notEvaluated: "Not evaluated yet",
+    /** A draft Benchmark: the agent is still writing its cases, so card and page are masked. */
+    building: "Being built",
+    buildingHint:
+      "The agent is still writing the cases and calibrating their difficulty; the Benchmark opens once that is done",
+    buildingDetail:
+      "Once it is built, the cases, the score chart and the evaluation table appear here.",
+    /** A Benchmark whose calibration never finished: unusable, so the card and page are masked. */
+    creationFailed: "Creation failed",
+    creationFailedHint:
+      "The cases' difficulty could not be calibrated; delete this Benchmark and create it again",
+    creationFailedDetail:
+      "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized; delete it and create it again.",
+    testedAgents: "Tested agents",
+    lastEvaluated: (when: string): string => `last evaluated ${when}`,
+    sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
+    latestScoreLabel: "Latest score",
+    firstEvaluation: "first evaluation",
+    use: "Use",
+    evaluate: "Evaluate",
+    optimize: "Optimize",
+    view: "View",
+    copyPath: "Copy directory path",
+    deleteBenchmark: "Delete Benchmark",
+    deleteConfirm: (title: string): string =>
+      `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
+    deleted: "Benchmark deleted",
+    backToList: "Back to list",
+    /** The Benchmark's own page when the id in the address resolves to nothing. */
+    notFound: "This Benchmark was not found",
+    notFoundHint: "It may have been deleted, or the link carries an id that no longer exists.",
     trendTitle: (metric: string): string => `${metric} over time`,
     cases: "Cases",
     viewCase: "View details",
@@ -2742,8 +2979,11 @@ Scenarios:
     caseFileUnavailable: "Case files are unavailable",
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
+    noEvaluationsHint:
+      "The score curve and evaluation detail appear here once a baseline is taken.",
     summaryLabel: "Summary",
-    legendUnlabeled: "unlabeled model",
+    unlabeled: "Unlabeled",
+    agentColumn: "Tested agent",
     colVersion: "Version",
     colModel: "Model ID",
     colThinkingLevel: "Thinking level",
@@ -2752,6 +2992,293 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    askAi: "Ask AI",
+    evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
+    askEvaluationTitle: "Ask AI about this evaluation",
+    askEvaluationDescription:
+      "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
+    askEvaluationDefault: "Explain this evaluation's result.",
+    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    askEvaluationExamples: {
+      explain: {
+        label: "Explain this evaluation's result",
+        prompt: "Explain this evaluation's result.",
+      },
+      whyLow: {
+        label: "Why is the score low?",
+        prompt:
+          "Why did this evaluation score so low? Use the per-case scores and the runs to say where the points were actually lost.",
+      },
+      weakest: {
+        label: "Which cases are weakest, and what should change?",
+        prompt:
+          "Which cases scored worst? For each, what caused it, and what single change to the tested agent has a chance of lifting it?",
+      },
+      againstPrevious: {
+        label: "What changed against the previous evaluation?",
+        prompt:
+          "Compared with this series' previous evaluation, which cases went up and which went down? What most likely caused those changes?",
+      },
+    },
+    askEvaluationTail: (p: {
+      benchmarkId: string;
+      time: string;
+      label: string;
+      version: number;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+      score: string;
+      cost: string;
+      duration: string;
+      summaryTitle: string;
+      summary: string;
+      cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
+    }): string =>
+      "Explain the result of the Benchmark evaluation below. Read and analyze only: change neither this Benchmark nor the tested agent.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`; the scoreboard is \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`)\n` +
+      `- Evaluated at: ${p.time}\n` +
+      `- Series label: ${p.label}\n` +
+      `- Tested version: v${p.version}\n` +
+      `- Evaluation runtime: provider \`${p.provider}\` / model_id \`${p.modelId}\` / thinking_level \`${p.thinkingLevel}\`\n` +
+      `- Total score ${p.score}; cost ${p.cost}; duration ${p.duration}\n` +
+      (p.summaryTitle !== "" ? `- Summary title: ${p.summaryTitle}\n` : "") +
+      (p.summary !== "" ? `- Summary: ${p.summary}\n` : "") +
+      "- Per-case scores (score, cost, duration, and the Session id of every run):\n" +
+      p.cases
+        .map(
+          (c) =>
+            `  - \`${c.id}\`: ${c.score}; ${c.cost}; ${c.duration}; Session ` +
+            (c.sessionIds.length > 0
+              ? c.sessionIds.map((id) => `\`${id}\``).join(", ")
+              : "not recorded"),
+        )
+        .join("\n") +
+      "\n\nRead this record in scoreboard.yaml, and the Traces of the Sessions listed above as far as you need them. Then say how these scores came about, " +
+      "which cases are weakest and exactly why, and what to do next (which part of the tested agent to change, or which evidence to gather first).",
+    askCaseTitle: "Ask AI about this case",
+    askCaseDescription:
+      "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
+    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
+    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    askCaseExamples: {
+      explain: {
+        label: "Explain what this case tests and what a strong answer looks like",
+        prompt: "Explain what this case tests and what a strong answer looks like.",
+      },
+      rubricRewards: {
+        label: "What does the rubric reward?",
+        prompt:
+          "Where does this case's rubric put its points? Which items do the most to separate excellent work from merely passing work?",
+      },
+      whyRunLow: {
+        label: "Why did a run score low here?",
+        prompt:
+          "The latest evaluation did not score well on this case. Which step is the tested agent most likely losing it at?",
+      },
+      clearerStatement: {
+        label: "How could the statement be clearer?",
+        prompt:
+          "Is anything in this statement ambiguous or easy to misread? The case is frozen and cannot be edited, so say how to write it more clearly in the next Benchmark instead.",
+      },
+    },
+    askCaseTail: (p: {
+      benchmarkId: string;
+      caseId: string;
+      latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
+    }): string =>
+      "Explain what the Benchmark case below tests and what a strong answer looks like. A case is frozen once it exists: read and analyze only, and do not change this Benchmark.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- case_id: \`${p.caseId}\`\n` +
+      `- Statement: \`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
+      `- Rubric: \`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      (p.latest === null
+        ? "- This Benchmark has no evaluations yet.\n"
+        : `- The latest evaluation (${p.latest.time}) averaged ${p.latest.score} on this case\n` +
+          p.latest.runs
+            .map((r, i) => `  - Run #${i + 1}: ${r.score}; Session \`${r.sessionId}\`\n`)
+            .join("")) +
+      "\nRead both READMEs above (and the Traces of the Sessions listed, if there are any). Then say what capability this case actually tests, " +
+      "what a strong answer looks like (the decisions and the artifact it takes), and which rubric items separate excellent work from merely passing work.",
+    aiCreateTitle: "Create a Benchmark with AI",
+    aiCreateDescription:
+      "Describe the capability and the scenarios to test. AI writes the cases for the Test Agent, trial-runs each one to calibrate difficulty, and takes a baseline score.",
+    targetAgent: "Test Agent",
+    targetAgentHint:
+      "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
+    aiCreateExamples: {
+      reportWriter: {
+        label: "Report writing: 3 cases with contradicting sources",
+        description:
+          "3 cases: conflicting material, unstated conventions, strict length and citations",
+        prompt: `Write a small, hard Benchmark for the report-writing agent — few cases, a low baseline.
+
+- benchmark_id: \`report-conflicting-sources\`
+- capability: still deliver a report with traceable conclusions and one consistent set of conventions when the sources contradict each other, key conventions are unstated, and length and citations are constrained
+- case count: 3
+- techniques: each case gives 2–3 sources that contradict one another, one of them newer but dated only in a footer; currency, time zone and counting conventions are deliberately left incomplete, and the right move is to name the gap, make a conservative assumption and mark it; a strict length cap and citation format, where overrunning or a missing citation costs points outright
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
+      },
+      customerService: {
+        label: "Support: 3 conversations with a hidden policy condition",
+        description:
+          "3 cases: incomplete users, policy conditions buried in an appendix, an over-promise trap",
+        prompt: `Write a small, hard multi-turn Benchmark for the customer-support agent — few cases, a low baseline.
+
+- benchmark_id: \`support-hidden-policy\`
+- capability: verify before answering, never over-promise, and stay consistent with the policy when the user's information is incomplete, the policy condition is buried deep in the material, and an emotional message invites a promise the agent cannot make
+- case count: 3
+- techniques: the policy's exceptions and effective dates appear only in an appendix; the user's description is vague and the key facts come out only when asked; in at least one case the most natural reply is exactly the forbidden promise; scoring looks at verification, over-promising, tone and accuracy
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
+      },
+      codeReview: {
+        label: "Code review: 3 cases whose defects hide in the contracts",
+        description:
+          "3 cases: unstated calling and concurrency assumptions, misleading comments and tests",
+        prompt: `Write a small, hard Benchmark for the code-review agent — few cases, a low baseline.
+
+- benchmark_id: \`review-hidden-contracts\`
+- capability: find every real defect without false positives, and say how to verify each, when the defects hide in calling conventions, concurrency assumptions and data shapes and the comments and tests mislead
+- case count: 3
+- techniques: each case is a small multi-file repository with 2–3 real defects that depend on an unstated call order, a time-zone or encoding assumption, or a concurrency precondition; add one or two stale comments and a test that passes without covering the defects; scoring looks at recall, false positives and whether reproducible verification steps are given
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
+      },
+      dataAnalysis: {
+        label: "Data analysis: 3 cases with a vague ask and a booby-trapped dataset",
+        description: "3 cases: dirty data, unstated conventions, assumptions to clarify first",
+        prompt: `Write a small, hard Benchmark for the data-analysis agent — few cases, a low baseline.
+
+- benchmark_id: \`analysis-ambiguous-asks\`
+- capability: clarify assumptions before analysing, then reach a correct conclusion with verifiable conventions, when the business question is vague and the data carries dirty values and unstated conventions
+- case count: 3
+- techniques: each case ships a CSV with duplicate rows, mixed units and missing values, and a data dictionary that explains only some of the fields; the business question has two reasonable readings, and the right move is to name the split and answer under each stated assumption; scoring looks at the conclusion, the stated conventions and whether the charts agree with the conclusion
+- desired_baseline_score: \`<50\`
+- pilot_iteration_limit: \`4\``,
+      },
+    },
+    aiCreateTail: (targetAgentId: string): string =>
+      "Use the `benchmark-design` Skill: as the Builder, design and calibrate a Benchmark for the Test Agent below without changing that agent itself.\n\n" +
+      `- test_agent_id: \`${targetAgentId}\`\n` +
+      "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
+      "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
+      "- pilot_iteration_limit: `3` (the draft above wins when it names one)\n\n" +
+      "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
+      "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
+      "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
+      "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
+      "Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
+      "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
+    manualCreateTitle: "Create a Benchmark manually",
+    manualCreateIntro:
+      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Project's benchmarks/. A Benchmark sits beside agents, so it can then evaluate any of them.",
+    idField: "Benchmark id",
+    idHint:
+      "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
+    idExists: "A Benchmark with this id already exists; pick another",
+    titleField: "Title",
+    descriptionField: "Description",
+    descriptionHint: "One line on what capability is tested and what makes the cases hard",
+    runsField: "Runs per case",
+    runsHint:
+      "An integer from 1 to 1000; optimization runs every case this many times and averages",
+    runsInfo:
+      "Repeated runs separate a stable capability gap from chance, at a cost that scales with the count. AI calibration always uses one run per case; this value is for the optimization that follows.",
+    casesTitle: "Cases",
+    casesInfo:
+      "Every case has two halves: the statement goes to the Test Agent; the rubric is seen only by the evaluator and never enters the Test Agent's Workspace.",
+    rubricInfo:
+      "A discriminating rubric has observable items totalling 100 points, and puts most of the points on decisions or artifacts where doing it right and merely looking right diverge — never a high floor for format compliance.",
+    caseHeading: (n: number): string => `Case ${n}`,
+    caseSlugField: "Directory suffix",
+    caseSlugHint: (id: string): string => `Directory ${id}: letters, digits, _ and - only`,
+    caseTitleField: "Case title",
+    caseStatementField: "Statement",
+    caseStatementHint:
+      "Markdown; state the objective, the given materials, the required artifact and its format — never hint at the solution or the scoring",
+    caseRubricField: "Scoring rubric",
+    caseRubricHint:
+      'Markdown; one item per line with its points, totalling 100, e.g. "- 40 pts: …"',
+    addCase: "Add case",
+    removeCase: "Remove this case",
+    createSubmit: "Create Benchmark",
+    created: "Benchmark created",
+    invalidId: "Letters, digits, _ and - only",
+    invalidRuns: "Must be an integer from 1 to 1000",
+    invalidScore: "Must be an integer from 1 to 100",
+    useTitle: (title: string): string => `Use: ${title}`,
+    testedAgent: "Tested agent",
+    evaluateDescription:
+      "AI puts the tested agent on this Benchmark for the full Case × runs matrix and appends the result to the scoreboard as one labelled evaluation.",
+    evaluateTestedAgentHint:
+      "Evaluated as its Agent State stands right now; the score is recorded under it, labelled with its version, model and thinking level",
+    evaluatorAgent: "Evaluator agent",
+    evaluatorAgentHint:
+      "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
+    evaluatorMissingSkill:
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+    evaluateSessionModel: "Model of the evaluation conversation",
+    evaluateSessionModelHint:
+      "The model that dispatches and totals the runs, the Project's default model unless changed; the tested agent uses the model it is configured with, which is not changed here",
+    evaluateRunsHint:
+      "How many times every case runs, averaged; defaults to the Benchmark's configured count",
+    evaluateNoteField: "Note",
+    evaluateNotePlaceholder:
+      "e.g. This round checks what the last optimization actually changed; watch the two citation cases",
+    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+      "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- runs: \`${p.runs}\`\n\n` +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned `agent-evaluation` subagent per matrix cell (omit `agent_id`); " +
+      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
+      "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
+      "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
+      "Finish by reporting the total score, the per-case scores and the label the evaluation was recorded under.",
+    optimizeDescription:
+      "AI changes the Test Agent under a falsifiable hypothesis and re-evaluates; a new version is kept only when the score strictly improves.",
+    optimizerAgent: "Optimizer agent",
+    optimizerAgentHint:
+      "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
+    optimizerMissingSkill:
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
+    testedAgentHint:
+      "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
+    sessionModel: "Model of the optimizer's conversation",
+    sessionModelHint:
+      "The model that analyzes and edits, the Project's default model unless changed; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
+    optimizeRunsHint: "How many times every case runs per candidate version, averaged",
+    roundLimitField: "Round limit",
+    roundLimitHint: "One change per round; a round counts once its evaluation is complete",
+    targetScoreField: "Target score",
+    targetScoreHint: "Reaching it ends the loop early; defaults to ten points above the baseline",
+    focusField: "Focus",
+    focusPlaceholder:
+      "e.g. Focus on citation rules and format compliance; leave the writing style alone",
+    noBaseline:
+      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it on the Evaluate tab first.",
+    baselineLine: (score: string, target: number): string =>
+      `Current baseline ${score} · target ${target}`,
+    optimizeTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      roundLimit: number;
+      targetScore: number;
+    }): string =>
+      "Use the `agent-optimization` Skill to improve the Test Agent against its frozen Benchmark.\n\n" +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- runs: \`${p.runs}\`\n` +
+      `- desired_score: \`>=${p.targetScore}\`\n` +
+      `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
+      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent` with `agent-evaluation`, " +
+      "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
+      "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
+      "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
   },
 
   errors: {

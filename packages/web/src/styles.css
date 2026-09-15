@@ -384,10 +384,11 @@
    in keyframes gets a no-op (ellipsis kept, `title` tooltip still there) instead of a
    clipped-but-motionless title.
 
-   Being an animation rather than a transition is what makes the reduced-motion path free: the
+   Being an animation rather than a transition is what keeps the reduced-motion path cheap: the
    global `animation: none !important` block below disables the reveal outright, leaving the
-   ellipsis and the `title` tooltip — no JS media query to subscribe to per row, nothing to go
-   stale between render and effect.
+   ellipsis and the `title` tooltip that truncated.tsx hands back there (#570). Choosing between
+   the two is the only thing JS reads the preference for, and it reads it from one app-wide media
+   query (use-reduced-motion.ts) — still nothing subscribed per row.
 
    :focus-visible (not :focus-within) scopes the keyboard trigger to actual keyboard focus;
    inside :is() its selector is forgiving, so engines without :has() keep the hover trigger. */
@@ -522,6 +523,28 @@
   /* Nor do the two busy session glyphs (#291): their keyframes only rotate and scale, so
      disabling them leaves the hourglass upright and the compress mark at full height — both
      still present, just not moving. */
+}
+
+/* The stretch of the context panel's bar past the compaction threshold: hatched, so it reads as
+   room the model has but compaction fires before the Session can use — distinct from the plain
+   free run left of the cutter. The stripe is the only carrier of that meaning (its `title` sits
+   inside the bar's aria-hidden track), so each theme weights its own ink to clear 3:1 against
+   the track it is drawn on: gray-200 in light, and in dark this app's own override of gray-800
+   (#1f1f1f, far darker than the stock value), which is why the dark stripe is the lighter ink
+   of the two. */
+.context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-600) 70%, transparent) 0 2px,
+    transparent 2px 6px
+  );
+}
+.dark .context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-400) 60%, transparent) 0 2px,
+    transparent 2px 6px
+  );
 }
 
 /* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */

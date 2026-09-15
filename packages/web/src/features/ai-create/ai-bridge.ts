@@ -13,6 +13,7 @@
  */
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
+import type { ModelRefDto } from "@prismshadow/penguin-server/api";
 import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
@@ -29,6 +30,10 @@ export interface AiChatRequest {
   workspace?: string;
   /** Skills to preselect in the composer; absent or empty clears a stale selection. */
   skills?: string[];
+  /** Pins the new conversation's model (a paired reference); absent, the draft keeps its cached carry-over. */
+  modelRef?: ModelRefDto;
+  /** Marks the new conversation as a Benchmark evaluation / optimization run; the sidebar files it under the Evaluations folder. */
+  source?: "benchmark";
 }
 
 /** What the draft page finds in `location.state` after openAiChat. */
@@ -39,9 +44,10 @@ export interface AiChatRouteState {
 
 /**
  * The draft cache entry for a request, merged over what the active slot holds so the model
- * carry-over survives. A leftover `/agent` handoff chip is dropped: it would forward the prompt
- * to a different agent than the one named here. The text is marked as composed rather than typed
- * (`aiPrefill`, see draft-cache.ts), which is what keeps it from outliving the draft it seeds.
+ * carry-over survives unless the request pins a model of its own. A leftover `/agent` handoff
+ * chip is dropped: it would forward the prompt to a different agent than the one named here. The
+ * text is marked as composed rather than typed (`aiPrefill`, see draft-cache.ts), which is what
+ * keeps it from outliving the draft it seeds.
  */
 export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCache {
   const draft: DraftCache = {
@@ -52,6 +58,11 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
     aiPrefill: true,
   };
   if (req.workspace !== undefined) draft.workspace = req.workspace;
+  if (req.modelRef !== undefined) draft.modelRef = req.modelRef;
+  // Carried only for the request that asks for it: a mark the slot still holds from an earlier
+  // composed prompt would otherwise follow an unrelated conversation into the Evaluations folder.
+  if (req.source !== undefined) draft.source = req.source;
+  else delete draft.source;
   delete draft.handoffAgentId;
   return draft;
 }

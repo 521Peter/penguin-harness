@@ -54,14 +54,16 @@ import {
   aggregateWorkspaceLatest,
   clampGroupPage,
   completeWorkspaceGroups,
+  foldedShare,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
-  hiddenRowCount,
+  isFolderOnly,
   matchesSessionQuery,
   partitionSessions,
+  revealPlan,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -122,6 +124,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
+import { UserAvatar } from "../ui/user-avatar";
 import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
@@ -266,6 +269,15 @@ const menuSectionClass =
  */
 const collapsedGroupsKey = (projectId: string) => `penguin.sidebarCollapsedGroups.${projectId}`;
 const pinnedGroupsKey = (projectId: string) => `penguin.sidebarPinnedGroups.${projectId}`;
+/**
+ * Opened folder-only groups, in a set of their own because the two say opposite things: a
+ * group that opens by default stores the keys the user CLOSED, while a folder-only group
+ * (collapsed by default — session-grouping.ts's isFolderOnly) stores the keys the user
+ * OPENED. A group that gains an active row stops being folder-only and is simply read out of
+ * the other set again, which is why neither set ever has to be rewritten.
+ */
+const expandedFolderOnlyGroupsKey = (projectId: string) =>
+  `penguin.sidebarExpandedFolderGroups.${projectId}`;
 /** Reads a persisted group-key set (no Project yet / corrupted storage degrade to empty). */
 function loadGroupSet(storageKey: string | null): ReadonlySet<string> {
   if (!storageKey) return new Set();
@@ -288,14 +300,39 @@ function saveGroupSet(storageKey: string | null, next: ReadonlySet<string>): voi
 }
 
 /**
- * Open-state key of a collapsed folder (subagent / scheduled / archived) inside a group:
- * each folder has its own state. "\0" never appears in Agent ids or Workspace paths, so
- * the composite never collides across groups or with plain group keys.
+ * Open-state key of a collapsed folder (subagent / scheduled / evaluations / archived) inside
+ * a group: each folder has its own state. "\0" never appears in Agent ids or Workspace paths,
+ * so the composite never collides across groups or with plain group keys.
  */
 const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0${groupKey}`;
 
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
+
+/**
+ * One group's active and folded shares — what decides whether it is folder-only, and the
+ * count its dimmed header then carries. The server's exact per-category totals are raised,
+ * category by category, by the rows already in memory: the counts are taken at fetch time, so
+ * a conversation created since exists only as a loaded row (the rule a workspace group's
+ * header count already applies to its active share).
+ */
+const groupShares = (
+  totals: SessionCategoryCounts | undefined,
+  rows: readonly SessionInfo[],
+): { active: number; folded: number } => {
+  const counts: SessionCategoryCounts = {
+    active: 0,
+    subagent: 0,
+    schedule: 0,
+    benchmark: 0,
+    archived: 0,
+  };
+  for (const s of rows) counts[sessionCategory(s)] += 1;
+  counts.active = Math.max(counts.active, totals?.active ?? 0);
+  for (const category of FOLDER_CATEGORIES)
+    counts[category] = Math.max(counts[category], totals?.[category] ?? 0);
+  return { active: counts.active, folded: foldedShare(counts) };
+};
 
 /** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
 const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
@@ -388,6 +425,8 @@ export function Sidebar({
   const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
+  const folderOnlyStoreKey =
+    currentProjectId === null ? null : expandedFolderOnlyGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
   const [navCollapsed, setNavCollapsed] = useState(initialNavGroupCollapsed);
   /** Grouping mode of the Session list (Workspace by default; the choice persists across sessions). */
@@ -399,6 +438,10 @@ export function Sidebar({
   /** Pinned groups (sorted before unpinned within their mode), keyed like collapsedGroups; persisted per Project. */
   const [pinnedGroups, setPinnedGroups] = useState<ReadonlySet<string>>(() =>
     loadGroupSet(pinStoreKey),
+  );
+  /** Folder-only groups the user has opened (they render collapsed by default), keyed like collapsedGroups but persisted in their own set — the two record opposite choices (see expandedFolderOnlyGroupsKey). */
+  const [expandedFolderOnlyGroups, setExpandedFolderOnlyGroups] = useState<ReadonlySet<string>>(
+    () => loadGroupSet(folderOnlyStoreKey),
   );
   /** Pinned conversations (bubbled to the top of their group's active list), Session ids; persisted per Project frontend-side (lib/pinned-sessions.ts). */
   const [pinnedSessions, setPinnedSessions] = useState<ReadonlySet<string>>(() =>
@@ -461,6 +504,7 @@ export function Sidebar({
   useEffect(() => {
     setCollapsedGroups(loadGroupSet(collapseStoreKey));
     setPinnedGroups(loadGroupSet(pinStoreKey));
+    setExpandedFolderOnlyGroups(loadGroupSet(folderOnlyStoreKey));
     setPinnedSessions(loadPinnedSessions(currentProjectId));
     setSessionOrder(loadSessionOrder(currentProjectId, groupMode));
     setGroupOrder(loadGroupOrder(currentProjectId, groupMode));
@@ -468,14 +512,17 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collapseStoreKey, pinStoreKey, currentProjectId]);
-  /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
+  }, [collapseStoreKey, pinStoreKey, folderOnlyStoreKey, currentProjectId]);
+  /** Expanded folders (subagent / scheduled / evaluations / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
   const [openFolders, setOpenFolders] = useState<ReadonlySet<string>>(new Set());
   /** "More" rows with a fetch in flight, keyed `${category}\0${groupKey}` — the row disables and reads "loading" so a page that lands entirely in other groups still visibly did something. */
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** The same display cap per folder (keyed by folderKey; absent = SIDEBAR_PAGE_SIZE), so an expanded folder reveals a page at a time instead of everything a fetch returned. */
+  const [folderCaps, setFolderCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
@@ -504,6 +551,7 @@ export function Sidebar({
     setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupPage(0);
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -545,10 +593,43 @@ export function Sidebar({
     [sessions, workspaceGroupCounts, workspaceGroupLatest, registeredWorkspaces],
   );
 
+  /**
+   * The folder-only groups of each mode: group key → the conversations folded inside it. A
+   * group with no active conversation of its own but rows inside its folders — the Workspace
+   * an evaluation creates per Case × Run, an Agent that has only ever been evaluated — folds
+   * up, sorts behind the other groups of its mode and wears a dimmed header carrying that
+   * count.
+   *
+   * Read off the group lists BEFORE they are ordered: the ordering consumes this, so it
+   * cannot be what feeds it. The search query is deliberately not part of it either — a query
+   * hides rows rather than emptying a group, and a list that folded and reshuffled itself as
+   * the user typed would be unreadable.
+   */
+  const folderOnlyAgents = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const agent of agents) {
+      const shares = groupShares(
+        countsByAgent.get(agent.agentId),
+        byAgent.get(agent.agentId) ?? [],
+      );
+      if (isFolderOnly(shares.active, shares.folded)) out.set(agent.agentId, shares.folded);
+    }
+    return out;
+  }, [agents, countsByAgent, byAgent]);
+  const folderOnlyWorkspaceGroups = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const group of workspaceGroups) {
+      const shares = groupShares(workspaceGroupCounts.get(group.key)?.totals, group.sessions);
+      if (isFolderOnly(shares.active, shares.folded)) out.set(group.key, shares.folded);
+    }
+    return out;
+  }, [workspaceGroups, workspaceGroupCounts]);
+
   // Pinned groups first within each mode, then the manual drag order within each pin
-  // partition. Nothing dragged yet = an empty order = the automatic sort untouched
-  // (recency for Workspace groups with the temp group last, the configured Agent order
-  // for Agents), which is also what a group with no stored place falls back to.
+  // partition, and the folder-only groups behind the rest of the unpinned cluster (a pinned
+  // one stays where it was pinned). Nothing dragged yet = an empty order = the automatic
+  // sort untouched (recency for Workspace groups with the temp group last, the configured
+  // Agent order for Agents), which is also what a group with no stored place falls back to.
   // The stored array belongs to the mode it was loaded for: handing an Agent list an
   // order of Workspace keys is a no-op only as long as the two key namespaces cannot
   // collide, and it costs the empty-order fast path on every render of the other mode.
@@ -557,16 +638,18 @@ export function Sidebar({
       orderGroups(agents, (a) => a.agentId, {
         pinned: pinnedGroups,
         order: groupMode === "agent" ? groupOrder : [],
+        demote: (a) => folderOnlyAgents.has(a.agentId),
       }),
-    [agents, pinnedGroups, groupOrder, groupMode],
+    [agents, pinnedGroups, groupOrder, groupMode, folderOnlyAgents],
   );
   const orderedWorkspaceGroups = useMemo(
     () =>
       orderGroups(workspaceGroups, (g) => g.key, {
         pinned: pinnedGroups,
         order: groupMode === "workspace" ? groupOrder : [],
+        demote: (g) => folderOnlyWorkspaceGroups.has(g.key),
       }),
-    [workspaceGroups, pinnedGroups, groupOrder, groupMode],
+    [workspaceGroups, pinnedGroups, groupOrder, groupMode, folderOnlyWorkspaceGroups],
   );
 
   // The FULL displayed group sequences a drop commits — every group of the mode, not the
@@ -585,18 +668,27 @@ export function Sidebar({
         ? TIME_FOLDERS_GROUP_KEY
         : workspaceGroupKey(s.workspace);
 
-  const toggleGroup = (key: string) => {
+  /**
+   * Collapse/expand a group. A folder-only group flips the OTHER set: it is collapsed by
+   * default, so what persists is the fact that the user opened it (expandedFolderOnlyGroupsKey).
+   */
+  const toggleGroup = (key: string, folderOnly = false) => {
     // Inert while searching: groups render force-opened then, so a click would change
     // nothing on screen while silently rewriting the persisted collapse state — the user
     // would find groups flipped once the query clears.
     if (searching) return;
     // Computed outside the state updater (theme.tsx convention): the persistence write is a
     // side effect, and updaters must stay pure (double-invoked in StrictMode).
-    const next = new Set(collapsedGroups);
+    const next = new Set(folderOnly ? expandedFolderOnlyGroups : collapsedGroups);
     if (next.has(key)) next.delete(key);
     else next.add(key);
-    setCollapsedGroups(next);
-    saveGroupSet(collapseStoreKey, next);
+    if (folderOnly) {
+      setExpandedFolderOnlyGroups(next);
+      saveGroupSet(folderOnlyStoreKey, next);
+    } else {
+      setCollapsedGroups(next);
+      saveGroupSet(collapseStoreKey, next);
+    }
   };
 
   /** Pin / unpin a group (same toggle-and-persist convention as toggleGroup). */
@@ -683,6 +775,7 @@ export function Sidebar({
     active: rows,
     subagent: [],
     schedule: [],
+    benchmark: [],
     archived: [],
   });
 
@@ -1261,9 +1354,9 @@ export function Sidebar({
             scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
-            // archived) are ordered chronologically inside their folder and never pass
-            // through orderSessionRows, so a pin there would write an id, light the
-            // glyph, move nothing — and then shift the active list's drag partition.
+            // evaluations / archived) are ordered chronologically inside their folder and
+            // never pass through orderSessionRows, so a pin there would write an id, light
+            // the glyph, move nothing — and then shift the active list's drag partition.
             canPin={activeList}
             // Last ACTIVITY, not creation: the server stamps lastActiveAt when a run
             // starts and again when it ends, so a running row shows its run-start time
@@ -1271,6 +1364,7 @@ export function Sidebar({
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
+            locale={locale}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}
@@ -1290,17 +1384,57 @@ export function Sidebar({
   );
 
   /**
-   * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
-   * fetched until the first expand, and once open the folder pages independently with
-   * its own "More" row. Everything is driven by the group's **own** exact server share
-   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
-   * mode): the folder exists only while its share is non-zero, the label shows that
-   * share, and "More" shows only while loaded rows fall short of it — an Agent's
-   * content in *other* Workspaces can never surface a folder here. The folder's "More"
-   * pages independently of the active list's; in workspace mode a fetched page can land
-   * rows in other groups' folders too, so one click may grow this folder by fewer than
-   * a full page — the row shows a loading state while the fetch runs and stays until
-   * this group's share is fully loaded.
+   * A folder's "Show N more chats": reveal one more page of the rows it already holds,
+   * and fetch its next server page only when the reveal actually runs past them and
+   * somewhere is left to fetch from. Mirrors the active list's showMore — a page already
+   * in memory spends no request, which in time mode is a fan-out across every
+   * contributing Agent.
+   */
+  const revealFolderMore = (
+    groupKey: string,
+    category: FolderCategory,
+    agentIds: string[],
+    loaded: number,
+  ) => {
+    const key = folderKey(groupKey, category);
+    const nextCap = (folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
+    setFolderCaps((prev) => {
+      const next = new Map(prev);
+      next.set(key, nextCap);
+      return next;
+    });
+    if (loaded < nextCap && agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)))) {
+      trackedLoadMore(groupKey, category, agentIds);
+    }
+  };
+
+  /** A folder's "show less": back to the first page (rows already fetched stay in memory). */
+  const collapseFolder = (key: string) => {
+    setFolderCaps((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  /**
+   * Collapsed-by-default lazy folder (subagent / scheduled / evaluations / archived): nothing is
+   * fetched until the first expand, and once open the folder reveals and pages
+   * independently with its own "More" and "show less" rows. Everything is driven by the
+   * group's **own** exact server share (`totals` — the Agent's counts in agent mode, the
+   * per-Workspace fold in workspace mode): the folder exists only while its share is
+   * non-zero, the label shows that share, and "More" shows only while something of that
+   * share is still hidden — an Agent's content in *other* Workspaces can never surface a
+   * folder here.
+   *
+   * The folder obeys the same display rule the active list does (revealPlan): one page
+   * of rows shows at a time and "More" reveals one page more, spending a fetch only when
+   * the reveal runs past what is in memory. In time mode the folders span every contributing
+   * Agent, so one fetch can return several pages at once; they stay in memory under the
+   * cap rather than all landing on screen. In workspace mode a fetched page can land rows
+   * in other groups' folders too, so one click may grow this folder by fewer than a full
+   * page — the row shows a loading state while the fetch runs.
    */
   const renderFolder = (
     groupKey: string,
@@ -1315,32 +1449,40 @@ export function Sidebar({
     // While searching the folder speaks for its loaded MATCHES only: a match hidden
     // behind a collapsed folder would look like a missing result (the models page's
     // search-forces-open rationale), so the folder is forced open, labelled by the
-    // match count, hidden when nothing matches, and never offers "More" (the server
-    // cannot search unloaded rows).
+    // match count, hidden when nothing matches, and never offers "More" or "show less"
+    // (the server cannot search unloaded rows, and every match is already on screen).
     if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
     const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
-    // More while the group's share isn't fully loaded AND somewhere is left to fetch from
-    // (counts drifting above reality would otherwise leave a dead button until reload).
-    const more =
-      !searching &&
-      rows.length < total &&
-      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const key = folderKey(groupKey, category);
+    const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
+    // The folder's whole share is in memory (every Agent that could hold a row of it is
+    // fetched out), which is when the loaded rows become the truth — the same clause the
+    // active list applies, and what keeps a count drifting above reality from leaving a
+    // reveal row with nothing behind it.
+    const fullyLoaded =
+      agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const plan = revealPlan({ cap, loaded: rows.length, total, fullyLoaded });
+    const shown = searching ? rows : rows.slice(0, plan.shown);
+    const hidden = searching ? 0 : plan.hidden;
     return (
       <FolderSection
         key={category}
         label={S.chat.folderGroups[category](total)}
-        open={searching || openFolders.has(folderKey(groupKey, category))}
+        open={searching || openFolders.has(key)}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
-        more={more}
-        // The folder shows every row it has loaded, so its remainder is its own share
-        // minus those — the same count the active list's reveal row names one level up.
-        moreLabel={S.chat.expandRestSessions(Math.max(total - rows.length, 0))}
+        more={hidden > 0}
+        // The rows past the cap plus the unfetched remainder of this folder's own share —
+        // the same count, and the same wording, the active list's reveal row names one
+        // level up.
+        moreLabel={S.chat.expandRestSessions(hidden)}
         pending={pendingLoads.has(loadKey(groupKey, category))}
-        onMore={() => trackedLoadMore(groupKey, category, agentIds)}
+        onMore={() => revealFolderMore(groupKey, category, agentIds, rows.length)}
+        less={!searching && plan.canCollapse}
+        onLess={() => collapseFolder(key)}
       >
-        {renderRows(rows, withAgentHint)}
+        {renderRows(shown, withAgentHint)}
       </FolderSection>
     );
   };
@@ -1375,9 +1517,9 @@ export function Sidebar({
   /**
    * Expanded group body shared by both modes: active user rows (display-capped; "More"
    * reveals and loads further **active-only** pages — the folders below never feed it) +
-   * the collapsed-by-default subagent / scheduled / archived folders, each loading on
-   * first expand and paging on its own. `totals` / `agentsFor` carry the group's exact
-   * server share and its fetch fan-out set per category.
+   * the collapsed-by-default subagent / scheduled / evaluations / archived folders, each
+   * loading on first expand and paging on its own. `totals` / `agentsFor` carry the group's
+   * exact server share and its fetch fan-out set per category.
    */
   const renderGroupBody = (
     groupKey: string,
@@ -1386,7 +1528,6 @@ export function Sidebar({
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
   ) => {
-    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1402,7 +1543,6 @@ export function Sidebar({
       order: sessionOrder,
       recencyOf: (s) => s.lastActiveAt,
     });
-    const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
     const dragCtx =
       effectiveSortMode === "manual" && !searching
@@ -1418,18 +1558,18 @@ export function Sidebar({
     const fullyLoaded =
       activeAgents.length > 0 &&
       !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
-    const hiddenActive = searching
-      ? 0
-      : hiddenRowCount({
-          shown: shownActive.length,
-          loaded: parts.active.length,
-          total: totals?.active ?? 0,
-          fullyLoaded,
-        });
-    // "Show less" appears once the group is revealed past its first page and there is
-    // something for it to hide again.
-    const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
+    // One page of rows at a time, what the reveal row still hides, and whether "Show less"
+    // has anything to fold away: the single rule revealPlan states, applied here and by
+    // every folder below.
+    const plan = revealPlan({
+      cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
+      loaded: parts.active.length,
+      total: totals?.active ?? 0,
+      fullyLoaded,
+    });
+    const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
+    const hiddenActive = searching ? 0 : plan.hidden;
+    const canCollapse = !searching && plan.canCollapse;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
@@ -1480,8 +1620,8 @@ export function Sidebar({
         )}
 
         {/* Folders (collapsed by default): subagent first — spawned from the conversations
-            at hand — then scheduled background runs, then archived (archived wins over the
-            origin folders). */}
+            at hand — then scheduled background runs, then the Evaluation Center's runs, then
+            archived (archived wins over the origin folders). */}
         {folders}
       </>
     );
@@ -1958,7 +2098,13 @@ export function Sidebar({
               const groupRows = filterRows(byAgent.get(agent.agentId) ?? []);
               if (searching && groupRows.length === 0) return null;
               const parts = partitionSessions(groupRows);
-              const collapsed = !searching && collapsedGroups.has(agent.agentId);
+              /** Conversations folded inside a folder-only group; undefined = an ordinary group, with active rows of its own. */
+              const foldedOnly = folderOnlyAgents.get(agent.agentId);
+              const collapsed =
+                !searching &&
+                (foldedOnly === undefined
+                  ? collapsedGroups.has(agent.agentId)
+                  : !expandedFolderOnlyGroups.has(agent.agentId));
               const pinned = pinnedGroups.has(agent.agentId);
               const drag = groupDragProps(agent.agentId, agentGroupSequence);
               return (
@@ -1967,7 +2113,7 @@ export function Sidebar({
                   <GroupHeader
                     {...drag.header}
                     open={!collapsed}
-                    onToggle={() => toggleGroup(agent.agentId)}
+                    onToggle={() => toggleGroup(agent.agentId, foldedOnly !== undefined)}
                     icon={
                       <AgentAvatar
                         id={agent.agentId}
@@ -1978,6 +2124,15 @@ export function Sidebar({
                     }
                     label={agentDisplayName(agent)}
                     uppercase
+                    {...(foldedOnly === undefined
+                      ? {}
+                      : {
+                          // An Agent header carries no count otherwise; a folder-only one says
+                          // what it holds, because everything it holds is behind its folders.
+                          count: foldedOnly,
+                          muted: true,
+                          title: S.chat.folderOnlyGroup(foldedOnly),
+                        })}
                     actions={
                       <>
                         <GroupPinButton pinned={pinned} onToggle={() => togglePin(agent.agentId)} />
@@ -2030,8 +2185,23 @@ export function Sidebar({
             const groupRows = filterRows(group.sessions);
             if (searching && groupRows.length === 0) return null;
             const parts = partitionSessions(groupRows);
-            const collapsed = !searching && collapsedGroups.has(group.key);
+            /** Conversations folded inside a folder-only group; undefined = an ordinary group, with active rows of its own. */
+            const foldedOnly = folderOnlyWorkspaceGroups.get(group.key);
+            const collapsed =
+              !searching &&
+              (foldedOnly === undefined
+                ? collapsedGroups.has(group.key)
+                : !expandedFolderOnlyGroups.has(group.key));
             const pinned = pinnedGroups.has(group.key);
+            /**
+             * Header tooltip: the full Workspace path, or — for a folder-only group — the
+             * sentence that says what the dimmed header and its count mean, which carries that
+             * same path inside it.
+             */
+            const headerTitle =
+              foldedOnly === undefined
+                ? group.fullPath
+                : S.chat.folderOnlyGroup(foldedOnly, group.fullPath ?? undefined);
             const drag = groupDragProps(group.key, workspaceGroupSequence);
             /** This group's exact server share (per-Workspace fold) and its per-category fetch fan-out. */
             const counts = workspaceGroupCounts.get(group.key);
@@ -2043,12 +2213,13 @@ export function Sidebar({
               <GroupBlock key={group.key} dropEdge={drag.dropEdge}>
                 {/* Group header: collapse toggle (folder icon + directory basename + count, full
                     path in the tooltip; the count = the group's active conversations only, exact
-                    server share, loaded rows win a disagreement — the folders never feed it) +
+                    server share, loaded rows win a disagreement — the folders never feed it,
+                    except in a folder-only group, where they are all there is to count) +
                     pin + new chat in this Workspace; also the group's drag handle. */}
                 <GroupHeader
                   {...drag.header}
                   open={!collapsed}
-                  onToggle={() => toggleGroup(group.key)}
+                  onToggle={() => toggleGroup(group.key, foldedOnly !== undefined)}
                   icon={
                     /* Folder opens and closes with the group */
                     <span className="shrink-0 text-gray-400 dark:text-gray-500">
@@ -2060,11 +2231,14 @@ export function Sidebar({
                   }
                   label={group.temp ? S.chat.tempWorkspaces : group.label}
                   count={
-                    searching
-                      ? parts.active.length
-                      : Math.max(counts?.totals.active ?? 0, parts.active.length)
+                    foldedOnly !== undefined
+                      ? foldedOnly
+                      : searching
+                        ? parts.active.length
+                        : Math.max(counts?.totals.active ?? 0, parts.active.length)
                   }
-                  {...(group.fullPath !== null ? { title: group.fullPath } : {})}
+                  muted={foldedOnly !== undefined}
+                  {...(headerTitle !== null ? { title: headerTitle } : {})}
                   actions={
                     <>
                       <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
@@ -2198,18 +2372,23 @@ export function Sidebar({
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
                     // tooltip + accessible name), in the update row's own wording.
                     title: badges.softwareNote,
-                    "aria-label": `${user?.userId ?? ""} · ${badges.softwareNote}`,
+                    "aria-label": `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
-              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
-                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+              <UserAvatar
+                userId={user?.userId ?? "?"}
+                {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
+                {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+              >
                 {/* Update reminder: the menu behind this trigger holds the row that acts on
                     it, and the trigger's tooltip/label above say what it is. */}
                 {badges.software !== null && <UpdateDot />}
+              </UserAvatar>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {user?.displayName ?? user?.userId}
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}
@@ -2521,6 +2700,7 @@ function SessionRow({
   pinned,
   canPin = false,
   lastActive,
+  locale,
   agentHint,
   draggable = false,
   dropEdge = null,
@@ -2550,6 +2730,8 @@ function SessionRow({
   canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
+  /** Interface language: decides the fixed width the time slot reserves (see the slot's comment). */
+  locale: "zh" | "en";
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
@@ -2654,9 +2836,11 @@ function SessionRow({
           )}
           {/* Truncated titles reveal their full text on row hover / keyboard focus by
               scrolling the tail into view (#309; scrollReveal, no-op when the title fits).
-              The conditional `title` stays as the pointer-hover fallback under
-              prefers-reduced-motion — not as a touch path: mobile browsers do not surface
-              `title` on long-press. Touch reaches the full text by opening the Session. */}
+              No `title` tooltip comes with it: it would sit over the very text scrolling
+              past underneath. Under prefers-reduced-motion the keyframes are disabled and
+              nothing scrolls, so the conditional `title` returns there as the pointer-hover
+              fallback — not as a touch path: mobile browsers do not surface `title` on
+              long-press. Touch reaches the full text by opening the Session. */}
           <Truncated
             scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
@@ -2697,9 +2881,9 @@ function SessionRow({
               the schedules panel says how often and what. A paused task, or one past its end
               time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
           {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
-          {/* Background work the conversation owns while sitting idle: parked, not running,
-              so it reads as an arrangement rather than as a turn in progress. The mark leaves
-              with the last task (live via session_background). */}
+          {/* Background work the conversation owns while sitting idle: still running, only
+              outside the turn, so it reads as live work rather than as a standing arrangement.
+              The mark leaves with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}
@@ -2719,12 +2903,24 @@ function SessionRow({
             NOT a whole-slot overlay: the slot's width rides the time string (2 分钟前 vs
             31 分钟前), and slot-centered glyphs landed at a different x per row, so the
             icons never formed a vertical column (the user saw them shift with the time's
-            character count). Right-anchored, every row's icons share one x. min-w-12
-            reserves the pair's own width, so on a row with no time they still don't
-            overhang the title. The swap stays a pure opacity handoff: the time hides on
-            row hover (group-hover) and while a button holds focus (peer-focus-within; the
-            group precedes the time span so the peer combinator can reach it). */}
-        <div className="relative flex h-6 min-w-12 shrink-0 items-center justify-end">
+            character count). Right-anchored, every row's icons share one x. The slot's
+            width is FIXED per language rather than riding the time string: the marks that
+            end the title button (glyph, background, schedule, approvals) sit against this
+            slot, so a slot that grew with 「31 分钟前」 and shrank with 「刚刚」 moved them
+            row by row. Sized for the widest string each language produces — 「12月31日」
+            and 「59 分钟前」 in zh, "Nov 30" in en — measured at the SMALLEST font tier,
+            which is the tight one: the slot is in rem and shrinks with the root font,
+            while the time inside it is a fixed 11px and does not. Never below the hover
+            pair's own width (two w-6 buttons), so on a row with no time the buttons
+            still don't overhang the title.
+            The swap stays a pure opacity handoff: the time hides on row hover
+            (group-hover) and while a button holds focus (peer-focus-within; the group
+            precedes the time span so the peer combinator can reach it). */}
+        <div
+          className={`relative flex h-6 shrink-0 items-center justify-end ${
+            locale === "zh" ? "w-[4.5rem]" : "w-14"
+          }`}
+        >
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
@@ -2738,7 +2934,7 @@ function SessionRow({
           {lastActive !== "" && (
             <span
               aria-hidden
-              className="pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
+              className="pointer-events-none whitespace-nowrap px-1 text-right text-[11px] tabular-nums text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
             >
               {lastActive}
             </span>

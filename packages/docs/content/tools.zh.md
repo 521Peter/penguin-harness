@@ -132,7 +132,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。`edit_file` 与 `write_file` 在服务端进程内按文件串行，以文件的真实路径为键——软链接与它指向的文件算同一个文件——因此对同一文件的并行编辑会被逐个应用，先前编辑已删去的 `old_string` 会匹配失败而不是覆盖它；其他进程的写入不在这把锁的覆盖范围内。
 
 `read_file` 也读图片。png/jpeg/gif/webp 文件（不超过 5MB，先按魔数、再按扩展名识别）或 `file_path` 里的 http(s) URL（URL 只作图片来源，优先看响应的 content-type）走读图分支，返回什么取决于 Session 模型的 vision 标记：接受图片的模型拿到图片本身作为图像内容（文本输出只有一行 `image/png, 123.4 kB`）；text-only 模型拿到的是 Project 配置的 `vision_model` 对 `prompt`（缺省为详细描述）的回答，以流式文本作为工具输出——图片不进入该 Session 的历史。未配置 `vision_model` 时，text-only Session 的读图以解释性错误失败，请用户到模型设置中选一个。见 [模型与 Provider](/models)。分支由 SDK 仅为 text-only Session 注入 Environment 的 `VisionDescriberService` 决定，因此同一条配置条目（不带 `forModel`）同时服务两类模型。
 
@@ -203,7 +203,7 @@ Web App 的智能体面板用**与主对话相同的 composer**（子会话变�
 
 ### 后台完成回报
 
-以 `run_in_background: true` 启动的任务，以及用户在 Web App 的工具调用行上转入后台的调用，都在结束时以**Harness 注入的 user message** 回报完成——模型无需轮询。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
+以 `run_in_background: true` 启动的任务，以及用户在 Web App 的工具调用行上转入后台的调用，都在结束时以**Harness 注入的 user message** 回报完成——模型无需轮询。被用户转入后台的调用，其工具结果里的说明会把这一点写明：让它自己跑，不要轮询、不要发输入，先去做别的事或结束本轮——用户把它转入后台正是为了不让模型跟进；完成时自会送回。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
 
 送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `input_command` 的 `kill` 终止的命令不发回报——该调用自身的结果已说明结局；被显式 `abort` 结束的子会话轮同样不发（打断者当场读到结局）。回报只覆盖**模型自己发起的轮**——`run_in_background` 的启动轮与 `input_subagent` 的续跑轮；用户从智能体面板发起的轮是用户与子会话自己的对话，不发回报（该轮答案文本留在模型面缓冲，下次轮询照常取得）。
 

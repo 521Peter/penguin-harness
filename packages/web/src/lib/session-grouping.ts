@@ -131,6 +131,40 @@ export function hiddenRowCount({
 }
 
 /**
+ * The display window of one sidebar list — a group's active rows, or one of its
+ * collapsed folders; both obey the same rule and both read it from here. The list shows
+ * `SIDEBAR_PAGE_SIZE` rows, every "more" click reveals one page more, and a "show less"
+ * stands beside the reveal row (not after it) from the moment the list is revealed past
+ * its first page, folding it back to exactly that page. Rows beyond the cap stay in
+ * memory — a fetch that returned far more than a page (a time-mode folder fans out over
+ * every contributing Agent) is revealed a page at a time instead of all at once.
+ *
+ * `cap` is the list's current display cap, `loaded` the rows in memory, `total` its
+ * exact server share and `fullyLoaded` whether every Agent that could hold one of its
+ * rows is fetched out (see hiddenRowCount for why that last one decides the count).
+ * "Show less" needs both a raised cap and more loaded rows than a page — otherwise there
+ * is nothing for it to fold away.
+ */
+export function revealPlan({
+  cap,
+  loaded,
+  total,
+  fullyLoaded,
+}: {
+  cap: number;
+  loaded: number;
+  total: number;
+  fullyLoaded: boolean;
+}): { shown: number; hidden: number; canCollapse: boolean } {
+  const shown = Math.min(Math.max(cap, 0), loaded);
+  return {
+    shown,
+    hidden: hiddenRowCount({ shown, loaded, total, fullyLoaded }),
+    canCollapse: cap > SIDEBAR_PAGE_SIZE && loaded > SIDEBAR_PAGE_SIZE,
+  };
+}
+
+/**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
  * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
  * the server has more.
@@ -151,7 +185,9 @@ export function splitPage<T>(fetched: T[], pageSize: number): { items: T[]; hasM
  */
 export function sessionCategory(s: SessionInfo): SessionCategory {
   if (s.archived) return "archived";
-  return s.source === "subagent" || s.source === "schedule" ? s.source : "active";
+  return s.source === "subagent" || s.source === "schedule" || s.source === "benchmark"
+    ? s.source
+    : "active";
 }
 
 /**
@@ -166,21 +202,54 @@ export function matchesSessionQuery(s: SessionInfo, query: string): boolean {
 }
 
 /** The collapsed-folder categories of a group, in render order (below the active user rows). */
-export const FOLDER_CATEGORIES = ["subagent", "schedule", "archived"] as const;
+export const FOLDER_CATEGORIES = ["subagent", "schedule", "benchmark", "archived"] as const;
 export type FolderCategory = (typeof FOLDER_CATEGORIES)[number];
 
 /**
- * Four-way split of one sidebar group's Sessions by sessionCategory (rendered top to
+ * Five-way split of one sidebar group's Sessions by sessionCategory (rendered top to
  * bottom in this order): active user rows in the group body, then the collapsed
- * Subagents / Scheduled / Archived folders.
+ * Subagents / Scheduled / Evaluations / Archived folders.
  */
 export type SessionPartition = Record<SessionCategory, SessionInfo[]>;
 
 /** Partitions a group's Sessions for rendering. Input order is preserved within each part. */
 export function partitionSessions(sessions: SessionInfo[]): SessionPartition {
-  const parts: SessionPartition = { active: [], subagent: [], schedule: [], archived: [] };
+  const parts: SessionPartition = {
+    active: [],
+    subagent: [],
+    schedule: [],
+    benchmark: [],
+    archived: [],
+  };
   for (const s of sessions) parts[sessionCategory(s)].push(s);
   return parts;
+}
+
+/**
+ * A group's FOLDED share: the conversations its collapsed folders hold (Subagents /
+ * Scheduled / Evaluations / Archived), summed from one set of category counts. Missing
+ * keys count as zero rather than poisoning the sum with NaN — the guard
+ * aggregateWorkspaceCounts applies to the same numbers.
+ */
+export function foldedShare(counts: SessionCategoryCounts): number {
+  let total = 0;
+  for (const category of FOLDER_CATEGORIES) {
+    const n = counts[category];
+    if (n > 0) total += n;
+  }
+  return total;
+}
+
+/**
+ * Whether a group holds nothing but folded conversations: no active row of its own, and at
+ * least one row inside its folders. That is the shape an evaluation leaves behind — one
+ * Workspace per Case × Run, each holding a single Test Session — and the shape of an Agent
+ * that has only ever been evaluated; the sidebar folds such a group up and sorts it behind
+ * the others. A group with both shares at zero (a registered but still unused Workspace) is
+ * NOT folder-only: it has nothing folded away to fold up.
+ */
+export function isFolderOnly(activeShare: number, folded: number): boolean {
+  return activeShare === 0 && folded > 0;
 }
 
 const ALL_CATEGORIES: readonly SessionCategory[] = ["active", ...FOLDER_CATEGORIES];
@@ -209,8 +278,8 @@ export function aggregateWorkspaceCounts(
       let group = out.get(key);
       if (!group) {
         group = {
-          totals: { active: 0, subagent: 0, schedule: 0, archived: 0 },
-          agents: { active: [], subagent: [], schedule: [], archived: [] },
+          totals: { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 },
+          agents: { active: [], subagent: [], schedule: [], benchmark: [], archived: [] },
         };
         out.set(key, group);
       }
@@ -231,7 +300,9 @@ export function aggregateWorkspaceCounts(
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
  * the collapsed rail's entry): the loaded row the user was last IN — not the one created
  * last, which on a revisited conversation is a different row. Archived rows are hidden by
- * choice and a subagent Session is a child of some other conversation, so neither is ever
+ * choice, a subagent Session is a child of some other conversation, and a benchmark Session is
+ * an evaluator's Test Session rather than a conversation of the user's (the evaluate / optimize
+ * conversation they just sent is already the one on screen), so none of the three is ever
  * auto-opened; schedule-created runs are the user's conversations and qualify. Newest by
  * lastActiveAt (stamped from `Date#toISOString`, so uniform ISO-8601 UTC like createdAt and
  * comparable as a string), ties broken by sessionId — the list's ordering convention. Input
@@ -393,10 +464,10 @@ const MONTH_MS = 30 * DAY_MS;
 export const timeGroupKey = (bucket: TimeBucket): string => `\0time-${bucket}`;
 
 /**
- * Group key the folders (Subagents / Scheduled / Archived) hang off in time mode. They are
- * NOT bucketed: their rows load only when a folder is first expanded, so an unloaded
- * Session's bucket is unknown and no bucket could honestly advertise a share of them. One
- * shared, Project-wide set below the buckets is what the sidebar renders instead.
+ * Group key the folders (Subagents / Scheduled / Evaluations / Archived) hang off in time
+ * mode. They are NOT bucketed: their rows load only when a folder is first expanded, so an
+ * unloaded Session's bucket is unknown and no bucket could honestly advertise a share of
+ * them. One shared, Project-wide set below the buckets is what the sidebar renders instead.
  */
 export const TIME_FOLDERS_GROUP_KEY = "\0time-folders";
 
@@ -451,7 +522,13 @@ export function groupSessionsByTime<T extends { lastActiveAt: string }>(
 export function totalCategoryCounts(
   byAgent: ReadonlyMap<string, SessionCategoryCounts>,
 ): SessionCategoryCounts {
-  const totals: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  const totals: SessionCategoryCounts = {
+    active: 0,
+    subagent: 0,
+    schedule: 0,
+    benchmark: 0,
+    archived: 0,
+  };
   for (const counts of byAgent.values()) {
     for (const category of ALL_CATEGORIES) {
       const n = counts[category];
