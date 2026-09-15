@@ -311,7 +311,7 @@ export interface Messages {
     newAgent: string;
     newAgentName: string;
     newAgentDescription: string;
-    /** --skills: the new Agent's library plugins, comma-separated (replaces the default pair). */
+    /** --skills: extra library plugins for the new Agent, comma-separated (added to the required pair). */
     skills: string;
     title: string;
     reportsTo: string;
@@ -1126,7 +1126,7 @@ const en: Messages = {
     newAgentName: "Display name of the new Agent",
     newAgentDescription: "Description of the new Agent",
     skills:
-      "Library plugins for the new Agent, comma-separated (replaces the default agent-company,agent-development)",
+      "Extra library plugins for the new Agent, comma-separated (added to agent-company,agent-development)",
     title: "Job title",
     reportsTo: "Agent id of the manager",
     employeeWorkspace:
@@ -1887,7 +1887,7 @@ const zh: Messages = {
     newAgent: "以此 id 新建 Agent 并招募（与 --agent-id 互斥）",
     newAgentName: "新 Agent 的显示名",
     newAgentDescription: "新 Agent 的描述",
-    skills: "新 Agent 的插件库插件，逗号分隔（替换缺省的 agent-company,agent-development）",
+    skills: "新 Agent 额外的插件库插件，逗号分隔（在 agent-company,agent-development 之上追加）",
     title: "头衔",
     reportsTo: "上级的 Agent id",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",

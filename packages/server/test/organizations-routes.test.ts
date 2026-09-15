@@ -188,9 +188,11 @@ describe("organization routes", () => {
       status: "paused",
     });
     expect(patch.status).toBe(200);
+    // The caller rides along: a settings write is the one repair for a config that stopped
+    // parsing, and the rewrite needs a `created_by` to put back into the file.
     expect(calls.at(-1)).toMatchObject({
       method: "patch",
-      args: [ownerProject, "acme", { status: "paused" }],
+      args: [ownerProject, "acme", { status: "paused" }, "olivia"],
     });
   });
 
@@ -278,7 +280,7 @@ describe("organization routes", () => {
     expect((await owner.patch(`${base}/acme`, { language: "en" })).status).toBe(200);
     expect(calls.at(-1)).toEqual({
       method: "patch",
-      args: [ownerProject, "acme", { language: "en" }],
+      args: [ownerProject, "acme", { language: "en" }, "olivia"],
     });
   });
 

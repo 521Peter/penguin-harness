@@ -262,19 +262,24 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
         ? null
         : optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
     const model = parseModel(body);
-    const settings = await deps.orgService.patch(projectId, orgId, {
-      ...(name !== undefined ? { name } : {}),
-      ...(mission !== undefined ? { mission } : {}),
-      ...(status !== undefined ? { status } : {}),
-      ...(approvalMode !== undefined ? { approvalMode } : {}),
-      ...(timezone !== undefined ? { timezone } : {}),
-      ...(language !== undefined ? { language } : {}),
-      ...(mentionChainLimit !== undefined ? { mentionChainLimit } : {}),
-      ...(budgetWarnRatio !== undefined ? { budgetWarnRatio } : {}),
-      ...(budgetPauseRatio !== undefined ? { budgetPauseRatio } : {}),
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(model !== undefined ? { model } : {}),
-    });
+    const settings = await deps.orgService.patch(
+      projectId,
+      orgId,
+      {
+        ...(name !== undefined ? { name } : {}),
+        ...(mission !== undefined ? { mission } : {}),
+        ...(status !== undefined ? { status } : {}),
+        ...(approvalMode !== undefined ? { approvalMode } : {}),
+        ...(timezone !== undefined ? { timezone } : {}),
+        ...(language !== undefined ? { language } : {}),
+        ...(mentionChainLimit !== undefined ? { mentionChainLimit } : {}),
+        ...(budgetWarnRatio !== undefined ? { budgetWarnRatio } : {}),
+        ...(budgetPauseRatio !== undefined ? { budgetPauseRatio } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(model !== undefined ? { model } : {}),
+      },
+      c.var.user.userId,
+    );
     return c.json(settings);
   });
 

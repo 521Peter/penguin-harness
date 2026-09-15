@@ -54,6 +54,20 @@ export interface OrgSessionCreator {
  */
 export const DEFAULT_EMPLOYEE_PLUGINS = ["agent-company", "agent-development"] as const;
 
+/**
+ * The plugins a hire is created with: the pair above, then whatever the caller asked for on
+ * top, in the order given and without repeats. The extra names add rather than replace —
+ * an employee hired without `agent-company` has no `company-employee` skill to follow, which
+ * is exactly what the brief written at hire time tells it to do, and the pass that keeps
+ * plugins current deliberately installs nothing an employee does not already carry, so
+ * nothing would ever repair it.
+ */
+export function employeePlugins(extra: readonly string[] | undefined): string[] {
+  const out: string[] = [...DEFAULT_EMPLOYEE_PLUGINS];
+  for (const name of extra ?? []) if (!out.includes(name)) out.push(name);
+  return out;
+}
+
 /** The Agent lifecycle pieces hiring, creation and keeping an employee's plugins current need. */
 export interface OrgAgentGateway {
   exists(projectId: string, agentId: string): Promise<boolean>;

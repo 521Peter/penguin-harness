@@ -458,6 +458,62 @@ describe("organization runtime", () => {
     });
   });
 
+  it("hires with the company plugins plus the extra ones asked for, in order and without repeats", async () => {
+    await createOrg();
+    await service.hire(P, ORG, {
+      newAgent: { agentId: HR, plugins: ["web-design", "agent-company"] },
+      title: "Designer",
+      reportsTo: CEO,
+    });
+    // The extras add to the pair rather than replace it: the brief written at hire time tells
+    // the newcomer to follow the company-employee skill, and the pass that keeps plugins
+    // current installs nothing an employee does not already carry — so an employee hired
+    // without agent-company is one nothing repairs.
+    expect(agentsCreated.find((a) => a.agentId === HR)?.plugins).toEqual([
+      "agent-company",
+      "agent-development",
+      "web-design",
+    ]);
+  });
+
+  describe("settings", () => {
+    it("refuses a value the config parser would reject, rather than writing one that stops the organization", async () => {
+      await createOrg();
+      for (const req of [
+        { mentionChainLimit: 101 },
+        { mentionChainLimit: -1 },
+        { mentionChainLimit: 1.5 },
+        { budgetWarnRatio: 0 },
+        { budgetPauseRatio: 11 },
+      ]) {
+        await expect(service.patch(P, ORG, req, "alice")).rejects.toMatchObject({ status: 400 });
+      }
+      // The bounds themselves still pass, and the file stays readable.
+      expect(
+        await service.patch(P, ORG, { mentionChainLimit: 100, budgetPauseRatio: 10 }, "alice"),
+      ).toMatchObject({ mentionChainLimit: 100, budgetPauseRatio: 10 });
+      expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
+    });
+
+    it("repairs a config that no longer parses, and leaves a readable one's creator alone", async () => {
+      await createOrg();
+      const configPath = path.join(orgDir(), "org_config.toml");
+      // Parsable TOML the config parser refuses: the organization loads with every field
+      // defaulted, `created_by` empty among them, and its automation is held.
+      await fs.writeFile(configPath, 'name = "Acme"\nmission = 7\n', "utf8");
+      expect((await service.detail(P, ORG, "alice")).invalid).toContain("org_config.toml");
+
+      const repaired = await service.patch(P, ORG, { mission: "Build it" }, "bob");
+      // Written back with an empty `created_by` the file would not parse either, and the
+      // settings page would report success over an organization that is still stopped.
+      expect(repaired.createdBy).toBe("bob");
+      expect((await service.detail(P, ORG, "alice")).invalid).toBeUndefined();
+
+      const later = await service.patch(P, ORG, { mission: "Build it twice" }, "carol");
+      expect(later.createdBy).toBe("bob");
+    });
+  });
+
   describe("employee workspaces", () => {
     it("gives a hire with no workspace its own sub-directory, and still takes an explicit `.`", async () => {
       await createOrg();
@@ -596,7 +652,7 @@ describe("organization runtime", () => {
     it("takes the request's language over the mission's, and PATCH changes it", async () => {
       await service.create(P, { orgId: ORG, mission: ZH_MISSION, language: "en" }, "alice");
       expect(await service.handbook(P, ORG)).toContain("## Working language");
-      const settings = await service.patch(P, ORG, { language: "zh" });
+      const settings = await service.patch(P, ORG, { language: "zh" }, "alice");
       expect(settings.language).toBe("zh");
       expect(await fs.readFile(path.join(orgDir(), "org_config.toml"), "utf8")).toContain(
         'language = "zh"',
@@ -1028,13 +1084,13 @@ describe("organization runtime", () => {
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("queued");
       busy.clear();
 
-      await service.patch(P, ORG, { status: "paused" });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
       nowMs = T0 + 2 * DAY + 1;
       await scheduler.tickOnce();
       expect(started).toHaveLength(1);
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("paused");
       expect((await service.calendar(P, ORG)).events[0]!.paused).toBe(true);
-      await service.patch(P, ORG, { status: "active" });
+      await service.patch(P, ORG, { status: "active" }, "alice");
 
       companyMode = false;
       nowMs = T0 + 3 * DAY + 1;
@@ -1218,12 +1274,12 @@ describe("organization runtime", () => {
       expect(started).toHaveLength(0);
 
       // A paused organization consumes the slot and keeps the queue for the sweep that fires.
-      await service.patch(P, ORG, { status: "paused" });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
       nowMs = T0 + DAY + 1000;
       await scheduler.tickOnce();
       expect(started).toHaveLength(0);
       expect((await service.calendar(P, ORG)).events[0]!.lastOutcome).toBe("paused");
-      await service.patch(P, ORG, { status: "active" });
+      await service.patch(P, ORG, { status: "active" }, "alice");
 
       nowMs = T0 + 2 * DAY + 1000;
       await scheduler.tickOnce();
@@ -1379,6 +1435,71 @@ describe("organization runtime", () => {
       expect((await service.ticket(P, ORG, t.ticketId)).cost).toBe(4);
       const finance = await service.finance(P, ORG);
       expect(finance.tickets.find((x) => x.ticketId === t.ticketId)?.cost).toBe(4);
+    });
+
+    it("attaches only a session of an employee, so nothing spends where no budget can see it", async () => {
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Fix the footer", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      const stranger = "session-2026-09-01-02-00-00-00000099";
+      const at = new Date(nowMs).toISOString();
+      sessions.insert({
+        sessionId: stranger,
+        projectId: P,
+        agentId: "outsider",
+        provider: "custom",
+        modelId: "m-bench",
+        workspace: root,
+        approvalMode: "allow-all",
+        title: null,
+        client: "web",
+        lastActiveAt: at,
+        createdAt: at,
+      });
+      // Spend is summed along the reporting line, so this session's cost would land on the
+      // ticket and in nobody's cumulative — past the CEO's cap and past warn and pause.
+      await expect(
+        service.attachTicket(P, ORG, t.ticketId, stranger, { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 400, code: "not_employee_session" });
+      expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([]);
+
+      const desk = await service.desk(P, ORG, HR, {});
+      await service.attachTicket(P, ORG, t.ticketId, desk.sessionId, { userId: "alice" });
+      expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([desk.sessionId]);
+    });
+
+    it("refuses a parent that already sits under the ticket", async () => {
+      const by = { userId: "alice" };
+      const a = await service.createTicket(P, ORG, { title: "Launch the site" }, by);
+      const b = await service.createTicket(
+        P,
+        ORG,
+        { title: "Write the copy", parent: a.ticketId },
+        by,
+      );
+      // The cost roll-up memoizes after its recursion, so a two-ticket loop is not broken by
+      // the cache: it recurses to the depth bound and both tickets report many times the
+      // pair's real spend.
+      await expect(
+        service.updateTicket(P, ORG, a.ticketId, { parent: b.ticketId }, by),
+      ).rejects.toMatchObject({ status: 400 });
+      expect((await service.ticket(P, ORG, a.ticketId)).parent).toBeUndefined();
+
+      // A grandchild is refused the same way; re-parenting sideways is not a cycle.
+      const c = await service.createTicket(
+        P,
+        ORG,
+        { title: "Shoot the photos", parent: b.ticketId },
+        by,
+      );
+      await expect(
+        service.updateTicket(P, ORG, a.ticketId, { parent: c.ticketId }, by),
+      ).rejects.toMatchObject({ status: 400 });
+      await service.updateTicket(P, ORG, c.ticketId, { parent: a.ticketId }, by);
+      expect((await service.ticket(P, ORG, c.ticketId)).parent).toBe(a.ticketId);
     });
 
     it("files a ticket for another principal, and refuses one nobody holds", async () => {
@@ -1597,7 +1718,11 @@ describe("organization runtime", () => {
         {},
       );
       expect(allHands.messages.map((m) => m.id)).toContain(m1.id);
-      expect(allHands.unread).toBeGreaterThanOrEqual(6);
+      // Everything alice did not write is unread; the three lines she posted are not.
+      expect(allHands.messages.some((m) => m.sender === "user:alice")).toBe(true);
+      expect(allHands.unread).toBe(
+        allHands.messages.filter((m) => m.sender !== "user:alice").length,
+      );
       await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, allHands.messages.at(-1)!.id);
       expect(
         (await service.channelMessages(P, ORG, { userId: "alice" }, DEFAULT_CHANNEL_ID, {})).unread,
@@ -1605,7 +1730,7 @@ describe("organization runtime", () => {
     });
 
     it("the system's own lines and a paused organization deliver nothing", async () => {
-      await service.patch(P, ORG, { status: "paused" });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
       await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
         text: `@${HR} hello?`,
       });
@@ -1887,6 +2012,63 @@ describe("organization runtime", () => {
       });
     });
 
+    it("never counts a person's own lines as unread", async () => {
+      const seen = await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {});
+      await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, seen.messages.at(-1)!.id);
+      // Posting does not move the read cursor — only the read route does — so alice's own
+      // line would otherwise come back as a badge of one against herself.
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "posted from the CLI",
+      });
+      const mine = await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {});
+      expect(mine.messages.at(-1)!.sender).toBe("user:alice");
+      expect(mine.unread).toBe(0);
+
+      // A colleague's line in the same place is unread, and names her.
+      await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "@user:alice have a look",
+        sessionId: ceoDesk,
+      });
+      expect(await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {})).toMatchObject({
+        unread: 1,
+        mentionsMe: 1,
+      });
+      const listed = new Map(
+        (await service.channels(P, ORG, alice)).channels.map((c) => [c.channelId, c]),
+      );
+      expect(listed.get(DEFAULT_CHANNEL_ID)).toMatchObject({ unread: 1, mentionsMe: 1 });
+    });
+
+    it("counts unread past the seven newest active days, stopping at the read cursor", async () => {
+      const read = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+        text: "day zero",
+        sessionId: ceoDesk,
+      });
+      await service.markRead(P, ORG, "alice", DEFAULT_CHANNEL_ID, read.id);
+      expect((await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {})).unread).toBe(0);
+
+      // Nine more active days, each its own message file. Only days with messages have a
+      // file, so a count that stopped after the seven newest would lose the two oldest —
+      // and an organization left running for weeks is where that is the normal case.
+      for (let day = 1; day <= 9; day++) {
+        nowMs = T0 + day * DAY;
+        await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
+          text: `@user:alice day ${day}`,
+          sessionId: ceoDesk,
+        });
+      }
+      expect(await service.channelMessages(P, ORG, alice, DEFAULT_CHANNEL_ID, {})).toMatchObject({
+        unread: 9,
+        mentionsMe: 9,
+      });
+      const listed = new Map(
+        (await service.channels(P, ORG, alice)).channels.map((c) => [c.channelId, c]),
+      );
+      expect(listed.get(DEFAULT_CHANNEL_ID)).toMatchObject({ unread: 9, mentionsMe: 9 });
+      // And the overview's "mentions waiting" is the same walk.
+      expect((await service.detail(P, ORG, "alice")).pending.mentions).toBe(9);
+    });
+
     it("ignores a stray entry under channels/ and reports a channel whose file does not parse", async () => {
       // A directory without a channel.toml, and a plain file, are not channels.
       await fs.writeFile(path.join(orgDir(), "channels", "notes.md"), "scratch\n", "utf8");
@@ -2003,6 +2185,38 @@ describe("organization runtime", () => {
       expect(parseOrgTriggerMessage(started[0]!.text)?.origin.budget).toBe(
         "11.00 / 100.00 USD (11%)",
       );
+    });
+
+    it("reports a ratio for a zero budget, so a paused row is never a meterless one", async () => {
+      await createOrg();
+      await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "HR",
+        reportsTo: CEO,
+        budget: 0,
+      });
+      const desk = await service.desk(P, ORG, HR, {});
+      costs.set(desk.sessionId, 3);
+      // Zero is a budget everything is already over, so the marks written against it and the
+      // meter the row carries have to agree: a `ratio` missing beside warned and paused is a
+      // paused employee the finance page cannot explain.
+      const at = new Date(nowMs).toISOString();
+      cache.markBudget(P, ORG, HR, "2026-09", { warnedAt: at, pausedAt: at });
+      expect((await service.finance(P, ORG)).employees.find((e) => e.agentId === HR)).toMatchObject(
+        { budget: 0, ratio: 1, warned: true, paused: true },
+      );
+
+      // The chart row reads the same convention, and a budget that is not zero is unchanged.
+      const chart = await service.chart(P, ORG);
+      expect(chart.employees.find((e) => e.agentId === HR)!.spend.ratio).toBe(1);
+      expect(chart.employees.find((e) => e.agentId === CEO)!.spend.ratio).toBe(0.03);
+
+      // So does the organization's own spend, measured against the CEO's budget.
+      await service.create(P, { orgId: "zero", mission: "Build it", ceoBudget: 0 }, "alice");
+      expect((await service.detail(P, "zero", "alice")).spend).toMatchObject({
+        budget: 0,
+        ratio: 1,
+      });
     });
   });
 
@@ -2165,7 +2379,7 @@ describe("organization runtime", () => {
     it("records a desk it cannot open and provisions the rest of the chart, paused or not", async () => {
       await createOrg();
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
-      await service.patch(P, ORG, { status: "paused" });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
 
       // Two employees with no desk: one whose Agent is gone (nothing can open it) and one
       // that is fine. A paused organization fires no run, but a desk is not a run.
@@ -2209,7 +2423,7 @@ describe("organization runtime", () => {
       await createOrg();
       const desk = await service.desk(P, ORG, CEO, {});
       // Pause is the whole lifecycle: the organization stays listed and its desk stays open.
-      await service.patch(P, ORG, { status: "paused" });
+      await service.patch(P, ORG, { status: "paused" }, "alice");
       expect((await service.list(P)).map((o) => o.status)).toEqual(["paused"]);
       expect((await service.desk(P, ORG, CEO, {})).sessionId).toBe(desk.sessionId);
       expect(await service.detail(P, ORG, "alice")).toMatchObject({

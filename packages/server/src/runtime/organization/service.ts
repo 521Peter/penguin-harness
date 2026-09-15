@@ -54,7 +54,9 @@ import { HttpError } from "../../http/errors.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
 import {
+  BUDGET_RATIO_MAX,
   DEFAULT_CEO_BUDGET,
+  MENTION_CHAIN_LIMIT_MAX,
   ORG_CONFIG_DEFAULTS,
   TICKET_ID_PATTERN,
   defaultTicketNotify,
@@ -94,9 +96,9 @@ import {
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
-import { budgetLine, computeSpend, pausedEmployees } from "./budget.js";
+import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
-import { DEFAULT_EMPLOYEE_PLUGINS } from "./deps.js";
+import { DEFAULT_EMPLOYEE_PLUGINS, employeePlugins } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
@@ -160,6 +162,27 @@ const notAMember = (channelId: string, principal: string, why?: string): HttpErr
 
 const allHandsImmutable = (message: string): HttpError =>
   new HttpError(400, "all_hands_immutable", message);
+
+/**
+ * The two numeric settings, held to the bounds the config parser enforces. The settings
+ * write path is the looser of the two, so a value it let through would be written and then
+ * refuse to parse on the next load — the organization is marked invalid and its automation
+ * stops. The bounds themselves live beside the parser; only the request wording is here.
+ */
+const requireChainLimit = (value: number): number => {
+  if (!Number.isInteger(value) || value < 0 || value > MENTION_CHAIN_LIMIT_MAX) {
+    throw badRequest(
+      `mentionChainLimit must be an integer between 0 and ${MENTION_CHAIN_LIMIT_MAX}.`,
+    );
+  }
+  return value;
+};
+
+const requireBudgetRatio = (key: string, value: number): number => {
+  if (!(value > 0) || value > BUDGET_RATIO_MAX)
+    throw badRequest(`${key} must be a number in (0, ${BUDGET_RATIO_MAX}].`);
+  return value;
+};
 
 export class OrganizationService {
   constructor(
@@ -341,8 +364,9 @@ export class OrganizationService {
       spend: {
         period: spend.period,
         cost,
-        ...(ceoBudget !== undefined ? { budget: ceoBudget } : {}),
-        ...(ceoBudget !== undefined && ceoBudget > 0 ? { ratio: cost / ceoBudget } : {}),
+        ...(ceoBudget !== undefined
+          ? { budget: ceoBudget, ratio: budgetRatio(cost, ceoBudget) }
+          : {}),
       },
       ...(org.invalid !== undefined ? { invalid: org.invalid } : {}),
     };
@@ -632,11 +656,17 @@ export class OrganizationService {
     projectId: string,
     orgId: string,
     req: OrganizationPatchRequest,
+    userId: string,
   ): Promise<OrganizationSettings> {
     return this.scheduler.withLock(projectId, orgId, async () => {
       const org = await this.requireOrg(projectId, orgId);
       // A broken config is rewritten whole from the request over the defaults loadOrg filled in.
       const next: OrgConfig = { ...org.config };
+      // `created_by` is the one default that does not parse: a config that failed to load
+      // carries it empty, and writing that back would leave the file just as unreadable, so
+      // the repair this route exists for would return 200 and change nothing. Whoever is
+      // fixing it becomes its creator; a config that loaded keeps the creator it names.
+      if (next.createdBy === "") next.createdBy = userId;
       if (req.name !== undefined) {
         if (req.name.trim() === "") throw badRequest("name must not be empty.");
         next.name = req.name.trim();
@@ -649,9 +679,12 @@ export class OrganizationService {
         next.timezone = req.timezone;
       }
       if (req.language !== undefined) next.language = req.language;
-      if (req.mentionChainLimit !== undefined) next.mentionChainLimit = req.mentionChainLimit;
-      if (req.budgetWarnRatio !== undefined) next.budgetWarnRatio = req.budgetWarnRatio;
-      if (req.budgetPauseRatio !== undefined) next.budgetPauseRatio = req.budgetPauseRatio;
+      if (req.mentionChainLimit !== undefined)
+        next.mentionChainLimit = requireChainLimit(req.mentionChainLimit);
+      if (req.budgetWarnRatio !== undefined)
+        next.budgetWarnRatio = requireBudgetRatio("budgetWarnRatio", req.budgetWarnRatio);
+      if (req.budgetPauseRatio !== undefined)
+        next.budgetPauseRatio = requireBudgetRatio("budgetPauseRatio", req.budgetPauseRatio);
       if (req.workspace === null) delete next.workspace;
       else if (req.workspace !== undefined)
         next.workspace = await this.requireWorkspaceDir(req.workspace);
@@ -728,7 +761,7 @@ export class OrganizationService {
         spend: {
           own,
           cumulative,
-          ...(e.budget !== undefined && e.budget > 0 ? { ratio: cumulative / e.budget } : {}),
+          ...(e.budget !== undefined ? { ratio: budgetRatio(cumulative, e.budget) } : {}),
         },
         ...(invalid !== undefined ? { invalid } : {}),
       });
@@ -820,7 +853,7 @@ export class OrganizationService {
           agentId,
           req.newAgent.name,
           req.newAgent.description,
-          req.newAgent.plugins ?? DEFAULT_EMPLOYEE_PLUGINS,
+          employeePlugins(req.newAgent.plugins),
         );
         await this.deps.agents.writeAgentsMd(
           projectId,
@@ -1269,6 +1302,28 @@ export class OrganizationService {
     return { ticketId, column: file.column, relPath: file.relPath, doc: file.parsed.value };
   }
 
+  /**
+   * Refuses a parent that already sits under the ticket. Nothing downstream survives a loop:
+   * the cost roll-up memoizes after its recursion rather than before, so a two-ticket cycle
+   * recurses to the depth bound and leaves both tickets reporting many times the pair's real
+   * spend. The walk is bounded by the ids it has already seen, so a cycle a hand edit put on
+   * disk cannot hang the request that would refuse to deepen it.
+   */
+  private async requireNoParentCycle(
+    org: LoadedOrg,
+    ticketId: string,
+    parent: string,
+  ): Promise<void> {
+    const seen = new Set<string>();
+    let cur: string | undefined = parent;
+    while (cur !== undefined && !seen.has(cur)) {
+      if (cur === ticketId) throw badRequest(`parent line of ${ticketId} forms a cycle`);
+      seen.add(cur);
+      const file = await this.deps.store.findTicket(org.dir, cur);
+      cur = file !== null && file.parsed.ok ? file.parsed.value.parent : undefined;
+    }
+  }
+
   private requirePerson(raw: string, label: string): string {
     const p = parsePrincipal(raw);
     if (p === null || (p.kind !== "agent" && p.kind !== "user")) {
@@ -1515,6 +1570,7 @@ export class OrganizationService {
         ) {
           throw badRequest(`Parent ticket does not exist: ${req.parent}`);
         }
+        await this.requireNoParentCycle(org, ticketId, req.parent);
         if (d.parent !== req.parent) changed.push("parent");
         d.parent = req.parent;
       }
@@ -1748,6 +1804,17 @@ export class OrganizationService {
       const row = this.deps.sessions.findById(sessionId);
       if (!row || row.projectId !== projectId)
         throw new HttpError(404, "session_not_found", `Session does not exist: ${sessionId}`);
+      // Spend is summed along the reporting line, so a session of an Agent nobody employs
+      // would land on the ticket's total and in no employee's cumulative — invisible to the
+      // CEO's cap and to the warn and pause that hang off it. Booking a session implicitly
+      // is employee-gated already; attaching one by hand is held to the same rule.
+      if (!org.byId.has(row.agentId)) {
+        throw new HttpError(
+          400,
+          "not_employee_session",
+          `${sessionId} belongs to ${row.agentId}, who is not an employee of ${org.orgId}.`,
+        );
+      }
       if (!t.doc.sessions.includes(sessionId)) {
         t.doc.sessions = [...t.doc.sessions, sessionId];
         this.recordHistory(t.doc, this.actorPrincipal(org, actor), "session_attached", sessionId);
@@ -1838,17 +1905,55 @@ export class OrganizationService {
     // Read cursors belong to people; an employee reads its channel through its trigger.
     if (userId === null) return { unread: 0, mentionsMe: 0, lastMessageAt };
     const lastReadId = this.deps.cache.readCursor(org.projectId, org.orgId, channelId, userId);
-    const me = userPrincipal(userId);
+    const counts = await this.countUnread(org, channelId, days, userPrincipal(userId), lastReadId);
+    return { ...counts, lastMessageAt };
+  }
+
+  /**
+   * What one person has not read in a channel, and how much of it names them. Two rules the
+   * loop is here to keep in one place:
+   *
+   * A person's own lines are never unread. Only `markRead` moves the cursor, so posting from
+   * the CLI — or from the Web App when the read that follows a post does not land — would
+   * otherwise leave a person with a badge counting what they just wrote.
+   *
+   * The walk stops at the read cursor, not at a fixed number of files. Days come newest
+   * first and only days with messages have one, so a count that stopped after seven of them
+   * silently truncated anyone who last read more than seven *active* days ago — the normal
+   * case for an organization left running for weeks. Ids sort in write order, so the first
+   * day holding anything at or before the cursor is the cursor's own day and every older day
+   * is read through. A person who has read nothing has no day to stop at: the whole channel
+   * is unread and the whole (finite) day list is walked, which is the same bound with the
+   * cursor at the beginning of time.
+   */
+  private async countUnread(
+    org: LoadedOrg,
+    channelId: string,
+    days: readonly string[],
+    me: string,
+    lastReadId: string | null,
+    loaded?: { date: string; messages: OrgChannelMessage[] },
+  ): Promise<{ unread: number; mentionsMe: number }> {
     let unread = 0;
     let mentionsMe = 0;
-    for (const d of days.slice(0, 7)) {
-      for (const m of (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages) {
-        if (lastReadId !== null && m.id <= lastReadId) continue;
+    for (const d of days) {
+      const list =
+        loaded !== undefined && loaded.date === d
+          ? loaded.messages
+          : (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
+      let reachedCursor = false;
+      for (const m of list) {
+        if (lastReadId !== null && m.id <= lastReadId) {
+          reachedCursor = true;
+          continue;
+        }
+        if (m.sender === me) continue;
         unread++;
         if (m.mentions.includes(me)) mentionsMe++;
       }
+      if (reachedCursor) break;
     }
-    return { unread, mentionsMe, lastMessageAt };
+    return { unread, mentionsMe };
   }
 
   private async channelItem(
@@ -2164,21 +2269,10 @@ export class OrganizationService {
         ? null
         : this.deps.cache.readCursor(projectId, orgId, channelId, caller.userId);
     const me = caller.userId === null ? null : userPrincipal(caller.userId);
-    let unread = 0;
-    let mentionsMe = 0;
-    if (me !== null) {
-      for (const d of days.slice(0, 7)) {
-        const list =
-          d === date
-            ? messages
-            : (await this.deps.store.readMessageDay(org.dir, channelId, d)).messages;
-        for (const m of list) {
-          if (lastReadId !== null && m.id <= lastReadId) continue;
-          unread++;
-          if (m.mentions.includes(me)) mentionsMe++;
-        }
-      }
-    }
+    const { unread, mentionsMe } =
+      me === null
+        ? { unread: 0, mentionsMe: 0 }
+        : await this.countUnread(org, channelId, days, me, lastReadId, { date, messages });
     return {
       channelId,
       date,
@@ -2306,8 +2400,9 @@ export class OrganizationService {
         reportsTo: e.reportsTo,
         own: spend.own.get(e.agentId) ?? 0,
         cumulative,
-        ...(e.budget !== undefined ? { budget: e.budget } : {}),
-        ...(e.budget !== undefined && e.budget > 0 ? { ratio: cumulative / e.budget } : {}),
+        ...(e.budget !== undefined
+          ? { budget: e.budget, ratio: budgetRatio(cumulative, e.budget) }
+          : {}),
         warned: mark?.warnedAt !== undefined && mark.warnedAt !== null,
         paused: mark?.pausedAt !== undefined && mark.pausedAt !== null,
       });
