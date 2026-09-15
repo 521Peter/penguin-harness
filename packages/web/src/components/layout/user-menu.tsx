@@ -20,6 +20,7 @@ import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
 import { ICON_GAP } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
+import { ConfirmModal } from "../ui/confirm-modal";
 import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { UserAvatar } from "../ui/user-avatar";
 import type { DropdownPortal } from "../ui/dropdown";
@@ -52,6 +53,7 @@ export function UserMenu({
   const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   return (
     <>
@@ -123,7 +125,7 @@ export function UserMenu({
               className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
               onClick={() => {
                 setOpen(false);
-                void logout().then(() => navigate("/login"));
+                setConfirmingLogout(true);
               }}
             >
               {S.auth.logout}
@@ -132,6 +134,21 @@ export function UserMenu({
         </div>
       </Dropdown>
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {/* Signing out is confirmed first: the row sits in a menu of harmless entries, and a
+          slip would end the session and land on the login page. Mounted beside the settings
+          dialog, outside the dropdown, so it outlives the menu that opened it. */}
+      <ConfirmModal
+        open={confirmingLogout}
+        title={S.auth.logoutConfirmTitle}
+        confirmLabel={S.auth.logout}
+        onClose={() => setConfirmingLogout(false)}
+        onConfirm={() => {
+          setConfirmingLogout(false);
+          void logout().then(() => navigate("/login"));
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">{S.auth.logoutConfirmBody}</p>
+      </ConfirmModal>
     </>
   );
 }
