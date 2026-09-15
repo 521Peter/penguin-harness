@@ -28,6 +28,7 @@
  * environment), so the file records the employee rather than the token's user — see
  * {@link callerSessionId} for why only the control environment may make that claim.
  */
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
@@ -42,7 +43,9 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
-import type { AppDeps } from "../../app.js";
+import type { Organizations } from "../../mechanisms/organizations.js";
+import type { Access } from "../../mechanisms/projects.js";
+import type { Settings } from "../../mechanisms/settings.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
@@ -165,7 +168,13 @@ function requireChannelParam(c: Context<AppEnv>): string {
   return raw;
 }
 
-export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
+export interface OrganizationRouteDeps {
+  orgService: Organizations;
+  serverSettingsRepo: Settings;
+  access: Access;
+}
+
+export function organizationRoutes(deps: OrganizationRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {
@@ -176,7 +185,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   const member = (c: { var: { user: { userId: string } } }, projectId: string): void => {
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
   };
 
   // ---- organizations ----
@@ -924,4 +933,30 @@ function parseModel(
     provider: requireString(m, "provider", { minLen: 1, maxLen: 64, label: "model.provider" }),
     modelId: requireString(m, "modelId", { minLen: 1, maxLen: 200, label: "model.modelId" }),
   };
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "OrganizationRoutes.routes",
+        prefix: "/api/projects/:projectId/organizations",
+        auth: "user",
+        order: 145,
+      },
+    ],
+  },
+})
+export class OrganizationRoutes {
+  @Use() private readonly organizations!: Organizations;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly access!: Access;
+  @Bind("OrganizationRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = organizationRoutes({
+      orgService: this.organizations,
+      serverSettingsRepo: this.settings,
+      access: this.access,
+    });
+  }
 }

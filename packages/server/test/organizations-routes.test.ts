@@ -95,12 +95,11 @@ describe("organization routes", () => {
   let ownerProject: string;
 
   beforeEach(async () => {
-    t = await createTestApp();
+    calls = [];
+    t = await createTestApp({ organizations: fakeService(calls) });
     // Company mode is off on a server nobody turned it on (its own test below): every case
     // here is about what the routes do once an admin has enabled it.
     t.deps.serverSettingsRepo.setCompanyMode(true);
-    calls = [];
-    t.deps.orgService = fakeService(calls);
     const u = await provisionUser(t.app, "olivia");
     owner = apiClient(t.app, u.cookie);
     ownerProject = "olivia-default_project";

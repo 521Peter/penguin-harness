@@ -17,6 +17,8 @@ import type {
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import { Component } from "@prismshadow/penguin-core/kernel";
+import type { WorkspaceFiles } from "../mechanisms/workspace.js";
 
 /** Per-file read cap (a safety limit since preview/download reads the whole file into memory). */
 const MAX_READ_BYTES = 50 * 1024 * 1024;
@@ -124,7 +126,8 @@ export interface WorkspaceFileStat {
   mtimeMs: number;
 }
 
-export class WorkspaceFilesService {
+@Component()
+export class WorkspaceFilesService implements WorkspaceFiles {
   /** Canonical path (realpath) of the Workspace root; 404 if it doesn't exist. */
   private async realBase(workspace: string): Promise<string> {
     try {

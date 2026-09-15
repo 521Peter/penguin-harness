@@ -24,7 +24,13 @@ import type {
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { optionalBoolean, readJson } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ProxyControl } from "../../hmr/capabilities.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AdminSettingsRouteDeps {
+  proxyControl: ProxyControl;
+  serverSettingsRepo: Settings;
+}
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
 import {
@@ -32,6 +38,7 @@ import {
   probeProxyReachabilityOf,
   proxyProbeTarget,
 } from "../../services/proxy-probe.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -69,7 +76,7 @@ function parseAttachmentMb(value: unknown, field: string): number {
   );
 }
 
-export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {

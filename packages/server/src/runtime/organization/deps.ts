@@ -1,20 +1,16 @@
 /**
  * What the organization runtime needs from the rest of the server, as narrow interfaces:
  * the session manager (run state and task start), session creation, the Agent lifecycle,
- * usage pricing, the file store and the caches. app.ts binds the real services; tests bind
- * doubles — the same shape the schedule scheduler uses.
+ * usage pricing, the file store and the caches. OrganizationModule (./module.ts) binds the
+ * real services; tests bind doubles.
  */
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { ApprovalMode, ServerEvent, SessionStatus } from "../../api/types.js";
-import type { OrgCacheRepo } from "../../db/repos/organizations.js";
-import type { MembersRepo } from "../../db/repos/members.js";
-import type { ProjectsRepo } from "../../db/repos/projects.js";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
+import type { Members, ProjectConfigStore, Projects } from "../../mechanisms/projects.js";
+import type { OrgCache } from "../../mechanisms/organizations.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { OrgStore } from "../../organization/store.js";
-import type {
-  ProjectConfigService,
-  UtilityCompletion,
-} from "../../services/project-config-service.js";
+import type { UtilityCompletion } from "../../services/project-config-service.js";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */
@@ -116,14 +112,14 @@ export interface OrgUsageGateway {
 export interface OrgDeps {
   root: string;
   store: OrgStore;
-  cache: OrgCacheRepo;
-  projects: ProjectsRepo;
-  members: MembersRepo;
-  sessions: SessionsRepo;
+  cache: OrgCache;
+  projects: Projects;
+  members: Members;
+  sessions: SessionIndex;
   runner: OrgTaskRunner;
   sessionCreator: OrgSessionCreator;
   agents: OrgAgentGateway;
-  projectConfig: ProjectConfigService;
+  projectConfig: ProjectConfigStore;
   /**
    * One short completion on the Project's default model, for the utility asks that are not a
    * Session's work — today the semantic id a display name is translated into. A failure comes
@@ -134,7 +130,7 @@ export interface OrgDeps {
   completeOnce?: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
   usage: OrgUsageGateway;
   errors: ErrorSink;
-  /** Company-mode notifications go to the Project's owner and members (app.ts binds the user channels). */
+  /** Company-mode notifications go to the Project's owner and members (the module binds the user channels). */
   notifyProject: (projectId: string, event: ServerEvent) => void;
   /** The admin master switch, read per pass so a change applies without a restart. */
   companyModeEnabled: () => boolean;
