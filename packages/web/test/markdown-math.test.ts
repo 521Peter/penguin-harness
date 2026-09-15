@@ -330,7 +330,7 @@ describe("the pipeline every renderer shares", () => {
   const RENDERERS = [
     "../src/features/chat/md.tsx",
     "../src/features/chat/workspace-browser.tsx",
-    "../src/features/benchmark/benchmark-case-browser.tsx",
+    "../src/components/ui/file-browser.tsx",
     "../src/features/traces/trace-event-row.tsx",
   ];
 
@@ -355,7 +355,7 @@ describe("the pipeline every renderer shares", () => {
       }
       expect(source, relative).toContain('from "../../lib/markdown-plugins"');
     }
-    expect(total).toBe(5); // md.tsx, workspace, benchmark, and two in trace-event-row
+    expect(total).toBe(5); // md.tsx, workspace, the shared file browser, and two in trace-event-row
   });
 
   it("no renderer assembles its own pipeline out of the underlying plugins", () => {

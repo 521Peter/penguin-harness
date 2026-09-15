@@ -292,6 +292,7 @@ export function GroupHeader({
   icon,
   label,
   uppercase = false,
+  muted = false,
   count,
   title,
   actions,
@@ -309,6 +310,8 @@ export function GroupHeader({
   label: string;
   /** Agent names render uppercase-tracked (sidebar convention); a directory basename's casing is meaningful, so workspace groups don't. */
   uppercase?: boolean;
+  /** Dim the label one step (folder-only groups: nothing active of their own); the count keeps its own class. */
+  muted?: boolean;
   /** Optional trailing count (workspace groups: the group's active total). */
   count?: number;
   /** Optional tooltip (workspace groups: the full path). */
@@ -347,7 +350,7 @@ export function GroupHeader({
         <span
           className={`min-w-0 truncate text-xs font-semibold ${
             uppercase ? "uppercase tracking-wide " : ""
-          }text-gray-500 dark:text-gray-400`}
+          }${muted ? "text-gray-400 dark:text-gray-500" : "text-gray-500 dark:text-gray-400"}`}
         >
           {label}
         </span>

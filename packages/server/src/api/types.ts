@@ -41,8 +41,8 @@ export type ApprovalMode = "allow-all" | "deny-all" | "read-only" | "always-ask"
 /** Session run status: idle / Task in progress / compacting. */
 export type SessionStatus = "idle" | "running" | "compacting";
 
-/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session. */
-export type SessionSource = "schedule" | "subagent";
+/** Session source marker (default = user-created): triggered by Schedule / registered as a subagent session / created by a Benchmark evaluation or optimization. */
+export type SessionSource = "schedule" | "subagent" | "benchmark";
 
 // ---------------------------------------------------------------------------
 // Authentication and users
@@ -1357,7 +1357,7 @@ export interface SessionBackgroundTasks {
 }
 
 /**
- * Session list category, the sidebar's four-way split applied server-side: archived wins
+ * Session list category, the sidebar's five-way split applied server-side: archived wins
  * regardless of origin (archiving is an explicit user action), then the origin's bucket,
  * and a Session with no (or an unknown) source is `active` — user-created rows.
  */
@@ -1433,6 +1433,13 @@ export interface SessionCreateRequest {
    * serve every row regardless of client.
    */
   client?: "web" | "cli";
+  /**
+   * Marks the Session as created by a Benchmark evaluation or optimization (the Evaluation
+   * Center's Use flows, and the Test Sessions agent-evaluation launches through the CLI). Only
+   * this value is accepted from a client: `subagent` and `schedule` are written by the server
+   * itself. The Web App files such Sessions into the Evaluations folder of the session list.
+   */
+  source?: "benchmark";
 }
 
 export interface SessionCreateResponse {
@@ -3215,7 +3222,7 @@ export interface AgentImportResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Benchmark scoring (read-only display)
+// Benchmark scoring (display), manual creation and deletion
 // ---------------------------------------------------------------------------
 
 /** Raw result of a single run (a scoreboard per-case runs[] entry). */
@@ -3243,6 +3250,11 @@ export interface BenchmarkCaseScore {
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
+  /**
+   * Agent under test in this round (the `agent_id` field), part of the record's label; `null`
+   * when the record carries none, as a Benchmark evaluates whichever Agents it is pointed at.
+   */
+  agentId: string | null;
   /** Evaluation summary title (a one-line conclusion; shown separately from the body summary; required when generating, tolerated as unset when displaying). */
   summaryTitle?: string;
   /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
@@ -3264,6 +3276,12 @@ export interface BenchmarkEvaluation {
   cases: BenchmarkCaseScore[];
 }
 
+/**
+ * Whether the Skill that builds a Benchmark is done with it, and how it ended; see
+ * `BenchmarkSummary.status`.
+ */
+export type BenchmarkStatus = "draft" | "published" | "failed";
+
 export interface BenchmarkSummary {
   /** Directory name is the identifier (semantic naming, e.g. swe-bench-v1). */
   id: string;
@@ -3272,10 +3290,26 @@ export interface BenchmarkSummary {
   description?: string;
   /** Number of runs per case (the `runs` field in benchmark_config.toml, ≥1; defaults to 1). */
   runs?: number;
+  /**
+   * `draft` while the Skill that builds the Benchmark is still writing its cases and
+   * calibrating their difficulty — the Web App masks such a Benchmark; `published` once the
+   * Benchmark is frozen and its Formal Baseline recorded; `failed` when calibration ended
+   * without a Pilot result that could be frozen, which leaves the Benchmark unusable — the Web
+   * App masks it too and says it has to be deleted and created again. benchmark_config.toml is
+   * read literally: only `draft` is a draft and only `failed` is a failure, so a missing field,
+   * or any other value, reads as published.
+   */
+  status: BenchmarkStatus;
   /** Case count (number of case subfolders). */
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
   evaluations: BenchmarkEvaluation[];
+  /**
+   * Agents this Benchmark has evaluated: the distinct non-null `agentId`s of `evaluations`, in
+   * first-seen order. Empty while nothing has been evaluated — a Benchmark names no Agent of its
+   * own.
+   */
+  agentIds: string[];
 }
 
 export interface BenchmarksResponse {
@@ -3293,6 +3327,39 @@ export interface BenchmarkCaseSummary {
 
 export interface BenchmarkCasesResponse {
   cases: BenchmarkCaseSummary[];
+}
+
+/**
+ * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
+ * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
+ * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
+ * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
+ * already there; nothing is merged into an existing Benchmark.
+ */
+export interface BenchmarkCreateRequest {
+  /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
+  id: string;
+  title: string;
+  description?: string;
+  /** Runs per case for the optimization loop (integer ≥ 1; default 1). */
+  runs?: number;
+  /** At least one case; ids must be unique within the request. */
+  cases: BenchmarkCreateCase[];
+}
+
+export interface BenchmarkCreateCase {
+  /** Case directory name: `CASE-` followed by letters, digits, `_` and `-` (for example `CASE-001-excel-task`). */
+  id: string;
+  /** Written as the statement README's first heading, which the case list reads back as the case title. */
+  title: string;
+  /** Statement body (Markdown), written after that heading; the Target Agent sees only this side. */
+  statement: string;
+  /** Scoring rubric (Markdown, items totalling 100 points), written verbatim as `rubric/README.md`. */
+  rubric: string;
+}
+
+export interface BenchmarkCreateResponse {
+  benchmark: BenchmarkSummary;
 }
 
 // ---------------------------------------------------------------------------

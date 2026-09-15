@@ -34,7 +34,7 @@ One request represents one Test Agent execution. The `run` value identifies that
 
 Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault.
 
 ## Prepare
 
@@ -42,12 +42,14 @@ Use the `App Data Dir` from the Environment:
 
 ```text
 TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
+BENCHMARK_DIR = <app_data_dir>/benchmarks/<benchmark_id>
 ```
 
-Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
+The Benchmark is Project-level and is not owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the Agent this request evaluates; return it as `agent_id`.
 
-Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Treat `run` only as the caller-owned label for this evaluation and return it unchanged; do not read or validate the total Run count. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
+Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent and Benchmark. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
+
+Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Return `benchmark_invalid` when `benchmark_config.toml` says `status = "failed"`: a Benchmark whose calibration failed is not evaluated. Treat `run` only as the caller-owned label for this evaluation and return it unchanged; do not read or validate the total Run count. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
 
 Before launch, snapshot every file under the Case's `statement/` and `rubric/` directories. Require a usable Rubric whose scoring items total exactly 100 points. Create a unique Workspace under `<test_agent_dir>/workspaces/`, resolve it to an absolute canonical path, and verify that the resolved path remains under that directory. Copy only `statement/` into it. The Test Agent may see the Statement and its own State, but never the Rubric, Gold answers, scoring rules, or Evaluator reasoning.
 
@@ -67,8 +69,11 @@ export PENGUIN_HOME
 penguin run \
   --message "Read README.md in the current Workspace and complete the task exactly as specified there." \
   --provider "<provider>" --model-id "<model_id>" --project-id "$PROJECT_ID" \
-  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" --approve allow-all
+  --agent-id "<test_agent_id>" --workspace "<absolute_unique_workspace_path>" \
+  --approve allow-all --source benchmark
 ```
+
+`--source benchmark` files the Test Session under the Evaluations folder of the Web App's session list rather than the Test Agent's active conversations; never omit it.
 
 Use the exact requested Agent, Project, absolute Workspace path, and model pair. Never omit either model flag and never fall back to a Project default. If a launch fails, retry only when unchanged Workspace and Trace evidence proves that the Test Agent did not start. Every retry must follow a new diagnosis and apply a specific correction; never repeat an unchanged launch. Do not impose a numeric retry limit while distinct safe repairs remain. Return `evaluation_failed` when no new repair remains, external configuration is required, or it is unclear whether the Test Agent started.
 
@@ -99,6 +104,7 @@ protocol_version: 1
 status: ok
 case_id: <case_id>
 run: <run>
+agent_id: <test_agent_id>
 expected_version: <version>
 provider: <actual_provider>
 model_id: <actual_model_id>
@@ -116,6 +122,7 @@ protocol_version: 1
 status: failed
 case_id: <case_id_or_null>
 run: <run_or_null>
+agent_id: <test_agent_id_or_null>
 expected_version: <version_or_null>
 provider: <provider_or_null>
 model_id: <model_id_or_null>
