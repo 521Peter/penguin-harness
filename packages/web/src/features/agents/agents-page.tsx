@@ -76,6 +76,7 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -142,6 +143,8 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
+  const [aiOpen, setAiOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -231,7 +234,8 @@ export function AgentsPage() {
   // Cross-page create intent (the sidebar's mode-dependent "new" button navigates here
   // with { create: true } route state — the chat draft's route-state idiom): open the
   // existing create dialog once, then strip the state so a refresh or back-nav doesn't
-  // reopen it.
+  // reopen it. That button names no path, so it opens the form; the AI path is one click
+  // away on the header the dialog sits over.
   const location = useLocation();
   const createIntent = (location.state as { create?: boolean } | null)?.create === true;
   useEffect(() => {
@@ -426,10 +430,10 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            {/* Search plus the create action, in the Models page header's shape: on a narrow
+            {/* Search plus the create pair, in the Models page header's shape: on a narrow
                 screen flex-wrap drops the pair onto its own line and the box shrinks with it,
-                fixed width from sm up. Both controls take the form rung, so the button reads at
-                the size of the box beside it rather than a step above it. */}
+                fixed width from sm up. Both controls take the form rung — CreateButtons defaults
+                to it — so the buttons read at the size of the box beside them. */}
             <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
               <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
                 <Input
@@ -439,9 +443,7 @@ export function AgentsPage() {
                   placeholder={S.agent.searchPlaceholder}
                 />
               </div>
-              <Button size="sm" variant="primary" onClick={openCreate}>
-                {S.agent.create}
-              </Button>
+              <CreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
             </div>
           </div>
 
@@ -688,6 +690,18 @@ export function AgentsPage() {
                 </div>
               );
             })}
+            {/* Until the Project has an agent of its own, the list ends in the AI path's call to
+                action: the built-in default is not one the user set up. Hidden while searching
+                (the list itself is being filtered). */}
+            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
+              <EmptyState
+                title={S.agent.firstAgentTitle}
+                description={S.agent.firstAgentDesc}
+                action={
+                  <CreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
+                }
+              />
+            )}
           </div>
         )}
       </div>
@@ -881,6 +895,21 @@ export function AgentsPage() {
           )}
         </div>
       </Modal>
+
+      {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
+          fixed tail lands in a new conversation with the Project's default agent, which runs the
+          agent-initialization skill. The list reloads on every mount, so the new agent's card is
+          there when the page is next visited. */}
+      <AiCreateModal
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        title={S.agent.aiCreateTitle}
+        intro={S.agent.aiCreateIntro}
+        placeholder={S.agent.aiCreatePlaceholder}
+        examples={S.agent.aiExamples}
+        tail={S.agent.aiCreateTail}
+        agents={agents}
+      />
 
       {/* Bulk kernel update confirmation. The body is the per-Agent confirm's own wording,
           verbatim — a kernel update is a smart merge that advances the settings tabs the user

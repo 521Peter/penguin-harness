@@ -287,12 +287,12 @@ describe("countsWithoutOrgSessions", () => {
       ...over,
     }) as SessionInfo;
   const counts = new Map<string, SessionCategoryCounts>([
-    ["ceo", { active: 3, subagent: 0, schedule: 0, archived: 1 }],
-    ["other", { active: 2, subagent: 0, schedule: 0, archived: 0 }],
+    ["ceo", { active: 3, subagent: 0, schedule: 0, benchmark: 0, archived: 1 }],
+    ["other", { active: 2, subagent: 0, schedule: 0, benchmark: 0, archived: 0 }],
   ]);
   const workspaceCounts = new Map<string, Readonly<Record<string, SessionCategoryCounts>>>([
-    ["ceo", { "/org": { active: 3, subagent: 0, schedule: 0, archived: 1 } }],
-    ["other", { "/w": { active: 2, subagent: 0, schedule: 0, archived: 0 } }],
+    ["ceo", { "/org": { active: 3, subagent: 0, schedule: 0, benchmark: 0, archived: 1 } }],
+    ["other", { "/w": { active: 2, subagent: 0, schedule: 0, benchmark: 0, archived: 0 } }],
   ]);
 
   it("subtracts each hidden row from its Agent's totals and from its Workspace's share", () => {
@@ -300,7 +300,13 @@ describe("countsWithoutOrgSessions", () => {
       row({ sessionId: "s-desk", orgId: "acme" }),
       row({ sessionId: "s-old", orgId: "acme", archived: true }),
     ]);
-    expect(out.byAgent.get("ceo")).toEqual({ active: 2, subagent: 0, schedule: 0, archived: 0 });
+    expect(out.byAgent.get("ceo")).toEqual({
+      active: 2,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    });
     expect(out.byWorkspace.get("ceo")?.["/org"]).toEqual({
       active: 2,
       subagent: 0,
@@ -308,8 +314,20 @@ describe("countsWithoutOrgSessions", () => {
       archived: 0,
     });
     // Another Agent's totals are untouched, and the store's own maps are never written into.
-    expect(out.byAgent.get("other")).toEqual({ active: 2, subagent: 0, schedule: 0, archived: 0 });
-    expect(counts.get("ceo")).toEqual({ active: 3, subagent: 0, schedule: 0, archived: 1 });
+    expect(out.byAgent.get("other")).toEqual({
+      active: 2,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 0,
+    });
+    expect(counts.get("ceo")).toEqual({
+      active: 3,
+      subagent: 0,
+      schedule: 0,
+      benchmark: 0,
+      archived: 1,
+    });
   });
 
   it("gives the maps straight back when nothing is hidden, and never counts below zero", () => {

@@ -108,10 +108,14 @@ export interface Messages {
     goal: string;
     /** run's --session: reuse an existing Session (full id or unique fragment). */
     session: string;
+    /** run's --source: mark the NEW Session as created by a Benchmark evaluation. */
+    source: string;
     /** run's --background: POST the task and exit immediately, printing the session id. */
     background: string;
-    /** --session combined with --workspace / the model pair: neither can change after creation. */
+    /** --session combined with --workspace / the model pair / --source: all fixed at creation. */
     sessionNoOverride(): string;
+    /** --source given a value other than `benchmark` (the only origin a client may set). */
+    sourceInvalid(value: string): string;
     /** --background never waits, so a wait budget cannot apply to it. */
     timeoutWithBackground(): string;
   };
@@ -929,9 +933,13 @@ const en: Messages = {
     message: "Prompt for this Task",
     goal: "Goal mode: loop until the goal completes; optional token budget (e.g. 500k, 2m)",
     session: "Reuse an existing Session (full id or a unique fragment, e.g. the 8-hex tail)",
+    source:
+      "Mark the new session as created by a Benchmark evaluation (`benchmark`); the Web App files it under the Evaluations folder",
     background: "Post the task and exit immediately, printing the session id",
     sessionNoOverride: () =>
-      "--session reuses an existing Session: --workspace, --model-id and --provider cannot be combined with it (neither can change after creation).",
+      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (none can change after creation).",
+    sourceInvalid: (value) =>
+      `Invalid --source value "${value}". The only accepted value is benchmark.`,
     timeoutWithBackground: () =>
       "--timeout bounds the wait, and --background does not wait: drop one of them.",
   },
@@ -1708,9 +1716,11 @@ const zh: Messages = {
     message: "本次 Task 的 Prompt",
     goal: "目标模式：循环运行直至目标完成；可选 token 预算（如 500k、2m）",
     session: "复用既有 Session（完整 id 或唯一片段，如末尾 8 位十六进制）",
+    source: "把新建会话标记为 Benchmark 评估创建（`benchmark`）；Web App 将其归入「评估任务」子夹",
     background: "提交任务后立即退出，打印 session id",
     sessionNoOverride: () =>
-      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider 同时使用（二者创建后不可更换）。",
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（Workspace、模型与来源创建后不可更换）。",
+    sourceInvalid: (value) => `无效的 --source 取值 "${value}"。唯一可用取值为 benchmark。`,
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {

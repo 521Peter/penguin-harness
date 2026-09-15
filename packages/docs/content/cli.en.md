@@ -51,6 +51,7 @@ penguin run -m "long job" --background                # returns the session id i
 | `--approve <mode>` | Approval mode, see below (default `allow-all`). With `--session` it PATCHes the session's sticky mode |
 | `--thinking <level>` | Pins the session's thinking level (`low` / `medium` / `high` / `xhigh` / `max`) before the task; it applies from the session's next LLM request. Omitted, the session's pinned level (else the Agent config) applies |
 | `--session <sessionId>` | Reuse an existing session (full id or unique fragment) instead of creating one; excludes `--workspace` and the model pair |
+| `--source <source>` | Marks the new session as created by a Benchmark evaluation; the only value is `benchmark`, and the Web App files such sessions under the Evaluations folder of the session list. Excludes `--session` |
 | `--background` | POST the task and exit immediately, printing the session id (`{"sessionId"}` under `--json`); the task keeps running on the server — follow it with `penguin logs -f` |
 | `--timeout <duration>` | Soft-yield wait budget (see Global conventions): at expiry, print what has rendered plus a dim still-running line with the session id (`{sessionId, status: "running", text}` under `--json`) and exit 0 — the task is not aborted. `--timeout 0` returns right after the POST (`{sessionId, status: "running"}` under `--json`, no `text`). Excludes `--background` |
 | `--goal [budget]` | Goal mode: the message is the objective and the server loops until a terminal state; the optional value is a token budget (e.g. `500k`) |

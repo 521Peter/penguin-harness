@@ -355,10 +355,22 @@ describe("session-index", () => {
     // counts=1 returns totals over the whole list, not the returned page — with or without a filter.
     const counted = await list("?category=active&counts=1&limit=1");
     expect(counted.sessions).toHaveLength(1);
-    expect(counted.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    expect(counted.counts).toEqual({
+      active: 2,
+      subagent: 1,
+      schedule: 1,
+      benchmark: 0,
+      archived: 2,
+    });
     const full = await list("?counts=1");
     expect(full.sessions).toHaveLength(6);
-    expect(full.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
+    expect(full.counts).toEqual({
+      active: 2,
+      subagent: 1,
+      schedule: 1,
+      benchmark: 0,
+      archived: 2,
+    });
     expect((await list("")).counts).toBeUndefined();
     expect((await list("")).workspaceCounts).toBeUndefined();
     expect((await list("")).workspaceLatest).toBeUndefined();
@@ -371,9 +383,10 @@ describe("session-index", () => {
       active: 0,
       subagent: 1,
       schedule: 0,
+      benchmark: 0,
       archived: 0,
     });
-    const summed = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+    const summed = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
     for (const ws of Object.values(byWorkspace)) {
       for (const key of Object.keys(summed) as (keyof typeof summed)[]) summed[key] += ws[key];
     }
@@ -382,6 +395,26 @@ describe("session-index", () => {
     // Junk values are rejected, never silently unfiltered.
     expect((await api.get(`${base()}?category=weird`)).status).toBe(400);
     expect((await api.get(`${base()}?counts=yes`)).status).toBe(400);
+  });
+
+  it("a Session created with source benchmark lists under the benchmark category", async () => {
+    await configureModels();
+    const res = await api.post(base(), { source: "benchmark" });
+    expect(res.status).toBe(201);
+    const { session } = (await res.json()) as SessionCreateResponse;
+    // The origin is read back from the just-created core Session's session_meta, so the
+    // create response already carries it.
+    expect(session.source).toBe("benchmark");
+
+    const counted = (await (await api.get(`${base()}?counts=1`)).json()) as SessionsResponse;
+    expect(counted.counts?.benchmark).toBe(1);
+    const filtered = (await (
+      await api.get(`${base()}?category=benchmark`)
+    ).json()) as SessionsResponse;
+    expect(filtered.sessions.map((s) => s.sessionId)).toEqual([session.sessionId]);
+
+    // Only `benchmark` may be set by a client: the server writes the other origins itself.
+    expect((await api.post(base(), { source: "schedule" })).status).toBe(400);
   });
 
   it("workspaceGroup pages one Workspace group's own stream, temporary workspaces as one group", async () => {

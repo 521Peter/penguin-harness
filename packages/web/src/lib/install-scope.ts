@@ -255,6 +255,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.sidebarExpandedFolderGroups.",
+    scope: "install",
+    why: "Folder-only sidebar groups the user opened, keyed by those same Agent ids and Workspace paths.",
+  },
+  {
+    kind: "family",
     key: "penguin.sidebarPinnedGroups.",
     scope: "install",
     why: "Pinned sidebar groups, same key space.",

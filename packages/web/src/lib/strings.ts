@@ -450,6 +450,9 @@ export const zh = {
     hidePassword: "隐藏密码",
     login: "登录",
     logout: "登出",
+    /** The sign-out confirmation: dialog name and body. */
+    logoutConfirmTitle: "登出？",
+    logoutConfirmBody: "将退出当前账号并回到登录页；进行中的对话会在服务端继续运行。",
     admin: "管理员",
     defaultAdminNote:
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
@@ -640,6 +643,65 @@ export const zh = {
       "选择导出的 Agent State 快照包（.tar.gz），新 Agent 以包内状态创建；名称与描述留空则沿用包内值",
     createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
     createSnapshotClear: "移除已选快照包",
+    /**
+     * The "Create with AI" dialog, a separate surface from the create form above: its title, the
+     * lead line, the prompt box's placeholder, the clickable examples and the fixed instruction
+     * tail joined after the draft (composeAiPrompt). The tail follows the agent-initialization
+     * skill's contract — a new agent under the current Project, only the skills it needs, no
+     * other agent touched, the id reported at the end.
+     */
+    aiCreateTitle: "用 AI 创建 Agent",
+    aiCreateIntro:
+      "描述这个智能体要做什么、面向谁、产出什么；执行的智能体会用 agent-initialization 技能在当前 Project 里创建它。",
+    aiCreatePlaceholder: "例如：创建一个帮我把会议录音整理成待办清单的智能体…",
+    aiExamples: [
+      {
+        key: "jotting",
+        label: "随记智能体",
+        description: "零碎想法整理成一套 Markdown 文件体系",
+        prompt:
+          "创建一个随记智能体：我会不断向它发送零碎的想法和只言片语，它要在工作区里把这些内容整理成一套 Markdown 文件体系（按主题建文件、维护一个索引文件、合并重复内容、保留时间线），每次收到内容后回复归档到了哪个文件。",
+      },
+      {
+        key: "finance",
+        label: "金融 Copilot",
+        description: "财报、行情与新闻的基本面与估值分析",
+        prompt:
+          "创建一个金融 Copilot 智能体：能读取我提供的财报、行情数据与新闻链接，做基本面与估值分析，用表格与要点输出结论，标注不确定性与数据来源，不给出直接的买卖建议。",
+      },
+      {
+        key: "rag",
+        label: "文档 RAG 智能体",
+        description: "先给 docs/ 建索引，回答时引用出处",
+        prompt:
+          "创建一个文档问答智能体：我会把资料放进工作区的 docs/ 目录，它要先建立索引（按文件与章节写摘要），回答问题时引用具体文件与段落，没有依据时明确说不知道。",
+      },
+      {
+        key: "research",
+        label: "深度研究报告智能体",
+        description: "提纲、多轮检索与交叉验证，产出带引用的报告",
+        prompt:
+          "创建一个深度研究报告智能体：给定一个课题，它要先制定研究提纲，多轮检索与阅读资料并交叉验证事实，最后在工作区生成一份带目录、引用与附录的 Markdown 报告。",
+      },
+      {
+        key: "report-writer",
+        label: "报告写作智能体",
+        description: "零散材料整理成结构化报告；id 为 report-writer",
+        prompt:
+          "创建一个报告写作智能体，agent id 用 report-writer：擅长把零散材料整理成结构化的商业或技术报告（摘要、背景、分析、结论与建议），产出 Markdown 文件，并附一份写作检查清单。",
+      },
+    ],
+    aiCreateTail: [
+      "请使用 agent-initialization 技能，在当前 Project 中按上面的描述新建一个智能体：",
+      "- 上面给了 agent id 就用它，否则取一个简短的语义 id（小写字母开头，可含数字、下划线或连字符）；目标目录已存在时停下来告诉我，不要覆盖。",
+      "- 以 default_agent 的 system_config.yaml 为底，设置它的 name、description 与 version，把角色与行为规则写进它的 agent_state/AGENTS.md。",
+      "- 只从插件库（default_agent 已安装的技能目录）复制它真正需要的技能，不要多装。",
+      "- 不要改动其他智能体；完成后按技能要求做校验。",
+      "最后告诉我：新智能体的 id、安装了哪些技能，以及怎样开始和它对话（Agents 页该智能体卡片上的「新建对话」）。",
+    ].join("\n"),
+    /** The list's call to action while the Project has no agent beyond the built-in default. */
+    firstAgentTitle: "还没有自己的智能体",
+    firstAgentDesc: "描述你想要的智能体，让 AI 帮你创建；也可以手动配置。",
     sessionCount: (n: number): string => `${n} 个 Session`,
     toolCount: (n: number): string => `${n} 个工具`,
     vaultKeyCount: (n: number): string => `${n} 个密钥`,
@@ -886,6 +948,57 @@ export const zh = {
       "用内置目录更新预置模型：新增缺失条目、以目录字段为准刷新差异；本地新增模型与 API key 保持不变",
     syncDone: (added: number, updated: number) => `预置模型已同步：新增 ${added}、更新 ${updated}`,
     syncUpToDate: "预置模型已是最新",
+    /**
+     * The header's "Create with AI" entry: the dialog's title and lead, the prompt box's
+     * placeholder, the examples and the fixed instruction tail. The tail
+     * follows the penguin-config skill — one `penguin config model add` per model with
+     * `--provider` mandatory, the config file never touched by hand, `penguin config model list`
+     * at the end — and carries the Project id and the data root, which the CLI would otherwise
+     * take from its own defaults (the harness strips `PENGUIN_HOME` from a command's
+     * environment, so the CLI's default root is not the one the server runs on).
+     */
+    aiAddTitle: "让 AI 添加模型分组",
+    aiAddIntro:
+      "把模型列表页的链接或服务信息交给智能体，它会用 penguin config 命令把这些模型加为一个分组。能直接列出模型的 OpenAI 兼容端点，用「新增分组 → 导入模型」更快。",
+    aiAddPlaceholder: "粘贴模型列表页的 URL，或描述要接入的服务（网关地址、鉴权方式、模型 id）…",
+    aiAddExamples: [
+      {
+        key: "openrouter",
+        label: "OpenRouter 热门模型",
+        description: "读取模型列表页，加为一个分组",
+        prompt:
+          "把 https://openrouter.ai/models 上的热门模型加为一个 OpenRouter 分组（先问我要 API key）。",
+      },
+      {
+        key: "vllm",
+        label: "自建 vLLM 服务",
+        description: "OpenAI 兼容端点加指定的模型 id",
+        prompt:
+          "接入我自建的 vLLM 服务 http://10.0.0.5:8000/v1，模型 id 为 qwen3-32b，加为一个 vllm 分组。",
+      },
+      {
+        key: "ollama",
+        label: "本机 Ollama",
+        description: "把本机已有的模型加为一组",
+        prompt: "把本机 Ollama（http://localhost:11434）上已有的模型加为一个 ollama 分组。",
+      },
+      {
+        key: "deepseek",
+        label: "DeepSeek 官方模型",
+        description: "加进 deepseek 分组并设为默认",
+        prompt: "把 DeepSeek 官方的 deepseek-v4-pro 加进 deepseek 分组并设为默认模型。",
+      },
+    ],
+    aiAddTail: (projectId: string): string =>
+      [
+        "请使用 penguin-config 技能完成上面的配置：",
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会配置到另一个数据根目录，本 Project 什么也拿不到。",
+        `- 每个模型执行一次 \`penguin config model add --provider <分组名> --model-id <上游模型 id> --project-id ${projectId} --root <数据根目录> [--base-url <端点>] [--client-type openai] [--api-key <key>] [--context-window <n>] [--price-cache-read <n> --price-cache-write <n> --price-output <n>]\`：\`--provider\` 必填，\`--model-id\` 用网关自己的模型 id；OpenAI 兼容端点加 \`--client-type openai --base-url <端点>\`。`,
+        "- 来源是网页时先抓取页面：优先加我点名的模型，没有点名就选最常用的，最多 10 个左右。",
+        "- 需要 API key 而我没给时只问我一次；我不提供就把 key 留空，并告诉我到模型库页补填。",
+        "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
+        `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
+      ].join("\n"),
     homepage: "模型主页",
     speedTest: "测速",
     speedTestTitle: "分组测速",
@@ -1194,6 +1307,50 @@ export const zh = {
     keyHint: "字母、数字与下划线，不能以数字开头",
     keyInvalid: "键名不合法：仅字母、数字与下划线，且不能以数字开头",
     valueRequired: "值不能为空",
+    /**
+     * The tab's "add with AI" entry: the dialog's title and lead (an honest warning — a value
+     * typed into the prompt reaches the provider, the Trace and the agent's own command line),
+     * the prompt box's placeholder, the examples and the fixed instruction tail. The examples obey
+     * that lead: the key-names-only ask comes first and none of them puts a secret in the prompt,
+     * both pinned by create-with-ai-surfaces.test.ts. The tail is fed the target agent and Project
+     * because the prompt goes to the Project's default agent, which is not necessarily the agent
+     * whose vault this is; it names the data root for the same reason the models tail does.
+     */
+    aiAddTitle: "让 AI 添加密钥",
+    aiAddIntro:
+      "写进提示词的密钥值会发给模型服务商、写入对话记录（Trace），还会出现在智能体执行的命令里。更稳妥的做法是让 AI 只创建键名并告诉你用途，值在保险柜里手动填写。",
+    aiAddPlaceholder: "让它检查这个智能体需要哪些 API key，或说明要建哪些键名…",
+    aiAddExamples: [
+      {
+        key: "audit",
+        label: "盘点这个智能体需要的 key",
+        description: "先建键名，值稍后手动填",
+        prompt:
+          "检查这个智能体已安装的技能需要哪些 API key，先把键名建好，并逐个告诉我用途和申请地址——值我自己在保险柜里填。",
+      },
+      {
+        key: "rotate",
+        label: "重置一个过期 token",
+        description: "把值清成占位符，新值手动填",
+        prompt:
+          "GH_TOKEN 已经过期，把它重置为占位值，并告诉我去哪里申请新的——新 token 我自己在保险柜里填。",
+      },
+      {
+        key: "endpoint",
+        label: "接入一个内部服务",
+        description: "地址直接写入，token 留给你填",
+        prompt:
+          "这个智能体要访问我们内部的 Gitea（https://git.example.com）。把 GITEA_BASE_URL 设为该地址，GITEA_TOKEN 先用占位值创建，并告诉我去哪里签发 token。",
+      },
+    ],
+    aiAddTail: (agentId: string, projectId: string): string =>
+      [
+        `请使用 penguin-config 技能，把上面的密钥写进智能体 ${agentId} 的保险柜（Project ${projectId}）：`,
+        "- 下面每条命令都要带 `--root <数据根目录>`，即环境信息中 App Data Dir 的上级目录。命令的环境里没有这个值，不带 `--root` 会写到另一个数据根目录，这个智能体的保险柜仍然是空的。",
+        `- 每个密钥执行一次 \`penguin config vault set --key <键名> --value <值> --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\`；只需创建键名时，值先填占位符 TODO，并告诉我该键的用途与申请地址。`,
+        "- 不要在回复里复述任何值，不要读取 .vault.toml。",
+        `- 最后运行 \`penguin config vault list --agent-id ${agentId} --project-id ${projectId} --root <数据根目录>\` 列出键名。`,
+      ].join("\n"),
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "启用密钥保险柜",
@@ -2036,6 +2193,8 @@ Benchmark：
     /** The dashed cutter on the panel's bar: its accessible name, and its tooltip naming the threshold it stands on. */
     contextThresholdCutter: "压缩阈值",
     contextThresholdHover: (n: string): string => `压缩阈值 ${n}（拖动可调整）`,
+    /** Tooltip of the hatched stretch of the bar past the cutter: room the model has, unusable before compaction fires. */
+    contextBeyondThreshold: "压缩阈值之上的空间：压缩会先触发，这部分暂时用不到",
     /** Confirmation for a dragged (or arrowed) threshold: dialog name, body (agent name + the threshold being replaced), the editable field and its rejection, the note when the model window will cut the typed value down, and the toast on success. */
     contextThresholdTitle: "修改压缩阈值",
     contextThresholdBody: (agentName: string, old: string): string =>
@@ -2184,8 +2343,17 @@ Benchmark：
     folderGroups: {
       subagent: (n: number) => `子智能体（${n}）`,
       schedule: (n: number) => `定时任务（${n}）`,
+      benchmark: (n: number) => `评估任务（${n}）`,
       archived: (n: number) => `已归档（${n}）`,
     },
+    /**
+     * Tooltip of a folder-only group's header — a group with no active conversation of its
+     * own, only rows inside its folders (it renders collapsed and sorts last). `n` is what
+     * those folders hold, which is also the count the dimmed header shows; the Workspace path
+     * follows where the header has one, since this sentence replaces the tooltip that carried it.
+     */
+    folderOnlyGroup: (n: number, path?: string) =>
+      `仅有折叠任务：${n} 个会话${path ? `（${path}）` : ""}`,
     skillsBanner: (names: string[]): string => `使用技能：${names.join("、")}`,
     /** Attached-file notice above a user message (file names only; the paths stay in the Trace). */
     attachedFilesBanner: (names: string[]): string => `附加文件：${names.join("、")}`,
@@ -2739,9 +2907,64 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    selectBenchmark: "在左侧选择一个 Benchmark",
-    emptyAgent: "该 Agent 暂无 Benchmark",
+    /** The three step cards under the title: each says where on this page to do that step. */
+    guideFlow: [
+      {
+        title: "出题",
+        text: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分；也可以「手动创建」自己写题。",
+      },
+      {
+        title: "评估",
+        text: "选一个 Benchmark，点「使用」→「评估」，选好被测智能体后在新对话中发送，即得到一条带标签的分数。",
+      },
+      {
+        title: "优化",
+        text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
+      },
+    ],
+    searchPlaceholder: "搜索标题、描述或被测智能体",
+    noMatches: "没有匹配的 Benchmark",
+    /** The chip shown when the address filters the list to one Agent's Benchmarks. */
+    filterByAgent: (agentId: string): string => `只看评测过 ${agentId} 的 Benchmark`,
+    clearFilter: "显示全部",
+    emptyTitle: "还没有 Benchmark",
+    emptyDescription:
+      "先让 AI 为一个智能体出题并取得基线分；之后这里会显示分数曲线与逐题明细，并可一键发起优化。",
     caseCount: (n: number): string => `${n} 题`,
+    runsPerCase: (n: number): string => `每题 ${n} 次运行`,
+    notEvaluated: "尚未评测",
+    /** A draft Benchmark: the agent is still writing its cases, so card and page are masked. */
+    building: "构建中",
+    buildingHint: "智能体还在出题与校准难度，构建完成后即可使用",
+    buildingDetail: "构建完成后，这里会显示题目、分数曲线与评估明细。",
+    /** A Benchmark whose calibration never finished: unusable, so the card and page are masked. */
+    creationFailed: "创建失败",
+    creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
+    creationFailedDetail:
+      "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
+    /** The avatars on a card: which Agents this Benchmark has scored so far. */
+    testedAgents: "被测过的智能体",
+    lastEvaluated: (when: string): string => `最近评估 ${when}`,
+    /** Accessible name of the row sparkline. */
+    sparklineLabel: (n: number): string => `${n} 次评估的分数走势`,
+    latestScoreLabel: "最新分数",
+    /** The change column when there is nothing earlier to compare against. */
+    firstEvaluation: "首次评估",
+    /** Card and Benchmark-page action: opens the Use dialog. */
+    use: "使用",
+    /** The Use dialog's two tabs. */
+    evaluate: "评估",
+    optimize: "优化",
+    view: "查看",
+    copyPath: "复制目录路径",
+    deleteBenchmark: "删除 Benchmark",
+    deleteConfirm: (title: string): string =>
+      `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
+    deleted: "Benchmark 已删除",
+    backToList: "返回列表",
+    /** The Benchmark's own page when the id in the address resolves to nothing. */
+    notFound: "找不到这个 Benchmark",
+    notFoundHint: "它可能已被删除，或者链接里的 id 不对。",
     /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
     cases: "题目",
@@ -2752,10 +2975,12 @@ Benchmark：
     caseFileUnavailable: "案例文件暂时无法读取",
     evaluations: "评估明细",
     noEvaluations: "暂无评估记录",
+    noEvaluationsHint: "取得基线分后，这里会出现分数曲线与评估明细。",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */
     summaryLabel: "评估说明",
-    /** Chart legend: older evaluation records with no model label (gray series). */
-    legendUnlabeled: "未标注模型",
+    /** Chart legend: evaluation records missing the tested Agent or the model (gray series). */
+    unlabeled: "未标注",
+    agentColumn: "被测 Agent",
     colVersion: "版本",
     colModel: "模型 ID",
     colThinkingLevel: "推理强度",
@@ -2764,6 +2989,282 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
+    askAi: "问 AI",
+    evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
+    askEvaluationTitle: "问 AI：这次评估",
+    askEvaluationDescription:
+      "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
+    askEvaluationDefault: "解释这次评估的结果。",
+    /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
+    askEvaluationExamples: {
+      explain: {
+        label: "解释这次评估的结果",
+        prompt: "解释这次评估的结果。",
+      },
+      whyLow: {
+        label: "为什么这次分数低？",
+        prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
+      },
+      weakest: {
+        label: "哪些题最弱、该改什么？",
+        prompt: "哪几道题得分最弱？分别是什么原因，被测智能体改哪一处才有机会提上去？",
+      },
+      againstPrevious: {
+        label: "与上一次评估相比变化在哪？",
+        prompt: "与这个系列上一次评估相比，哪些题涨了、哪些题掉了？这些变化最可能来自什么？",
+      },
+    },
+    /** The evaluation dialog's Ask AI tail: this evaluation's facts, and what to read before answering. */
+    askEvaluationTail: (p: {
+      benchmarkId: string;
+      time: string;
+      label: string;
+      version: number;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+      score: string;
+      cost: string;
+      duration: string;
+      summaryTitle: string;
+      summary: string;
+      cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
+    }): string =>
+      "请解释下面这次 Benchmark 评估的结果。只做阅读与分析：不要修改这套 Benchmark，也不要修改被测智能体。\n\n" +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，记分板为 \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`）\n` +
+      `- 评估时间：${p.time}\n` +
+      `- 系列标签：${p.label}\n` +
+      `- 被测版本：v${p.version}\n` +
+      `- 评测 Runtime：provider \`${p.provider}\` / model_id \`${p.modelId}\` / thinking_level \`${p.thinkingLevel}\`\n` +
+      `- 总分 ${p.score}；成本 ${p.cost}；耗时 ${p.duration}\n` +
+      (p.summaryTitle !== "" ? `- 评估说明标题：${p.summaryTitle}\n` : "") +
+      (p.summary !== "" ? `- 评估说明：${p.summary}\n` : "") +
+      "- 逐题得分（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
+      p.cases
+        .map(
+          (c) =>
+            `  - \`${c.id}\`：${c.score}；${c.cost}；${c.duration}；Session ` +
+            (c.sessionIds.length > 0 ? c.sessionIds.map((id) => `\`${id}\``).join("、") : "未记录"),
+        )
+        .join("\n") +
+      "\n\n请读取 scoreboard.yaml 里这条记录，并按需读取上列 Session 的 Trace，然后说明：这些分数是怎么来的、" +
+      "哪几道题最薄弱及其具体原因，以及下一步建议（改被测智能体的哪一处，或先补哪一类证据）。",
+    askCaseTitle: "问 AI：这道题",
+    askCaseDescription:
+      "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
+    askCaseDefault: "解释这道题考什么、怎样才算答好。",
+    /** As for the evaluation dialog: the default question leads, equal to askCaseDefault. */
+    askCaseExamples: {
+      explain: {
+        label: "解释这道题考什么、怎样才算答好",
+        prompt: "解释这道题考什么、怎样才算答好。",
+      },
+      rubricRewards: {
+        label: "评分细则在奖励什么？",
+        prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
+      },
+      whyRunLow: {
+        label: "为什么有的运行在这道题上得分低？",
+        prompt: "最近一次评估在这道题上得分不高，可能是被测智能体在哪一步做丢了？",
+      },
+      clearerStatement: {
+        label: "题干怎样才能更清楚？",
+        prompt:
+          "这道题的题干有没有含糊或容易误读的地方？题目已冻结不能改，请说明如果下次新建 Benchmark 该怎么写得更清楚。",
+      },
+    },
+    /** The case dialog's Ask AI tail: the two READMEs to read, and this case's latest run results. */
+    askCaseTail: (p: {
+      benchmarkId: string;
+      caseId: string;
+      latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
+    }): string =>
+      "请解释下面这道 Benchmark 题目考的是什么、怎样才算答好。题目创建即冻结，只做阅读与分析，不要修改这套 Benchmark。\n\n" +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- case_id：\`${p.caseId}\`\n` +
+      `- 题干：\`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
+      `- 评分细则：\`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      (p.latest === null
+        ? "- 这套 Benchmark 还没有评估记录。\n"
+        : `- 最近一次评估（${p.latest.time}）在这道题上的平均分 ${p.latest.score}\n` +
+          p.latest.runs
+            .map((r, i) => `  - 第 ${i + 1} 次运行：${r.score}；Session \`${r.sessionId}\`\n`)
+            .join("")) +
+      "\n请读取上面两个 README（以及上列 Session 的 Trace，如果有），然后说明：这道题实际考察什么能力、" +
+      "一份好答案长什么样（关键决定与产物），以及评分细则靠哪些条目把优秀与及格区分开。",
+    // New Benchmark, AI mode: the target picker, the examples and the fixed tail.
+    aiCreateTitle: "让 AI 创建 Benchmark",
+    aiCreateDescription:
+      "描述要考察的能力与场景，AI 会为被测智能体出题、逐题试测以校准难度，并取得基线分。",
+    targetAgent: "被测智能体",
+    targetAgentHint: "题目为它而出、分数记在它名下；出题本身由下方所示的智能体在新对话里完成",
+    aiCreateExamples: {
+      reportWriter: {
+        label: "报告写作：材料互相矛盾的 3 道题",
+        description: "3 道题：冲突材料、缺失口径、严格篇幅与引用",
+        prompt: `为报告写作智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`report-conflicting-sources\`
+- capability：在材料互相矛盾、关键口径没有写明、篇幅与引用受限时，仍能交出结论可追溯、口径一致的报告
+- 题量：3 道
+- 出题手法：每题给 2–3 份彼此冲突的材料，其中一份日期更新但只在页脚标注；币种、时区、统计口径等关键前提刻意不写全，正确做法是先指出缺口、再做保守假设并标明；篇幅上限与引用格式严格，超限或漏引直接失分
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
+      },
+      customerService: {
+        label: "客服：隐藏政策前提的 3 道对话题",
+        description: "3 道题：信息不全的用户、藏在附录的政策条件、越权承诺陷阱",
+        prompt: `为客服智能体出一套题量少而难的多轮对话 Benchmark，把基线分压低。
+
+- benchmark_id：\`support-hidden-policy\`
+- capability：在用户信息不全、政策条件藏在资料深处、情绪化表达诱导越权承诺时，仍能先核实再答复、不越权、口径与政策一致
+- 题量：3 道
+- 出题手法：政策文件的例外条款与生效日期只出现在附录；用户描述模糊，关键事实要追问才给；至少一题里最顺手的答复正是越权承诺；评分看是否核实、是否越权、语气与准确性
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
+      },
+      codeReview: {
+        label: "代码审查：缺陷藏在约定里的 3 道题",
+        description: "3 道题：调用约定与并发前提未写明，注释与测试会误导",
+        prompt: `为代码审查智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`review-hidden-contracts\`
+- capability：在缺陷藏在调用约定、并发前提与数据形态里、注释与测试反而误导时，仍能查全真实缺陷、不误报、并说明如何验证
+- 题量：3 道
+- 出题手法：每题一个小型多文件仓库，2–3 个真实缺陷分别依赖未写明的调用顺序、时区或编码假设、并发前提；附带一两条过时注释和一份能通过却覆盖不到缺陷的测试；评分看查全、误报与是否给出可复现的验证步骤
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
+      },
+      dataAnalysis: {
+        label: "数据分析：问题模糊、数据带坑的 3 道题",
+        description: "3 道题：脏数据、未说明的口径、需要先澄清假设",
+        prompt: `为数据分析智能体出一套题量少而难的 Benchmark，把基线分压低。
+
+- benchmark_id：\`analysis-ambiguous-asks\`
+- capability：在业务问题表述模糊、数据带脏值与未说明的口径时，先澄清假设再分析，结论正确且口径可核对
+- 题量：3 道
+- 出题手法：每题附一份带重复行、混合单位与缺失值的 CSV，字段含义只有一部分写在数据字典里；业务问题本身有两种合理解读，正确做法是指出分歧、按标明的假设分别作答；评分看结论、口径说明与图表是否与结论一致
+- desired_baseline_score：\`<50\`
+- pilot_iteration_limit：\`4\``,
+      },
+    },
+    /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
+    aiCreateTail: (targetAgentId: string): string =>
+      "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
+      `- test_agent_id：\`${targetAgentId}\`\n` +
+      "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
+      "- desired_baseline_score：`<70`（上文另有要求时以上文为准）\n" +
+      "- pilot_iteration_limit：`3`（上文另有要求时以上文为准）\n\n" +
+      "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
+      "（title、description、runs = 1；不记录被测智能体）、" +
+      "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
+      "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
+      "通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
+      "定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+    // New Benchmark, manual mode: the form.
+    manualCreateTitle: "手动创建 Benchmark",
+    manualCreateIntro:
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
+    idField: "Benchmark id",
+    idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
+    idExists: "已有同名 Benchmark，请换一个 id",
+    titleField: "标题",
+    descriptionField: "描述",
+    descriptionHint: "一句话说明考察什么能力、题目难在哪里",
+    runsField: "每题运行次数",
+    runsHint: "1–1000 的整数；优化时每道题跑这么多次取平均",
+    runsInfo:
+      "多次运行能把稳定的能力差距和偶然波动分开，但评测成本按次数倍增。AI 出题校准时固定每题 1 次；这里的值给之后的优化用。",
+    casesTitle: "题目",
+    casesInfo:
+      "每道题分两部分：题干交给被测智能体；评分细则只有评测方能看到，永远不进被测智能体的 Workspace。",
+    rubricInfo:
+      "有区分度的评分细则：条目可观察、合计 100 分，把分数主要放在「真正做对」和「看起来做对」会产生不同结果的决定或产物上，不要给格式合规太高的保底分。",
+    caseHeading: (n: number): string => `第 ${n} 题`,
+    caseSlugField: "目录名后缀",
+    caseSlugHint: (id: string): string => `目录名 ${id}：仅字母、数字、_ 和 -`,
+    caseTitleField: "题目标题",
+    caseStatementField: "题干",
+    caseStatementHint: "Markdown；写明目标、给定材料、要求的产物与格式，不要暗示解法或评分点",
+    caseRubricField: "评分细则",
+    caseRubricHint: "Markdown；逐条给分并合计 100 分，如「- 40 分：……」",
+    addCase: "添加题目",
+    removeCase: "删除此题",
+    createSubmit: "创建 Benchmark",
+    created: "Benchmark 已创建",
+    invalidId: "仅允许字母、数字、_ 和 -",
+    invalidRuns: "必须是 1–1000 的整数",
+    invalidScore: "必须是 1–100 的整数",
+    // Use: one dialog with an Evaluate tab and an Optimize tab, over a single exit.
+    useTitle: (title: string): string => `使用：${title}`,
+    // Shared by both tabs.
+    testedAgent: "被测智能体",
+    // Evaluate tab.
+    evaluateDescription:
+      "AI 会把被测智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，并把结果作为一条带标签的评估追加进记分。",
+    evaluateTestedAgentHint:
+      "评估的是它当下的 Agent State；分数记在它名下，标签含其版本号、模型与思考等级",
+    evaluatorAgent: "执行评估的智能体",
+    evaluatorAgentHint:
+      "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
+    evaluatorMissingSkill:
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+    evaluateSessionModel: "评估会话使用的模型",
+    evaluateSessionModelHint:
+      "派发与汇总评测的模型，缺省为 Project 默认模型；被测智能体用的是它自己配置的模型，不在这里改",
+    evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
+    evaluateNoteField: "说明",
+    evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
+    /** The fixed tail: the `agent-evaluation` inputs, the label check and the single append. */
+    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+      "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- runs：\`${p.runs}\`\n\n` +
+      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的 `agent-evaluation` 子会话（省略 `agent_id`）；" +
+      "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
+      "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
+      "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
+      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题得分与本条记录的标签。",
+    // Optimize tab.
+    optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
+    optimizerAgent: "执行优化的智能体",
+    optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
+    optimizerMissingSkill:
+      "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+    testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
+    sessionModel: "优化会话使用的模型",
+    sessionModelHint:
+      "做分析与改动的模型，缺省为 Project 默认模型；评测被测智能体时沿用基线记录的模型，不在这里改",
+    optimizeRunsHint: "每个候选版本每道题跑几次取平均",
+    roundLimitField: "最多轮数",
+    roundLimitHint: "每轮一个改动；评测完整才算一轮",
+    targetScoreField: "目标分数",
+    targetScoreHint: "达到即提前结束；默认比当前基线高 10 分",
+    focusField: "优化重点",
+    focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
+    noBaseline:
+      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」跑一次完整评测取得基线。",
+    baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
+    /** The fixed tail: the `agent-optimization` inputs, the acceptance rule and the report. */
+    optimizeTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      roundLimit: number;
+      targetScore: number;
+    }): string =>
+      "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- runs：\`${p.runs}\`\n` +
+      `- desired_score：\`>=${p.targetScore}\`\n` +
+      `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
+      "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 委派 `agent-evaluation` 评测完整的 Case × runs 矩阵，" +
+      "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
+      "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
+      "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
   },
 
   // Server error code → localized copy (the server's message is hardcoded Chinese; this is only a fallback for unknown codes).

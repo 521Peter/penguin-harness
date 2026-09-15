@@ -42,7 +42,11 @@
  * derivation, so they differ only when the Agent's config changed after this page loaded. The
  * parts subdivide the filled run; their exact shares are the legend's job, since at low
  * occupancy the run is only a few pixels wide. Hovering a segment or its legend row links the
- * two: the row lights up and the other segments fade.
+ * two: the row lights up and the other segments fade, and clicking either pins that link until
+ * it is clicked again or another part is picked — the pinned legend row carries a ring as well
+ * as the wash, so it does not read as a hover that happened to stay. The stretch past the
+ * cutter is hatched rather than plain: it is room the model has but compaction fires before the
+ * Session can use, and it follows the pending value while the cutter is dragged.
  *
  * The cutter is also the control that moves the threshold. Dragging it (or focusing it and
  * using the arrow keys) proposes a value on a 1,000-token lattice, and the release opens a
@@ -367,6 +371,13 @@ function ContextPanel({
   // below. One piece of state for both lists, so a hovered ranking row cannot also dim the bar
   // it has no segment in.
   const [hovered, setHovered] = useState<string | null>(null);
+  // A click pins a part's highlight — the segment and its legend row together — until the
+  // same part is clicked again or another one is picked, so a reader can hold a highlight
+  // while moving the pointer elsewhere; a hover still wins while it lasts.
+  const [pinned, setPinned] = useState<string | null>(null);
+  const togglePinned = (key: string): void =>
+    setPinned((current) => (current === key ? null : key));
+  const lit = hovered ?? pinned;
   const [ranking, setRanking] = useState<RankingView>(lastRankingView);
   const pickRanking = (view: RankingView) => {
     lastRankingView = view;
@@ -409,7 +420,14 @@ function ContextPanel({
   // rather than zero, so both render `—` instead of describing a context that no longer exists.
   const unmeasured = unknown || data?.contextClosed === true;
   const composition = data === null ? null : contextComposition(data, now);
-  const hoveredPart = composition?.parts.some((p) => p.key === hovered) ? hovered : null;
+  const litPart = composition?.parts.some((p) => p.key === lit) ? lit : null;
+  // The room past the compaction threshold, as a fraction of the bar: hatched below the fills
+  // so it reads as room the model has but compaction fires before the Session can use —
+  // distinct from the plain free run left of the cutter — and it follows the pending value
+  // while the cutter is dragged.
+  const shownThreshold = pendingThreshold ?? threshold;
+  const beyondFraction =
+    shownThreshold === null ? null : thresholdFraction(shownThreshold, windowTokens);
 
   return (
     <>
@@ -452,6 +470,13 @@ function ContextPanel({
             style={{ marginBottom: MARK_OVERHANG_PX }}
           >
             <div aria-hidden className="absolute inset-0 bg-gray-200 dark:bg-gray-800">
+              {beyondFraction !== null && beyondFraction < 1 && (
+                <div
+                  title={S.chat.contextBeyondThreshold}
+                  className="context-hatch absolute inset-y-0 right-0"
+                  style={{ left: `${beyondFraction * 100}%` }}
+                />
+              )}
               <div
                 className="absolute inset-y-0 left-0 flex overflow-hidden"
                 style={{ width: `${fill * 100}%`, minWidth: now > 0 ? MIN_FILL_PX : 0 }}
@@ -463,9 +488,10 @@ function ContextPanel({
                       title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
                       onMouseEnter={() => setHovered(p.key)}
                       onMouseLeave={() => setHovered(null)}
+                      onClick={() => togglePinned(p.key)}
                       style={{ flexGrow: p.tokens, flexBasis: 0 }}
-                      className={`h-full transition-opacity duration-150 ${p.color} ${
-                        hoveredPart !== null && hoveredPart !== p.key ? "opacity-25" : ""
+                      className={`h-full cursor-pointer transition-opacity duration-150 ${p.color} ${
+                        litPart !== null && litPart !== p.key ? "opacity-25" : ""
                       }`}
                     />
                   ) : null,
@@ -505,8 +531,10 @@ function ContextPanel({
                 swatch={p.color}
                 tokens={p.tokens}
                 percent={p.percent}
-                highlighted={hovered === p.key}
+                highlighted={lit === p.key}
+                pinned={pinned === p.key}
                 onHover={(on) => setHovered(on ? p.key : null)}
+                onSelect={() => togglePinned(p.key)}
               />
             ))}
           </ul>
@@ -735,7 +763,7 @@ function ThresholdCutter({
           style={
             fraction > 0.5 ? { right: `${(1 - fraction) * 100}%` } : { left: `${fraction * 100}%` }
           }
-          className="absolute -bottom-5 rounded bg-gray-900 px-1 py-px font-mono text-[10px] whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
+          className="absolute -bottom-6 rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
         >
           {humanizeTokens(shown)}
         </span>
@@ -832,7 +860,9 @@ function ShareRow({
   percent,
   mono = false,
   highlighted = false,
+  pinned = false,
   onHover,
+  onSelect,
 }: {
   label: string;
   /** Tooltip of the label, when it should say more than the label does; the label is its own otherwise. */
@@ -844,16 +874,20 @@ function ShareRow({
   percent: number;
   mono?: boolean;
   highlighted?: boolean;
+  /** Pinned rather than merely hovered — the carrier hover never draws, so `aria-pressed` has something to agree with. */
+  pinned?: boolean;
   onHover?: (on: boolean) => void;
+  /** A click pins the row's highlight (the six parts); the rankings pass none and stay hover-only. */
+  onSelect?: () => void;
 }) {
-  return (
-    <li
-      onMouseEnter={() => onHover?.(true)}
-      onMouseLeave={() => onHover?.(false)}
-      className={`-mx-1 flex items-center gap-1.5 rounded px-1 py-px transition-colors duration-150 ${
-        highlighted ? "bg-gray-100 dark:bg-gray-800" : ""
-      }`}
-    >
+  // The row's own box: padding, rounding and both highlight carriers. It sits on the <li> for a
+  // hover-only row and on the <button> for a selectable one, so the two measure identically and
+  // the button's hit area is the whole padded row rather than the text inside it.
+  const boxClass = `flex items-center gap-1.5 rounded px-1 py-px transition-colors duration-150 ${
+    highlighted ? "bg-gray-100 dark:bg-gray-800" : ""
+  } ${pinned ? "inset-ring-1 inset-ring-gray-400 dark:inset-ring-gray-600" : ""}`;
+  const cells = (
+    <>
       {swatch !== undefined && (
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />
       )}
@@ -869,6 +903,29 @@ function ShareRow({
       <span className="w-8 shrink-0 text-right font-mono text-gray-400 dark:text-gray-500">
         {percent}%
       </span>
+    </>
+  );
+  // The bar's segments sit inside its aria-hidden track and stay mouse-only, so the legend is the
+  // only surface pinning can be reached from at all: a selectable row is a real button carrying
+  // the toggle's state, and the <li> then keeps nothing but the negative margin.
+  return (
+    <li
+      onMouseEnter={() => onHover?.(true)}
+      onMouseLeave={() => onHover?.(false)}
+      className={onSelect === undefined ? `-mx-1 ${boxClass}` : "-mx-1"}
+    >
+      {onSelect === undefined ? (
+        cells
+      ) : (
+        <button
+          type="button"
+          aria-pressed={pinned}
+          onClick={onSelect}
+          className={`w-full cursor-pointer text-left outline-none focus-visible:ring-2 focus-visible:ring-gray-400/60 ${boxClass}`}
+        >
+          {cells}
+        </button>
+      )}
     </li>
   );
 }

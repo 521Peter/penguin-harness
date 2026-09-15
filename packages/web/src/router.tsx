@@ -17,6 +17,7 @@ import { PluginsPage } from "./features/plugins/plugins-page";
 import { ModelsPage } from "./features/models/models-page";
 import { UsagePage } from "./features/usage/usage-page";
 import { BenchmarkPage } from "./features/benchmark/benchmark-page";
+import { BenchmarkDetailPage } from "./features/benchmark/benchmark-detail-page";
 import { TerminalPage } from "./features/terminal/terminal-page";
 import { OrgIndexRedirect, OrgLayout } from "./features/company/org-layout";
 import { OverviewPage } from "./features/company/overview-page";
@@ -102,6 +103,7 @@ export function AppRouter() {
             <Route path="channels/:channelId" element={<ChannelView />} />
             <Route path="*" element={<Navigate to="overview" replace />} />
           </Route>
+          <Route path="/benchmark/:benchmarkId" element={<BenchmarkDetailPage />} />
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />

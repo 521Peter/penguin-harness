@@ -101,6 +101,12 @@ const SETTLED_COMPONENTS: Components = {
   a: MdLink,
 };
 
+/**
+ * The settled map, for the read-only Markdown surfaces outside the chat (the shared file
+ * browser) that keep the code-block chrome and swap only the link and image adapters.
+ */
+export const SETTLED_MD_COMPONENTS: Components = SETTLED_COMPONENTS;
+
 export const Md = memo(function Md({
   text,
   streaming = false,

@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import type { SessionCategoryCounts, SessionInfo } from "@prismshadow/penguin-server/api";
 import {
+  FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
   TEMP_WORKSPACE_GROUP_KEY,
   TIME_BUCKETS,
@@ -44,7 +45,7 @@ function session(
     sessionId?: string;
     agentId?: string;
     archived?: boolean;
-    source?: "schedule" | "subagent";
+    source?: "schedule" | "subagent" | "benchmark";
     lastActiveAt?: string;
   } = {},
 ): SessionInfo {
@@ -177,7 +178,7 @@ describe("sessionCategory (the bucket a Session renders under = the server's lis
   });
 });
 
-describe("partitionSessions (per-group user / subagent / scheduled / archived split)", () => {
+describe("partitionSessions (per-group user / subagent / scheduled / evaluations / archived split)", () => {
   it("splits user rows and one bucket per origin, preserving order within each part", () => {
     const user1 = session("/srv/alpha", "2026-07-06T10:00:00.000Z");
     const sched1 = session("/srv/alpha", "2026-07-05T10:00:00.000Z", { source: "schedule" });
@@ -208,11 +209,12 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
     expect(parts.active).toEqual([]);
   });
 
-  it("empty input yields four empty parts", () => {
+  it("empty input yields five empty parts", () => {
     expect(partitionSessions([])).toEqual({
       active: [],
       subagent: [],
       schedule: [],
+      benchmark: [],
       archived: [],
     });
   });
@@ -250,6 +252,22 @@ describe("latestConversation (the auto-opened 'last conversation')", () => {
   });
 });
 
+describe("benchmark Sessions (the Evaluation Center's runs)", () => {
+  it("files a benchmark Session into its own folder and never auto-opens it", () => {
+    // The Test Session an evaluation launches for a Case × Run, active more recently than
+    // anything the user opened themselves.
+    const run = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "benchmark" });
+    const user = session("/srv/a", "2026-07-02T10:00:00.000Z");
+    const parts = partitionSessions([run, user]);
+    expect(parts.benchmark.map((s) => s.sessionId)).toEqual([run.sessionId]);
+    expect(parts.active.map((s) => s.sessionId)).toEqual([user.sessionId]);
+    // Its own collapsed folder, rendered between Scheduled and Archived.
+    expect(FOLDER_CATEGORIES).toEqual(["subagent", "schedule", "benchmark", "archived"]);
+    // The evaluator's run is not the conversation the user was last in.
+    expect(latestConversation([run, user])).toBe(user);
+  });
+});
+
 describe("splitPage (limit+1 fetch trick)", () => {
   it("an overflow row proves the server has more and is never shown", () => {
     const fetched = [1, 2, 3, 4];
@@ -264,7 +282,7 @@ describe("splitPage (limit+1 fetch trick)", () => {
 });
 
 describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
-  const zero = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  const zero = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
 
   it("sums each Workspace path across Agents and records which Agents hold each category", () => {
     const byAgent = new Map<string, Record<string, SessionCategoryCounts>>([
@@ -279,17 +297,24 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     ]);
     const groups = aggregateWorkspaceCounts(byAgent);
     expect(groups.get("/srv/alpha")).toEqual({
-      totals: { active: 3, subagent: 1, schedule: 2, archived: 0 },
+      totals: { active: 3, subagent: 1, schedule: 2, benchmark: 0, archived: 0 },
       agents: {
         active: ["agent_a", "agent_b"],
         subagent: ["agent_a"],
         schedule: ["agent_b"],
+        benchmark: [],
         archived: [],
       },
     });
     expect(groups.get("/srv/beta")).toEqual({
       totals: { ...zero, archived: 3 },
-      agents: { active: [], subagent: [], schedule: [], archived: ["agent_a"] },
+      agents: {
+        active: [],
+        subagent: [],
+        schedule: [],
+        benchmark: [],
+        archived: ["agent_a"],
+      },
     });
     // A group only in another Workspace never appears — its content can't surface elsewhere.
     expect(groups.has("/srv/gamma")).toBe(false);
@@ -310,7 +335,13 @@ describe("aggregateWorkspaceCounts (per-group exact server share)", () => {
     expect(groups.size).toBe(1);
     expect(groups.get(TEMP_WORKSPACE_GROUP_KEY)).toEqual({
       totals: { ...zero, active: 3, archived: 1 },
-      agents: { active: ["agent_a"], subagent: [], schedule: [], archived: ["agent_a"] },
+      agents: {
+        active: ["agent_a"],
+        subagent: [],
+        schedule: [],
+        benchmark: [],
+        archived: ["agent_a"],
+      },
     });
   });
 });
@@ -468,6 +499,7 @@ describe("totalCategoryCounts", () => {
     active: 0,
     subagent: 0,
     schedule: 0,
+    benchmark: 0,
     archived: 0,
     ...over,
   });
@@ -480,7 +512,7 @@ describe("totalCategoryCounts", () => {
           ["b", counts({ active: 4, subagent: 1 })],
         ]),
       ),
-    ).toEqual({ active: 7, subagent: 1, schedule: 0, archived: 2 });
+    ).toEqual({ active: 7, subagent: 1, schedule: 0, benchmark: 0, archived: 2 });
   });
 
   it("reports zeros for an empty map rather than leaving fields undefined", () => {
@@ -488,6 +520,7 @@ describe("totalCategoryCounts", () => {
       active: 0,
       subagent: 0,
       schedule: 0,
+      benchmark: 0,
       archived: 0,
     });
   });
@@ -522,10 +555,10 @@ describe("aggregateWorkspaceLatest (per-group newest-Session stamp)", () => {
 });
 
 describe("completeWorkspaceGroups (every counted Workspace is a group, placed by recency)", () => {
-  const zero = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  const zero = { active: 0, subagent: 0, schedule: 0, benchmark: 0, archived: 0 };
   const counted = (totals: Partial<SessionCategoryCounts>) => ({
     totals: { ...zero, ...totals },
-    agents: { active: [], subagent: [], schedule: [], archived: [] },
+    agents: { active: [], subagent: [], schedule: [], benchmark: [], archived: [] },
   });
 
   it("adds an empty group for a counted Workspace the loaded rows never touched, and orders every group by its newest stamp", () => {

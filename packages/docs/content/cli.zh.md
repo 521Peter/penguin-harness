@@ -51,6 +51,7 @@ penguin run -m "长任务" --background            # 立即返回 session id
 | `--approve <mode>` | 审批模式，见下文（缺省 `allow-all`）。与 `--session` 同用时 PATCH 该会话的粘性模式 |
 | `--thinking <level>` | 发起任务前把会话的思考等级钉为 `low` / `medium` / `high` / `xhigh` / `max`，自会话的下一次 LLM 请求起生效。省略时按会话钉定值（否则 Agent 配置）生效 |
 | `--session <sessionId>` | 复用既有 Session（完整 id 或唯一片段），不再新建；不能与 `--workspace` 及模型对同用 |
+| `--source <source>` | 把新建会话标记为 Benchmark 评估创建；唯一取值为 `benchmark`，Web App 会把这类会话归入会话列表的「评估任务」子夹。不能与 `--session` 同用 |
 | `--background` | 提交任务后立即退出并打印 session id（`--json` 下为 `{"sessionId"}`）；任务在服务端继续运行，可用 `penguin logs -f` 跟随 |
 | `--timeout <duration>` | 软让出等待预算（见「全局约定」）：到时打印已渲染内容与一行暗色「仍在运行」提示（含 session id；`--json` 下为 `{sessionId, status: "running", text}`）并以 0 退出——任务不被中止。`--timeout 0` 在 POST 后立即返回（`--json` 下为 `{sessionId, status: "running"}`，无 `text`）。不能与 `--background` 同用 |
 | `--goal [budget]` | 目标模式：消息即目标，服务端循环直至终态；可选值为 token 预算（如 `500k`） |

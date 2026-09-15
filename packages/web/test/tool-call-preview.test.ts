@@ -17,6 +17,7 @@ import {
   previewArguments,
   shortenPath,
   showsBackgroundAction,
+  BACKGROUND_ACTION_DELAY_MS,
 } from "../src/features/chat/tool-call-card";
 import { S } from "../src/lib/strings";
 
@@ -198,8 +199,9 @@ describe("isDetachedCall", () => {
   it("marks a call whose output carries the note the tool wrote on being moved to the background", () => {
     expect(
       isDetachedCall(
-        "building…\n[moved to the background by the user with process_id proc-12ab34cd; its " +
-          "completion will arrive as a user message — no need to poll.]",
+        "building…\n[moved to the background by the user with process_id proc-12ab34cd; leave it " +
+          "running unattended: do not poll it or send it input — its completion will arrive on its " +
+          "own as a [background_task_done] user message.]",
       ),
     ).toBe(true);
   });
@@ -216,26 +218,37 @@ describe("isDetachedCall", () => {
 
 describe("showsBackgroundAction", () => {
   const EXEC = '{"cmd":"pnpm dev"}';
+  /** The card's elapsed-time gate, already crossed. */
+  const PAST = true;
 
   it("offers the action while the two detachable tools execute on a main-session card", () => {
-    expect(showsBackgroundAction("exec_command", EXEC, true, [])).toBe(true);
-    expect(showsBackgroundAction("run_subagent", '{"prompt":"go"}', true, [])).toBe(true);
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], PAST)).toBe(true);
+    expect(showsBackgroundAction("run_subagent", '{"prompt":"go"}', true, [], PAST)).toBe(true);
+  });
+
+  it("waits for the delay: a call that returns sooner never flashes it", () => {
+    // Ten seconds, measured by useElapsedPast on the card; this function only reads its answer.
+    expect(BACKGROUND_ACTION_DELAY_MS).toBe(10_000);
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], false)).toBe(false);
+    expect(showsBackgroundAction("exec_command", EXEC, true, [], PAST)).toBe(true);
   });
 
   it("hides it once the call is no longer executing", () => {
-    expect(showsBackgroundAction("exec_command", EXEC, false, [])).toBe(false);
+    expect(showsBackgroundAction("exec_command", EXEC, false, [], PAST)).toBe(false);
   });
 
   it("hides it for tools with no background form", () => {
-    expect(showsBackgroundAction("read_file", '{"file_path":"a.txt"}', true, [])).toBe(false);
-    expect(showsBackgroundAction("input_command", '{"process_id":"proc-1"}', true, [])).toBe(false);
-    expect(showsBackgroundAction("mcp__docs__search", "{}", true, [])).toBe(false);
+    expect(showsBackgroundAction("read_file", '{"file_path":"a.txt"}', true, [], PAST)).toBe(false);
+    expect(showsBackgroundAction("input_command", '{"process_id":"proc-1"}', true, [], PAST)).toBe(
+      false,
+    );
+    expect(showsBackgroundAction("mcp__docs__search", "{}", true, [], PAST)).toBe(false);
   });
 
   it("hides it on a subagent-nested card: that call lives in the child Session's environment", () => {
-    expect(showsBackgroundAction("exec_command", EXEC, true, ["session-child-12ab34cd"])).toBe(
-      false,
-    );
+    expect(
+      showsBackgroundAction("exec_command", EXEC, true, ["session-child-12ab34cd"], PAST),
+    ).toBe(false);
   });
 
   it("hides it on a call already launched with run_in_background: nothing left to hand over", () => {
@@ -245,6 +258,7 @@ describe("showsBackgroundAction", () => {
         '{"cmd":"pnpm dev","run_in_background":true}',
         true,
         [],
+        PAST,
       ),
     ).toBe(false);
   });
