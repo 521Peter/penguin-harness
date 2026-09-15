@@ -133,13 +133,22 @@ export async function computeSpend(
 
 const money = (n: number): string => n.toFixed(2);
 
+/**
+ * Spend as a fraction of a budget. Zero is a real budget — everything is already over it —
+ * so it reads as 1 rather than as no ratio at all: an employee capped at zero is warned and
+ * paused on the first pass, and a row that reports that with no meter beside it explains
+ * nothing. Unbounded is `budget === undefined`, and has no ratio to report.
+ */
+export function budgetRatio(cost: number, budget: number): number {
+  return budget > 0 ? cost / budget : 1;
+}
+
 /** The `budget:` line of a trigger block: `12.40 / 30.00 USD (41%)`, or the spend alone when unbounded. */
 export function budgetLine(org: LoadedOrg, spend: OrgSpend, agentId: string): string {
   const cost = spend.cumulative.get(agentId) ?? 0;
   const budget = org.byId.get(agentId)?.budget;
   if (budget === undefined) return `${money(cost)} USD / unbounded`;
-  const ratio = budget > 0 ? Math.round((cost / budget) * 100) : 100;
-  return `${money(cost)} / ${money(budget)} USD (${ratio}%)`;
+  return `${money(cost)} / ${money(budget)} USD (${Math.round(budgetRatio(cost, budget) * 100)}%)`;
 }
 
 /** Employees whose own budget mark, or any ancestor's, is paused for the period. */

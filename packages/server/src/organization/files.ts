@@ -81,6 +81,15 @@ export function orgLanguage(config: OrgConfig): OrgLanguage {
   return config.language ?? detectLanguage(config.mission);
 }
 
+/**
+ * The bounds `parseOrgConfig` holds the two numeric settings to. Exported because the write
+ * path has to refuse exactly what the loader would: a value past them is written happily and
+ * then fails to parse on the next load, which marks the organization invalid and stops every
+ * automatic trigger until somebody edits the file by hand.
+ */
+export const MENTION_CHAIN_LIMIT_MAX = 100;
+export const BUDGET_RATIO_MAX = 10;
+
 export const ORG_CONFIG_DEFAULTS = {
   status: "active" as OrgStatus,
   approvalMode: "allow-all" as OrgApprovalMode,
@@ -128,8 +137,13 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
     return fail("approval_mode must be allow-all, read-only or deny-all");
   }
   const limit = table["mention_chain_limit"] ?? ORG_CONFIG_DEFAULTS.mentionChainLimit;
-  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 0 || limit > 100) {
-    return fail("mention_chain_limit must be an integer between 0 and 100");
+  if (
+    typeof limit !== "number" ||
+    !Number.isInteger(limit) ||
+    limit < 0 ||
+    limit > MENTION_CHAIN_LIMIT_MAX
+  ) {
+    return fail(`mention_chain_limit must be an integer between 0 and ${MENTION_CHAIN_LIMIT_MAX}`);
   }
   const warn = table["budget_warn_ratio"] ?? ORG_CONFIG_DEFAULTS.budgetWarnRatio;
   const pause = table["budget_pause_ratio"] ?? ORG_CONFIG_DEFAULTS.budgetPauseRatio;
@@ -137,8 +151,8 @@ export function parseOrgConfig(raw: string): ParseResult<OrgConfig> {
     ["budget_warn_ratio", warn],
     ["budget_pause_ratio", pause],
   ] as const) {
-    if (typeof v !== "number" || !(v > 0) || v > 10)
-      return fail(`${key} must be a number in (0, 10]`);
+    if (typeof v !== "number" || !(v > 0) || v > BUDGET_RATIO_MAX)
+      return fail(`${key} must be a number in (0, ${BUDGET_RATIO_MAX}]`);
   }
   const createdBy = table["created_by"];
   if (typeof createdBy !== "string" || createdBy === "")
