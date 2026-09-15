@@ -35,7 +35,7 @@ id 一律是小写 snake_case、2–64 字符、以字母开头，并按约定�
 | --- | --- | --- |
 | 组织 | 一家公司：名称、使命、状态、时区、工作语言、审批模式 | `<project>/organizations/<org_id>/org_config.toml` |
 | 员工 | 以 CEO 为根、经汇报线连成一棵树的 Agent——没有部门与岗位；每个条目带头衔、职责、工作区和月度预算 | `org_chart.yaml` |
-| 工位会话 | 每个员工一个常设会话：日程项、频道里的提及与人都发到这里；它负责调度、发起工单会话，不亲自做工单 | `desks.toml`（服务端写入） |
+| 工位会话 | 每个员工一个常设会话，招募当时就开好：日程项、频道里的提及与人都发到这里；它负责调度、发起工单会话，不亲自做工单。对账扫描会为没有工位的员工补开——手工写进 `org_chart.yaml` 的人，或者会话被删掉的人 | `desks.toml`（服务端写入） |
 | 日程 | 按员工分组的日程项，格式同定时任务、去掉目标字段——唯一的周期性驱动 | `calendar/<agent_id>/<event>.toml` |
 | 工单 | 一个工单一个 Markdown 文件——YAML frontmatter（`title`、`status`、`owner`、`notify`、`priority`、`due`、`blocked`、`sessions`、`history`）加 `## Goal`、`## Acceptance criteria`、`## Progress`、`## Result` 四节；所在列目录即状态，slug 为用连字符连接的小写英文单词 | `tickets/<yyyy-mm>/<列>/<yyyy-mm-dd>-<slug>.md` |
 | 频道 | 一个频道一个目录：一份写有名称、用途与成员的意图文件，加上一行一条消息、按天分的 JSON Lines | `channels/<channel_id>/channel.toml`、`channels/<channel_id>/<yyyy-mm-dd>.jsonl` |

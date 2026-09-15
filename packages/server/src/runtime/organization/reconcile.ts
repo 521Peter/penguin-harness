@@ -1,10 +1,11 @@
 /**
  * One reconcile pass over an organization — the same pass whether the scheduler's timer
  * or a route's write asks for it. Files in, decisions out: caches are projected from the
- * ledger and the tickets, desks are renewed where the chart moved them, due calendar
- * events fire (carrying the ticket changes queued since the employee's last sweep), ticket
- * changes are recorded and queued, new channel mentions are delivered, budgets are checked,
- * and every employee's company plugins are brought up to the library's version.
+ * ledger and the tickets, missing desks are opened and desks renewed where the chart moved
+ * them, due calendar events fire (carrying the ticket changes queued since the employee's
+ * last sweep), ticket changes are recorded and queued, new channel mentions are delivered,
+ * budgets are checked, and every employee's company plugins are brought up to the library's
+ * version.
  * Missed work is never backfilled: a slot that passed while the server was down, the
  * organization paused or the switch off is consumed and skipped, like a schedule.
  */
@@ -170,6 +171,36 @@ async function reconcileEmployeePlugins(deps: OrgDeps, org: LoadedOrg): Promise<
           employee.agentId,
         );
       }
+    }
+  }
+}
+
+/**
+ * Every employee of the chart has a desk session, and one that went missing comes back.
+ *
+ * A hire opens the desk itself, so this step is what covers everything hiring does not: an
+ * employee added to `org_chart.yaml` by hand, one hired before desks were opened at hire
+ * time, and a desk whose session row is gone — deleted by hand, or with the employee's Agent.
+ * Until it runs, every surface that addresses a desk by Session id points at a Session the
+ * server cannot find: the sidebar's desk row still draws its menu, and binding it to a
+ * messaging bot answers "Session does not exist".
+ *
+ * Opening a desk starts no run, so a paused organization and a switched-off master switch
+ * provision desks exactly like an active one. Idempotent: an employee whose desk is there is
+ * skipped without a write. A failure is recorded per employee and never stops the pass — the
+ * next one tries again.
+ */
+async function provisionMissingDesks(deps: OrgDeps, org: LoadedOrg): Promise<void> {
+  for (const employee of org.chart.employees) {
+    const desk = org.desks[employee.agentId];
+    if (desk !== undefined && deps.sessions.findById(desk.sessionId) !== null) continue;
+    const r = await ensureDesk(deps, org, employee.agentId);
+    if (!r.ok) {
+      recordError(deps, org, "org_desk_unavailable", r.error, employee.agentId);
+      continue;
+    }
+    if (r.desk.created) {
+      deps.log?.(`org: opened a desk session for ${employee.agentId} (${r.desk.sessionId})`);
     }
   }
 }
@@ -698,6 +729,7 @@ export async function reconcileOrg(
   const { tickets } = await listTickets(deps, org);
   syncCaches(deps, org, tickets);
   await reconcileEmployeePlugins(deps, org);
+  await provisionMissingDesks(deps, org);
   await renewMovedDesks(deps, org);
   const spend = await computeSpend(deps, org, tickets);
   await reconcileBudgets(deps, org, spend);

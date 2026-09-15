@@ -1,9 +1,9 @@
 /**
  * The company sidebar's 工位 group, as pure shaping (unit tested) over the organization's
  * chart, its sessions route and the session list's live statuses: one row per EMPLOYEE, in
- * chart order, whether or not a desk session exists yet. The roster is the chart's (the
- * sessions route only knows employees whose desk has been opened); the state is the live one
- * where the session list holds the row.
+ * chart order, whether or not these caches already name its desk session. The roster is the
+ * chart's (the sessions route only knows employees whose desk is in the ledger); the state is
+ * the live one where the session list holds the row.
  *
  * The employees' own states (the chart's dots, the overview's counts) are corrected the same
  * way by `liveEmployeeStates` at the bottom of this file, which reads the sessions attached to
@@ -33,7 +33,11 @@ import type { SessionActivity } from "../../lib/session-activity";
  */
 export type LiveSessionStatuses = ReadonlyMap<string, SessionStatus>;
 
-/** One employee's desk row. `sessionId` is null until a desk has been opened for them. */
+/**
+ * One employee's desk row. `sessionId` is null only while neither cache names the employee's
+ * desk — the server opens one at hire time and re-opens a missing one on its next pass, so
+ * this is the window between a hire and the next read of the chart or the sessions route.
+ */
 export interface OrgDeskRow {
   agentId: string;
   /** The employee's display name — the row title, whatever the session's own title says. */

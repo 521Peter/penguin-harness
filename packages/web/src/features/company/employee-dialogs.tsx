@@ -17,6 +17,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
+import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { Button } from "../../components/ui/button";
@@ -70,6 +71,7 @@ export function HireDialog({
 }) {
   const { agents } = useProject();
   const { currency } = useTheme();
+  const company = useCompany();
   const [source, setSource] = useState<"existing" | "new">("existing");
   const [agentId, setAgentId] = useState("");
   const [newId, setNewId] = useState("");
@@ -175,6 +177,10 @@ export function HireDialog({
         ...(duties.trim() ? { duties: duties.trim() } : {}),
       };
       await api.hireOrgEmployee(projectId, orgId, body);
+      // The hire opened the newcomer's desk session: re-read the organization's sessions so
+      // the sidebar's 工位 row carries its real id straight away, rather than a row that
+      // cannot be opened or bound until some later event happens to refresh the cache.
+      void company.reloadOrgSessions();
       toastSuccess(S.company.chart.hired(hireName));
       setConfirmOpen(false);
       onHired();

@@ -1,6 +1,8 @@
 /**
  * Organization runtime semantics with doubles and a controlled clock — no real LLM, no
- * core Session: creation writes the files and opens the CEO's desk with an init run; a
+ * core Session: creation writes the files and opens the CEO's desk with an init run; a hire
+ * opens the newcomer's desk and the reconcile pass opens the desks nothing else did (a
+ * hand-added employee, a session deleted from under the ledger); a
  * calendar event registered after its time is not backfilled and fires on its next slot to
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
@@ -2067,6 +2069,140 @@ describe("organization runtime", () => {
       expect(ids.get(work)).toBe(ORG);
       expect(ids.has("session-2026-09-01-00-00-00-0000ffff")).toBe(false);
       expect(cache.orgIdsOfProject("other_project").size).toBe(0);
+    });
+
+    it("opens the new employee's desk as it is hired, and starts no run for it", async () => {
+      await createOrg();
+      const runsAfterCreation = started.length;
+      const item = await service.hire(P, ORG, {
+        newAgent: { agentId: HR, name: "HR" },
+        title: "HR",
+        reportsTo: CEO,
+      });
+      // The hire's own response already names the desk: the sidebar's row carries a real
+      // Session id from the first read, rather than waiting for a trigger to open one.
+      const deskSessionId = item.desk?.sessionId;
+      expect(deskSessionId).toBeTruthy();
+      expect(sessions.findById(deskSessionId!)).toMatchObject({ agentId: HR, client: "org" });
+      expect(sessions.findById(deskSessionId!)?.title).toBe(`Name of ${HR}'s desk`);
+      expect(created.at(-1)).toMatchObject({
+        agentId: HR,
+        client: "org",
+        workspace: path.join(orgDir(), "workspace", HR),
+      });
+      // A desk is a Session, not a work run: hiring dispatches nothing to it.
+      expect(started).toHaveLength(runsAfterCreation);
+
+      const ledger = (await store.readDesks(orgDir())).parsed;
+      expect(ledger.ok && ledger.value[HR]?.sessionId).toBe(deskSessionId);
+      const listed = (await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR);
+      expect(listed?.sessionId).toBe(deskSessionId);
+      expect(cache.ownerOfSession(deskSessionId!)).toMatchObject({ kind: "desk", agentId: HR });
+      // Opening it afterwards reuses it rather than opening a second one.
+      expect(await service.desk(P, ORG, HR, {})).toMatchObject({
+        sessionId: deskSessionId,
+        created: false,
+      });
+    });
+
+    it("provisions a desk the chart names but the ledger does not, and re-opens one whose session is gone", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      const hired = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR)!;
+
+      // An employee written into the chart by hand — the CEO's file tools, or a person — has
+      // no ledger entry at all. The pass opens its desk without any trigger.
+      const dev = "acme_dev";
+      existingAgents.add(dev);
+      await fs.writeFile(
+        path.join(orgDir(), "org_chart.yaml"),
+        [
+          "employees:",
+          `  - agent_id: ${CEO}`,
+          "    title: CEO",
+          "    reports_to: null",
+          "    workspace: ceo",
+          `  - agent_id: ${HR}`,
+          "    title: HR",
+          `    reports_to: ${CEO}`,
+          `    workspace: ${HR}`,
+          `  - agent_id: ${dev}`,
+          "    title: Dev",
+          `    reports_to: ${CEO}`,
+          "    workspace: dev",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const runs = started.length;
+      await scheduler.tickOnce();
+      const devDesk = (await service.sessions(P, ORG)).desks.find((d) => d.agentId === dev);
+      expect(sessions.findById(devDesk?.sessionId ?? "")).toMatchObject({
+        agentId: dev,
+        client: "org",
+      });
+      expect(started).toHaveLength(runs);
+
+      // A desk session deleted by hand (or with its Agent) leaves the ledger naming a Session
+      // the server cannot find — which is exactly what the row's messaging binding asks for,
+      // and what answered "Session does not exist". The pass opens a fresh one.
+      const gone = hired.desk!.sessionId;
+      sessions.deleteByAgent(P, HR);
+      expect(sessions.findById(gone)).toBeNull();
+      expect((await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR)?.sessionId).toBe(
+        gone,
+      );
+      await scheduler.tickOnce();
+      const healed = (await service.sessions(P, ORG)).desks.find((d) => d.agentId === HR);
+      expect(healed?.sessionId).not.toBe(gone);
+      expect(sessions.findById(healed?.sessionId ?? "")).toMatchObject({ agentId: HR });
+      // Idempotent: a second pass finds every desk in place and opens nothing.
+      const openedSoFar = created.length;
+      await scheduler.tickOnce();
+      expect(created).toHaveLength(openedSoFar);
+    });
+
+    it("records a desk it cannot open and provisions the rest of the chart, paused or not", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      await service.patch(P, ORG, { status: "paused" });
+
+      // Two employees with no desk: one whose Agent is gone (nothing can open it) and one
+      // that is fine. A paused organization fires no run, but a desk is not a run.
+      const ghost = "acme_ghost";
+      const dev = "acme_dev";
+      existingAgents.add(dev);
+      await fs.writeFile(
+        path.join(orgDir(), "org_chart.yaml"),
+        [
+          "employees:",
+          `  - agent_id: ${CEO}`,
+          "    title: CEO",
+          "    reports_to: null",
+          "    workspace: ceo",
+          `  - agent_id: ${HR}`,
+          "    title: HR",
+          `    reports_to: ${CEO}`,
+          `    workspace: ${HR}`,
+          `  - agent_id: ${ghost}`,
+          "    title: Ghost",
+          `    reports_to: ${CEO}`,
+          "    workspace: ghost",
+          `  - agent_id: ${dev}`,
+          "    title: Dev",
+          `    reports_to: ${CEO}`,
+          "    workspace: dev",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      errors.length = 0;
+      await scheduler.tickOnce();
+      expect(errors.map((e) => e.code)).toContain("org_desk_unavailable");
+      expect(errors.some((e) => e.ctx?.agentId === ghost)).toBe(true);
+      const desks = (await service.sessions(P, ORG)).desks.map((d) => d.agentId);
+      expect(desks).toContain(dev);
+      expect(desks).not.toContain(ghost);
     });
 
     it("pausing keeps every desk session open, and nothing removes an organization", async () => {

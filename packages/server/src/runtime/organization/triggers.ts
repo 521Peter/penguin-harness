@@ -1,10 +1,12 @@
 /**
  * Delivering work to employees. Every automatic trigger is one user input sent to a
  * session: an `[org_trigger]` block (built by core's marker module, which also owns the
- * parser the frontend folds it with) followed by the trigger's content. Desk sessions
- * are opened lazily here on first use and renewed when the CEO reassigns a workspace;
- * ticket sessions are opened per start. Both are stamped `client: "org"` at creation — the
- * durable marker development mode's list reads to leave them out of it.
+ * parser the frontend folds it with) followed by the trigger's content. `ensureDesk` here
+ * is the single way a desk session comes into being — the hire opens one, the reconcile
+ * pass provisions the ones that are missing, a trigger falls back on it, and it renews a
+ * desk when the CEO reassigns a workspace; ticket sessions are opened per start. Both are
+ * stamped `client: "org"` at creation — the durable marker development mode's list reads to
+ * leave them out of it.
  */
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
@@ -31,11 +33,12 @@ export type DeskResult = { ok: true; desk: DeskHandle } | { ok: false; error: st
 
 /**
  * The employee's desk session: reused while it exists and still sits in the workspace the
- * chart resolves to; otherwise (first use, deleted session, reassigned workspace, or an
- * explicit renewal) a new one is opened and the ledger rewritten. The old session stays as
- * history under `previous` so its cost keeps counting. A relative workspace that is not on
- * disk is created here too — a hand-edited chart, or the calendar reaching a desk before
- * anyone opened it, must not leave an employee unable to work over a missing directory.
+ * chart resolves to; otherwise (the hire, a desk the pass found missing, a session deleted
+ * by hand or with its Agent, a reassigned workspace, or an explicit renewal) a new one is
+ * opened and the ledger rewritten. The old session stays as history under `previous` so its
+ * cost keeps counting. A relative workspace that is not on disk is created here too — a
+ * hand-edited chart, or the calendar reaching a desk before anyone opened it, must not leave
+ * an employee unable to work over a missing directory.
  */
 export async function ensureDesk(
   deps: OrgDeps,

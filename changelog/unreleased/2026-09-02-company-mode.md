@@ -456,3 +456,13 @@ cursors, budget marks) and each user's read cursor per channel.
 - **The 内测版 tag** moved from the organization switcher onto the 「公司」 option of the
   开发 | 公司 switch, as a small superscript that does not change the control's size; the option's
   accessible name reads 「公司 · 内测版」.
+- **An employee has a desk session from the moment it is hired.** `hire` opens it inside the
+  same lock that writes the chart — a Session, not a run, so nothing is dispatched — and the
+  hire still succeeds when opening it fails (the reason is recorded as `org_desk_unavailable`).
+  Each reconcile pass then provisions the desks that are missing: an employee added to
+  `org_chart.yaml` by hand, one hired before this, and one whose desk session row is gone
+  (deleted by hand, or with its Agent). A paused organization and a switched-off master switch
+  provision desks just the same. Before this, a desk was opened only on its employee's first
+  calendar trigger, mention or sidebar click, so a fresh hire's 工位 row named no Session and
+  a row left pointing at a deleted one answered "Session does not exist" when it was bound to
+  a messaging bot.

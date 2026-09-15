@@ -2,15 +2,16 @@
  * The 工位 group under the company sidebar's channel list, and the collapsed rail's twin.
  *
  * One row per employee, in chart order, expanded by default: the organization's people are
- * its primary objects, and a desk is where a person is talked to. A row whose employee has
- * never had a desk opened still stands there and opens one on click, exactly as the org
- * chart's card does. Ticket sessions have no group of their own — a session exists because a
- * ticket started it, and it is read from that ticket's drawer, where the work it belongs to
- * is on screen beside it.
+ * its primary objects, and a desk is where a person is talked to. Every employee has a desk
+ * session from the moment it is hired, so a row normally carries one; a row whose id these
+ * caches have not learned yet still stands there and opens the desk on click, exactly as the
+ * org chart's card does. Ticket sessions have no group of their own — a session exists
+ * because a ticket started it, and it is read from that ticket's drawer, where the work it
+ * belongs to is on screen beside it.
  *
- * A desk that has been opened carries the development list's row menu (right-click, and the
- * hover ellipsis), pared down to the two actions an organization leaves to the reader: copy
- * the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
+ * A row that names a desk session carries the development list's row menu (right-click, and
+ * the hover ellipsis), pared down to the two actions an organization leaves to the reader:
+ * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
  * the organization's — the employee names it, hiring and firing open and close it — so
  * rename, archive, delete and pin are not offered here. The binding's own indicator is read
  * from the session list store: the organization's sessions route does not carry it.
@@ -117,9 +118,9 @@ function useOpenDesk(projectId: string, orgId: string, onNavigate?: () => void) 
 }
 
 /**
- * One desk row. The menu hangs off a desk that exists; an employee whose desk has never been
- * opened has no Session to copy or bind, so the row stays a plain button until the first click
- * creates one.
+ * One desk row. The menu hangs off a desk this list knows the id of; while it does not (the
+ * caches have not caught up with a hire, or the desk has yet to be provisioned) there is no
+ * Session to copy or bind, so the row stays a plain button until a click opens one.
  */
 function DeskRow({
   row,
@@ -331,6 +332,12 @@ export function OrgSessionGroups({
         <MessagingBindingModal
           sessionId={messagingSessionId}
           onClose={() => setMessagingSessionId(null)}
+          // The row's Session id comes from the company store's cache of the organization's
+          // sessions route. A desk exists from the hire and the reconcile pass re-opens one
+          // whose session went missing, so a row naming an id the server cannot find should
+          // not happen — but when it does, the cache is what is stale: re-read it, and the
+          // editor's own toast has already said why the dialog closed.
+          onLoadFailed={() => void company.reloadOrgSessions()}
           onChanged={(sessionId, channel) => {
             const current = sessions.find((x) => x.sessionId === sessionId);
             if (!current) return;

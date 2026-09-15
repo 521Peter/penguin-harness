@@ -857,6 +857,22 @@ export class OrganizationService {
           employeeJoined(agentPrincipal(agentId), title, agentPrincipal(req.reportsTo)),
         ),
       );
+      // The desk exists from the moment the employee does. It is what every surface
+      // addressing the employee by Session id needs — the sidebar's desk row and its
+      // messaging binding, `penguin org desk show`, an @-mention — and opening it only on
+      // first use left a fresh hire with a row pointing at no Session at all. A desk is a
+      // Session, not a run: nothing is dispatched here. A failure (the Agent or the
+      // partition disappeared between the writes above and this line) is recorded and the
+      // hire still stands; the reconcile pass provisions the desk on its next sweep.
+      const desk = await ensureDesk(this.deps, org, agentId);
+      if (!desk.ok) {
+        this.deps.errors.record({
+          source: "organization",
+          err: new Error(desk.error),
+          code: "org_desk_unavailable",
+          ctx: { projectId, agentId },
+        });
+      }
       const spend = await computeSpend(this.deps, org, (await listTickets(this.deps, org)).tickets);
       const items = await this.employeeItems(org, spend);
       return items.find((i) => i.agentId === agentId)!;
