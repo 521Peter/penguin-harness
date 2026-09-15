@@ -3,6 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#740](https://github.com/Prism-Shadow/penguin-harness/pull/740)
 
 [中文版](2026-09-15-ticket-file-filter.zh.md)
 
