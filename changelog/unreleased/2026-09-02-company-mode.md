@@ -441,3 +441,18 @@ cursors, budget marks) and each user's read cursor per channel.
   what you hit.", and the same sentence joins that page's `?`; the first switch into the mode in a
   browser raises it once as a toast and never again (remembered in localStorage as
   `penguin.companyBetaNoticeShown`).
+- **The ticket detail is a dialog, opened in place.** A centered window (the settings dialog's
+  shape) instead of a side drawer, mounted once on the company shell and opened from the board's
+  titles, the finance ledger, the overview's inbox and a channel message's ticket reference; a
+  parent or child row switches the dialog's ticket with a 「返回」 to come back, and the tickets
+  page keeps `?ticket=<id>` for deep links. Pages change only from the menu: the finance ledger
+  and channel ticket references no longer navigate; the overview keeps its cross-menu jumps (it
+  is the dashboard), and opening a Session still goes to the conversation page. The P0 / P1 / P2
+  chip sits after the title on the same line, one size smaller.
+- **A bare URL ends before a closing emphasis run.** `请**打开 http://127.0.0.1:4321/**查看`
+  used to put the `**` (and the CJK that follows) into the link; the autolink boundary pass now
+  trims trailing `*`, `~`, `` ` `` runs, a `_` run when the paragraph opened one, and an unmatched
+  `)` / `]` / `>`, handing them back to the text.
+- **The 内测版 tag** moved from the organization switcher onto the 「公司」 option of the
+  开发 | 公司 switch, as a small superscript that does not change the control's size; the option's
+  accessible name reads 「公司 · 内测版」.
