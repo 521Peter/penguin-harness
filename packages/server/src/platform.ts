@@ -1,7 +1,7 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
-import type { RuntimeCapabilities } from "./hmr/capabilities.js";
+import type { HmrCapabilities } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
@@ -12,6 +12,7 @@ import {
   RuntimeDb,
   RuntimeDesktop,
   RuntimeHmr,
+  RuntimeHmrControl,
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
@@ -23,6 +24,7 @@ import {
   Desktop,
   Lifecycle,
   Hmr,
+  HmrControl,
   Log,
   Paths,
   Proxy,
@@ -97,7 +99,10 @@ import { Machines, MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
+import { AuthRoutes } from "./http/routes/auth.js";
+import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/routes/desktop.js";
 import { InstallRoutes } from "./http/routes/install.js";
+import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
 import { TerminalModule } from "./terminal/manager.js";
@@ -185,6 +190,7 @@ export class Startup {
     RuntimeChannels,
     RuntimeProxy,
     RuntimeHmr,
+    RuntimeHmrControl,
     RuntimeDesktop,
     RuntimeAuthState,
     RuntimeLifecycle,
@@ -199,6 +205,7 @@ export class Startup {
     Channels,
     Proxy,
     Hmr,
+    HmrControl,
     Desktop,
     AuthState,
     Lifecycle,
@@ -219,6 +226,7 @@ export class RuntimeModule {}
     AdminService,
     AdminRoutes,
     MeRoutes,
+    AuthRoutes,
   ],
   exports: [Users, AuthSessions, Auth, Admin, PasswordHasher],
 })
@@ -340,6 +348,10 @@ export class MessagingHubModule {}
     WebModule,
     InstallRoutes,
     VersionRoutes,
+    HmrRoutes,
+    DesktopRoutes,
+    DesktopUpdateRoutes,
+    DesktopTrayRoutes,
     PluginRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
@@ -374,7 +386,7 @@ export class PlatformModule {}
  * plugin modules appended under the root.
  */
 export function platformDef(
-  caps: RuntimeCapabilities,
+  caps: HmrCapabilities,
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),
@@ -385,6 +397,7 @@ export function platformDef(
     [RuntimeChannels, new RuntimeChannels(caps)],
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
+    [RuntimeHmrControl, new RuntimeHmrControl(caps)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeLifecycle, new RuntimeLifecycle(caps)],
