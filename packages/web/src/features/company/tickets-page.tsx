@@ -3,21 +3,25 @@
  * its colour bar and count, a card per ticket — title, priority, due date (danger once
  * passed), the blocked badge, a muted line naming its parent, and its owner — a search box
  * and a blocked-only switch, drag-and-drop between columns that confirms the move (a move
- * into rejected asks for a one-line reason) before posting it, the detail drawer, the create
- * form, and the tickets and files the server could not accept.
+ * into rejected asks for a one-line reason) before posting it, the create form, and the
+ * tickets and files the server could not accept.
  * The whole card is the drag handle, and its title is the one click target: the title is a
- * text button that opens the detail, the rest of the card is inert, and a drag never fires a
- * click — so dragging anywhere (the title included) moves the ticket while clicking the title
- * opens it. What a card deliberately does not carry is the session count, the cost and any
- * live session status — those are the drawer's, and a ticket is not the place to watch a
- * session run.
+ * text button that opens the detail dialog (the shell's one host renders it, so the board
+ * stays where it is), the rest of the card is inert, and a drag never fires a click — so
+ * dragging anywhere (the title included) moves the ticket while clicking the title opens it.
+ * The priority rides on the title's line, one size under it. What a card deliberately does
+ * not carry is the session count, the cost and any live session status — those are the
+ * dialog's, and a ticket is not the place to watch a session run.
  * The board is always on screen: a skeleton of it until the first fetch, the empty columns
  * as drop zones — with a one-line note above them while the organization has no tickets at
  * all, dismissible and repeated in the page's "?" — the board plus an error strip when a
  * refetch fails.
- * `?column=` / `?blocked=1` / `?ticket=` deep links arrive from the overview.
+ * `?column=` / `?blocked=1` deep links arrive from the overview, and `?ticket=` is this
+ * page's own: it opens the dialog on arrival and follows it while it is open, so a ticket
+ * being read can be linked to and survives a reload. No other page writes it — the dialog is
+ * shell state, not a route.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent } from "react";
 import { useSearchParams } from "react-router";
 import type {
@@ -39,7 +43,6 @@ import { Button } from "../../components/ui/button";
 import { Switch } from "../../components/ui/switch";
 import { Segmented } from "../../components/ui/segmented";
 import { Modal } from "../../components/ui/modal";
-import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { FieldLabel } from "../../components/ui/field";
@@ -68,7 +71,7 @@ import {
   isTicketStatus,
   moveNeedsReason,
 } from "./ticket-board";
-import { TicketDrawer } from "./ticket-drawer";
+import { MoveTicketConfirm } from "./ticket-dialog";
 import { dismissHint, hintKey, isHintDismissed } from "./page-hints";
 import { agentPrincipal, splitPrincipalList } from "./principals";
 import { dayKey } from "./calendar-geom";
@@ -107,14 +110,11 @@ export function TicketsPage() {
   const [error, setError] = useState<string | null>(null);
   const [blockedOnly, setBlockedOnly] = useState(params.get("blocked") === "1");
   const [query, setQuery] = useState("");
-  const [drawerVersion, setDrawerVersion] = useState(0);
   const [drag, setDrag] = useState<{ ticketId: string; from: OrgTicketStatus } | null>(null);
   const [dropOver, setDropOver] = useState<OrgTicketStatus | null>(null);
   const [move, setMove] = useState<{ ticket: OrgTicketItem; to: OrgTicketStatus } | null>(null);
-  const [reason, setReason] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const openTicketId = params.get("ticket");
   const highlightColumn = params.get("column");
   // The empty-board note goes away for good once read; the page's "?" carries the same
   // sentence. The key holds the organization, so switching to another one — which does not
@@ -141,7 +141,6 @@ export function TicketsPage() {
   const { tickets: ticketsVersion, runs } = company.versions;
   useEffect(() => {
     void load();
-    setDrawerVersion((v) => v + 1);
   }, [load, ticketsVersion, runs]);
 
   const employees = chart?.employees ?? [];
@@ -159,9 +158,43 @@ export function TicketsPage() {
     }
     setParams(next, { replace: true });
   };
-  const openTicket = (ticketId: string | null) => setQueryParams({ ticket: ticketId });
+  const openTicket = (ticketId: string) => company.openTicket(projectId, orgId, ticketId);
 
-  const confirmMove = async () => {
+  // `?ticket=` and the open dialog, kept in step in both directions: the query opens the
+  // dialog on arrival (a deep link, a reload), and the dialog writes itself back into the
+  // query as it moves and clears it when it closes. One effect rather than two, and one ref
+  // holding the value last read or written — two effects writing to each other would chase
+  // one round trip behind and reopen a ticket the reader had just left.
+  const urlTicket = params.get("ticket");
+  const openDialog = company.ticketDialog;
+  const dialogTicket =
+    openDialog !== null && openDialog.projectId === projectId && openDialog.orgId === orgId
+      ? openDialog.ticketId
+      : null;
+  const syncedTicket = useRef<string | null>(null);
+  const { openTicket: openTicketInShell } = company;
+  useEffect(() => {
+    if (urlTicket !== syncedTicket.current) {
+      syncedTicket.current = urlTicket;
+      if (urlTicket !== null) {
+        openTicketInShell(projectId, orgId, urlTicket);
+        return;
+      }
+    }
+    if (dialogTicket === urlTicket) return;
+    syncedTicket.current = dialogTicket;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (dialogTicket === null) next.delete("ticket");
+        else next.set("ticket", dialogTicket);
+        return next;
+      },
+      { replace: true },
+    );
+  }, [urlTicket, dialogTicket, projectId, orgId, openTicketInShell, setParams]);
+
+  const confirmMove = async (reason: string) => {
     if (move === null) return;
     setBusy(true);
     try {
@@ -171,10 +204,9 @@ export function TicketsPage() {
       });
       toastSuccess(S.company.tickets.moved);
       setMove(null);
-      setReason("");
-      void load();
-      setDrawerVersion((v) => v + 1);
-      void company.reloadOrganizations();
+      // One signal for a ticket written here: this board, the open dialog and the
+      // organization summaries all refetch off it.
+      company.ticketsChanged();
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -206,12 +238,11 @@ export function TicketsPage() {
       setDrag(null);
       setDropOver(null);
       if (ticket === undefined) return;
-      setReason("");
       setMove({ ticket, to: status });
     },
   });
 
-  /** A card: the title first (the button that opens it), then what decides its urgency, then where it hangs and who holds it. */
+  /** A card: the title with its priority first (the title is the button that opens it), then what decides its urgency, then where it hangs and who holds it. */
   const card = (t: OrgTicketItem) => {
     const overdue = isOverdue(t.due, todayKey) && t.status !== "done" && t.status !== "rejected";
     return (
@@ -242,6 +273,11 @@ export function TicketsPage() {
           >
             {t.title}
           </TitleButton>
+          {/* The priority reads with the title and shares its line, a size under it; the line
+              below carries what is time-bound — the due date and the blocked mark. */}
+          <span className="mt-px shrink-0">
+            <PriorityBadge priority={t.priority} />
+          </span>
           {t.invalid !== undefined && (
             <span className={`mt-0.5 shrink-0 ${toneInk.danger}`} title={t.invalid}>
               <GlyphIcon d={INVALID_ICON} size={ICON_SIZE.inlineGlyph} />
@@ -249,27 +285,30 @@ export function TicketsPage() {
             </span>
           )}
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
-          <PriorityBadge priority={t.priority} />
-          {t.due !== undefined && (
-            <span
-              className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
-              title={overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due}
-            >
-              <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
-              {t.due}
-              {overdue && <span className="sr-only">{S.company.tickets.overdue}</span>}
-            </span>
-          )}
-          {isBlocked(t) && (
-            <span className="ml-auto">
-              <BlockedBadge
-                reason={t.blocked ?? ""}
-                {...(t.blockedBy !== undefined ? { by: t.blockedBy } : {})}
-              />
-            </span>
-          )}
-        </div>
+        {/* The time-bound line, drawn only when there is something on it: the priority has
+            moved up to the title and an empty row would leave a gap under it. */}
+        {(t.due !== undefined || isBlocked(t)) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+            {t.due !== undefined && (
+              <span
+                className={`inline-flex items-center gap-1 font-mono tabular-nums ${overdue ? toneInk.danger : ""}`}
+                title={overdue ? `${S.company.tickets.overdue} · ${t.due}` : S.company.tickets.due}
+              >
+                <GlyphIcon d={DUE_ICON} size={ICON_SIZE.inlineGlyph} />
+                {t.due}
+                {overdue && <span className="sr-only">{S.company.tickets.overdue}</span>}
+              </span>
+            )}
+            {isBlocked(t) && (
+              <span className="ml-auto">
+                <BlockedBadge
+                  reason={t.blocked ?? ""}
+                  {...(t.blockedBy !== undefined ? { by: t.blockedBy } : {})}
+                />
+              </span>
+            )}
+          </div>
+        )}
         {t.parent !== undefined && (
           <p
             className="mt-2 truncate text-[11px] text-gray-400 dark:text-gray-500"
@@ -454,58 +493,14 @@ export function TicketsPage() {
         </div>
       )}
 
-      <TicketDrawer
-        projectId={projectId}
-        orgId={orgId}
-        ticketId={openTicketId}
-        employees={employees}
-        tickets={board === null ? [] : allTickets(board)}
-        version={drawerVersion}
-        onClose={() => openTicket(null)}
-        onChanged={() => {
-          void load();
-          void company.reloadOrganizations();
-        }}
-        onOpenTicket={openTicket}
-        onMove={(ticket, to) => {
-          setReason("");
-          setMove({ ticket, to });
-        }}
-      />
-
-      {/* Move confirmation: the target column, and a reason when the target is rejected. */}
-      <ConfirmModal
-        open={move !== null}
-        title={S.company.tickets.moveTitle}
-        tone={move?.to === "rejected" ? "danger" : "primary"}
-        confirmLabel={S.common.confirm}
-        confirmDisabled={move !== null && moveNeedsReason(move.to) && reason.trim() === ""}
+      {/* Move confirmation: the target column, and a reason when the target is rejected —
+          the same dialog the detail's own move goes through. */}
+      <MoveTicketConfirm
+        move={move === null ? null : { title: move.ticket.title, to: move.to }}
         busy={busy}
         onClose={() => (busy ? undefined : setMove(null))}
-        onConfirm={() => void confirmMove()}
-      >
-        <div className="space-y-2">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            {move !== null
-              ? S.company.tickets.moveConfirm(
-                  move.ticket.title,
-                  S.company.tickets.columns[move.to] ?? move.to,
-                )
-              : ""}
-          </p>
-          {move !== null && moveNeedsReason(move.to) && (
-            <Input
-              size="sm"
-              label={S.company.tickets.rejectReason}
-              required
-              value={reason}
-              hint={S.company.tickets.rejectReasonHint}
-              autoFocus
-              onChange={(e) => setReason(e.target.value)}
-            />
-          )}
-        </div>
-      </ConfirmModal>
+        onConfirm={(reason) => void confirmMove(reason)}
+      />
 
       <CreateTicketDialog
         open={createOpen}
@@ -516,8 +511,7 @@ export function TicketsPage() {
         onClose={() => setCreateOpen(false)}
         onCreated={(ticketId) => {
           setCreateOpen(false);
-          void load();
-          void company.reloadOrganizations();
+          company.ticketsChanged();
           openTicket(ticketId);
         }}
       />

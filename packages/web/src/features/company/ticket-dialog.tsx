@@ -1,17 +1,26 @@
 /**
- * A ticket's detail, in a right-hand drawer over the board. The header names the ticket
- * (status, priority, id with a copy button, this ticket's cost and the total); the blocked
- * strip says why and on whom it waits; then the sections in reading order — the header
- * fields (the one owner, parent, notify, due, created), the goal, the acceptance criteria,
- * the progress prose with its one-line append, the result, and under them three disclosures
- * folded on every visit: the child tickets with the total cost, the ticket's own sessions,
- * and the operation history, newest first. Each editable section edits in place with its own
- * save / cancel; the footer holds the block / unblock and move actions. Saves confirm first,
- * like every organization write.
+ * A ticket's detail, as the dialog every company surface opens in place — the board, the
+ * finance ledger, the overview's inbox and a channel's ticket reference all put the same
+ * window on screen instead of carrying the reader to another page. The shell state says which
+ * ticket is open (state/company.tsx) and `TicketDialogHost`, mounted once by the organization
+ * layout, is what renders it.
+ *
+ * The header names the ticket with its priority chip on the same line, and carries the back
+ * control while a parent or a child has been followed from inside the dialog. The body holds,
+ * in reading order, the identity line (status, the blocked mark, the id with a copy button,
+ * this ticket's cost and the total), the blocked strip saying why and on whom it waits, the
+ * header fields (the one owner, parent, notify, due, created), the goal, the acceptance
+ * criteria, the progress prose with its one-line append, the result, and under them three
+ * disclosures folded on every visit: the child tickets with the total cost, the ticket's own
+ * sessions, and the operation history, newest first. Each editable section edits in place with
+ * its own save / cancel; the footer holds the block / unblock and move actions. Saves confirm
+ * first, like every organization write.
  *
  * Nothing here is a whole-row link: a child, a session and the parent are opened by their own
- * small corner button, so a click always says where it lands. A session's live status is not
- * drawn — a ticket reports its own work, not what a session is doing this second.
+ * small corner button, so a click always says where it lands. Only a session leaves the page —
+ * a conversation has no in-place form — and a parent or a child swaps the dialog's own ticket.
+ * A session's live status is not drawn: a ticket reports its own work, not what a session is
+ * doing this second.
  */
 import { Fragment, useCallback, useEffect, useId, useState } from "react";
 import { useNavigate } from "react-router";
@@ -31,8 +40,8 @@ import { formatDateTime, formatMoney } from "../../lib/format";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
+import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
-import { Drawer } from "../../components/ui/drawer";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { Input, Textarea } from "../../components/ui/input";
@@ -40,6 +49,7 @@ import { Select } from "../../components/ui/select";
 import { Segmented } from "../../components/ui/segmented";
 import { FieldLabel } from "../../components/ui/field";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { CloseButton } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { Skeleton } from "../../components/ui/skeleton";
 import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
@@ -55,7 +65,14 @@ import {
   principalLabel,
 } from "./shared";
 import { agentPrincipal, splitPrincipalList } from "./principals";
-import { TICKET_COLUMNS, isBlocked, isOverdue, ticketCreatedDate } from "./ticket-board";
+import {
+  TICKET_COLUMNS,
+  allTickets,
+  isBlocked,
+  isOverdue,
+  moveNeedsReason,
+  ticketCreatedDate,
+} from "./ticket-board";
 import { ticketHistoryRows, ticketSummaryCounts } from "./ticket-history";
 import { dayKey } from "./calendar-geom";
 
@@ -73,40 +90,61 @@ interface SummaryDraft {
   due: string;
 }
 
-export function TicketDrawer({
+/**
+ * The one mount of the ticket dialog, rendered by the organization layout beside the routed
+ * page. Every surface opens a ticket by naming it in the shell state and this follows, so a
+ * detail is read where the reader already is — no page switch, and the dialog survives one.
+ */
+export function TicketDialogHost() {
+  const company = useCompany();
+  const target = company.ticketDialog;
+  if (target === null) return null;
+  return (
+    <TicketDialog
+      projectId={target.projectId}
+      orgId={target.orgId}
+      ticketId={target.ticketId}
+      canGoBack={company.ticketBackDepth > 0}
+      onBack={company.backTicket}
+      onClose={company.closeTicket}
+      onOpenTicket={(ticketId) => company.openTicket(target.projectId, target.orgId, ticketId)}
+      onChanged={company.ticketsChanged}
+    />
+  );
+}
+
+function TicketDialog({
   projectId,
   orgId,
   ticketId,
-  employees,
-  tickets,
-  version,
+  canGoBack,
+  onBack,
   onClose,
   onChanged,
   onOpenTicket,
-  onMove,
 }: {
   projectId: string;
   orgId: string;
-  /** Null closes the drawer. */
-  ticketId: string | null;
-  employees: readonly OrgEmployeeItem[];
-  /** Every ticket of the board (the parent picker, the child list's titles). */
-  tickets: readonly OrgTicketItem[];
-  /** Bumped by the board when the ticket may have changed under the drawer. */
-  version: number;
+  ticketId: string;
+  /** A parent or a child was followed to get here, so the header offers the way back. */
+  canGoBack: boolean;
+  onBack: () => void;
   onClose: () => void;
+  /** A write landed: the surfaces listing tickets refetch off the shell's version. */
   onChanged: () => void;
-  /** Jump to another ticket (a child, the parent) inside the same drawer. */
+  /** Swap the dialog's ticket for another (a child, the parent). */
   onOpenTicket: (ticketId: string) => void;
-  /** Hand a move to the board's confirm flow (the same dialog a drag-and-drop goes through). */
-  onMove: (ticket: OrgTicketItem, to: OrgTicketStatus) => void;
 }) {
   const navigate = useNavigate();
+  const company = useCompany();
   const { currency } = useTheme();
   const { user } = useAuth();
   const me = user?.userId ?? null;
   const [detail, setDetail] = useState<OrgTicketDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The organization's board and roster: the parent picker, the child titles, the owner options. */
+  const [tickets, setTickets] = useState<readonly OrgTicketItem[]>([]);
+  const [employees, setEmployees] = useState<readonly OrgEmployeeItem[]>([]);
   const [editing, setEditing] = useState<Section | null>(null);
   const [summaryDraft, setSummaryDraft] = useState<SummaryDraft | null>(null);
   const [textDraft, setTextDraft] = useState("");
@@ -117,12 +155,13 @@ export function TicketDrawer({
   const [blockBy, setBlockBy] = useState("");
   const [progressText, setProgressText] = useState("");
   const [moveTarget, setMoveTarget] = useState("");
+  const [pendingMove, setPendingMove] = useState<OrgTicketStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const names = new Map(employees.map((e) => [e.agentId, e.name]));
   const titles = new Map(tickets.map((t) => [t.ticketId, t.title]));
+  const { tickets: ticketsVersion, runs: runsVersion } = company.versions;
 
   const load = useCallback(async () => {
-    if (ticketId === null) return;
     try {
       setDetail(await api.getOrgTicket(projectId, orgId, ticketId));
       setError(null);
@@ -131,7 +170,7 @@ export function TicketDrawer({
     }
   }, [projectId, orgId, ticketId]);
   // Another ticket: start blank. A version bump on the same ticket refetches in place, so a
-  // board event under an open drawer never flashes the skeleton or drops an edit in progress.
+  // board event under an open dialog never flashes the skeleton or drops an edit in progress.
   useEffect(() => {
     setDetail(null);
     setError(null);
@@ -140,7 +179,29 @@ export function TicketDrawer({
   }, [ticketId]);
   useEffect(() => {
     void load();
-  }, [load, version]);
+  }, [load, ticketsVersion, runsVersion]);
+
+  // The board and the roster the fields read against. Best effort and never blocking: without
+  // them the parent and the children fall back to their ids, which is what an id is for.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [board, chart] = await Promise.all([
+          api.listOrgTickets(projectId, orgId),
+          api.getOrgChart(projectId, orgId),
+        ]);
+        if (cancelled) return;
+        setTickets(allTickets(board));
+        setEmployees(chart.employees);
+      } catch {
+        // The detail itself is what the dialog is for; it carries its own error strip.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, orgId, ticketsVersion]);
 
   const run = async (work: () => Promise<void>, done?: string) => {
     setBusy(true);
@@ -228,6 +289,20 @@ export function TicketDrawer({
     });
   };
 
+  /** The move the footer asked for, once its confirmation (a reason, when rejecting) is answered. */
+  const commitMove = (reason: string) => {
+    if (detail === null || pendingMove === null) return;
+    const to = pendingMove;
+    setPendingMove(null);
+    void run(async () => {
+      await api.moveOrgTicket(projectId, orgId, detail.ticketId, {
+        status: to,
+        ...(moveNeedsReason(to) ? { reason: reason.trim() } : {}),
+      });
+      setMoveTarget("");
+    }, S.company.tickets.moved);
+  };
+
   const children = (detail?.children ?? []).map(
     (id) => tickets.find((t) => t.ticketId === id) ?? { ticketId: id, title: id },
   );
@@ -309,15 +384,37 @@ export function TicketDrawer({
   );
 
   return (
-    <Drawer
-      open={ticketId !== null}
-      side="right"
+    // Headerless and bare: the header below carries the back control and the priority chip
+    // beside the title, and the body owns its own scroller so the footer stays on screen.
+    <Modal
+      open
       title={detail?.title ?? S.company.tickets.detail}
       onClose={onClose}
-      widthClass="max-w-2xl"
+      headerless
+      bare
+      widthClass="sm:max-w-3xl"
     >
-      <div className="flex min-h-full flex-col">
-        <div className="flex-1 space-y-5 px-4 py-4">
+      <div className="flex max-h-[85vh] flex-col">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
+          {canGoBack && (
+            <Button size="sm" variant="ghost" onClick={onBack}>
+              {S.company.tickets.back}
+            </Button>
+          )}
+          {/* The priority sits on the title's line, one size under it: it is read with the
+              title, and a chip of its own line would push the ticket's first words down. */}
+          <h2 className="flex min-w-0 flex-1 items-center gap-2 text-base font-semibold">
+            <span className="min-w-0 truncate">{detail?.title ?? S.company.tickets.detail}</span>
+            {detail !== null && (
+              <span className="shrink-0">
+                <PriorityBadge priority={detail.priority} />
+              </span>
+            )}
+          </h2>
+          <CloseButton onClose={onClose} />
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6">
           {error !== null && detail === null ? (
             <div
               className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs ${toneStrip.danger}`}
@@ -340,10 +437,9 @@ export function TicketDrawer({
             </div>
           ) : (
             <>
-              {/* Identity line: status, priority, the blocked mark, the id with its copy, the cost. */}
+              {/* Identity line: status, the blocked mark, the id with its copy, the cost. */}
               <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <TicketStatusBadge status={detail.status} />
-                <PriorityBadge priority={detail.priority} />
                 {blocked && (
                   <BlockedBadge
                     reason={detail.blocked ?? ""}
@@ -659,9 +755,14 @@ export function TicketDrawer({
                             {formatDateTime(s.lastActiveAt)}
                           </span>
                         )}
+                        {/* The one way out of the dialog: a conversation has no in-place form,
+                            so opening a session closes this and lands on it. */}
                         <JumpButton
                           label={S.company.tickets.openSession}
-                          onClick={() => navigate(`/chat/${s.sessionId}`)}
+                          onClick={() => {
+                            onClose();
+                            navigate(`/chat/${s.sessionId}`);
+                          }}
                         />
                       </li>
                     ))}
@@ -729,7 +830,7 @@ export function TicketDrawer({
 
         {/* Footer: block / unblock on the left, the move on the right. */}
         {detail !== null && (
-          <div className="sticky bottom-0 flex flex-wrap items-center gap-2 border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-800">
             {blocked ? (
               <Button size="sm" disabled={busy} onClick={() => setConfirmUnblock(true)}>
                 {S.company.tickets.unblock}
@@ -761,7 +862,7 @@ export function TicketDrawer({
                 disabled={busy || moveTarget === ""}
                 onClick={() => {
                   const to = TICKET_COLUMNS.find((s) => s === moveTarget);
-                  if (to !== undefined) onMove(detail, to);
+                  if (to !== undefined) setPendingMove(to);
                 }}
               >
                 {S.company.tickets.move}
@@ -771,6 +872,14 @@ export function TicketDrawer({
         )}
       </div>
 
+      <MoveTicketConfirm
+        move={
+          detail === null || pendingMove === null ? null : { title: detail.title, to: pendingMove }
+        }
+        busy={busy}
+        onClose={() => (busy ? undefined : setPendingMove(null))}
+        onConfirm={commitMove}
+      />
       <ConfirmModal
         open={pendingSave !== null}
         title={S.common.confirmSaveTitle}
@@ -854,12 +963,76 @@ export function TicketDrawer({
           />
         </div>
       </Modal>
-    </Drawer>
+    </Modal>
   );
 }
 
 /**
- * A section of the drawer that is folded on every visit: the ruled header of `OrgSection`
+ * The confirmation every move goes through, wherever the move was asked for — the board's
+ * drag-and-drop and the dialog's footer — so a card dropped in a column and a ticket moved
+ * from its detail ask the same question. Moving into rejected also asks for the one-line
+ * reason that is recorded under the ticket's result; the box empties whenever a new move is
+ * proposed, so yesterday's wording cannot ride along.
+ */
+export function MoveTicketConfirm({
+  move,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  /** The move waiting for an answer, or null when none is. */
+  move: { title: string; to: OrgTicketStatus } | null;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  // Emptied on the move itself, never on the object carrying it: the callers build that inline,
+  // so a dependency on its identity would clear the box on every keystroke's render.
+  const movedTitle = move?.title ?? null;
+  const movedTo = move?.to ?? null;
+  useEffect(() => {
+    setReason("");
+  }, [movedTitle, movedTo]);
+  const needsReason = move !== null && moveNeedsReason(move.to);
+  return (
+    <ConfirmModal
+      open={move !== null}
+      title={S.company.tickets.moveTitle}
+      tone={move?.to === "rejected" ? "danger" : "primary"}
+      confirmLabel={S.common.confirm}
+      confirmDisabled={needsReason && reason.trim() === ""}
+      busy={busy}
+      onClose={onClose}
+      onConfirm={() => onConfirm(reason)}
+    >
+      <div className="space-y-2">
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {move !== null
+            ? S.company.tickets.moveConfirm(
+                move.title,
+                S.company.tickets.columns[move.to] ?? move.to,
+              )
+            : ""}
+        </p>
+        {needsReason && (
+          <Input
+            size="sm"
+            label={S.company.tickets.rejectReason}
+            required
+            value={reason}
+            hint={S.company.tickets.rejectReasonHint}
+            autoFocus
+            onChange={(e) => setReason(e.target.value)}
+          />
+        )}
+      </div>
+    </ConfirmModal>
+  );
+}
+
+/**
+ * A section of the dialog that is folded on every visit: the ruled header of `OrgSection`
  * with the app's one collapse chevron in front of it, and what it holds after it — a count,
  * a count and a cost — so a reader decides from the closed row whether to open it. The panel
  * stays in the DOM and is `hidden` while collapsed — the WAI-ARIA disclosure pattern, so

@@ -11,6 +11,10 @@
  * rest of the row inert), and where there is no title to click — a KPI cell, the counts under
  * the board bar — a named corner button carries it. The controls inside a card stay clickable,
  * and the destination is read rather than guessed.
+ * The overview is the one page whose rows cross into another menu — it is the dashboard, and
+ * its readings are links to where each lives: today's schedule to the calendar, a budget alert
+ * to finance, an inbox line to the channel it was said in. A ticket is the exception in the
+ * other direction: it opens as the detail dialog, in place, like everywhere else.
  * A brand-new organization (nobody hired, empty board) gets the three-step guide in place of
  * the sections, and the header then drops its "open the CEO's desk" button: the guide's first
  * step is that same call to action, and one screen carries a control once.
@@ -374,11 +378,12 @@ export function OverviewPage() {
 
   const page = (key: CompanyNavKey, query = "") =>
     navigate(`${orgPagePath(projectId, orgId, key)}${query}`);
-  const openTicket = (ticketId: string) =>
-    page("tickets", `?ticket=${encodeURIComponent(ticketId)}`);
-  /** Where an inbox row leads: the channel it was said in, or the ticket it is about. */
+  /**
+   * Where an inbox row leads: a ticket opens as the dialog over this page, while what was said
+   * in a channel opens the channel — a conversation is a place, not a detail.
+   */
   const openInboxRow = (target: InboxTarget) => {
-    if (target.kind === "ticket") openTicket(target.ticketId);
+    if (target.kind === "ticket") company.openTicket(projectId, orgId, target.ticketId);
     else navigate(orgChannelPath(projectId, orgId, target.channelId));
   };
 

@@ -1,8 +1,10 @@
 /**
  * state/company.tsx unit tests: the company store's routing of the scheduler's events (the
  * per-channel counters of the open organization and the totals the sidebar badges read, the
- * version bump each family causes, and what a local read mark clears), what it forgets when
- * the organization list comes back without the organization it is aimed at, and the
+ * version bump each family causes, and what a local read mark clears), the open ticket every
+ * company surface shares (the back stack a parent or a child pushes, and what closes it), what
+ * it forgets when the organization list comes back without the organization it is aimed at,
+ * and the
  * user-channel forwarding in state/sessions.tsx's applyUserEvent — a company event reaches
  * every subscriber, and a work run refreshes the session list of the Project it belongs to.
  */
@@ -275,6 +277,75 @@ describe("forgetting an organization the list no longer holds", () => {
       expect(store.getState().currentOrgKey).toBe("p1/acme");
       expect(store.getState().lastOrgKey).toBe("p1/acme");
     }
+  });
+});
+
+describe("the ticket dialog the whole shell shares", () => {
+  const open = (store: ReturnType<typeof createCompanyStore>) => store.getState().ticketDialog;
+
+  it("opens a ticket, stacks the ones followed from it, and walks back through them", () => {
+    const store = createCompanyStore();
+    store.getState().openTicket("p1", "acme", "t-1");
+    expect(open(store)).toEqual({ projectId: "p1", orgId: "acme", ticketId: "t-1" });
+    expect(store.getState().ticketStack).toEqual([]);
+
+    // A child followed from inside the dialog leaves its parent on the stack.
+    store.getState().openTicket("p1", "acme", "t-2");
+    store.getState().openTicket("p1", "acme", "t-3");
+    expect(open(store)?.ticketId).toBe("t-3");
+    expect(store.getState().ticketStack).toEqual(["t-1", "t-2"]);
+
+    store.getState().backTicket();
+    expect(open(store)?.ticketId).toBe("t-2");
+    expect(store.getState().ticketStack).toEqual(["t-1"]);
+    store.getState().backTicket();
+    expect(open(store)?.ticketId).toBe("t-1");
+    expect(store.getState().ticketStack).toEqual([]);
+    // Nothing left to go back to: the dialog stays on the ticket it is showing.
+    store.getState().backTicket();
+    expect(open(store)?.ticketId).toBe("t-1");
+  });
+
+  it("re-opening the ticket already shown changes nothing", () => {
+    const store = createCompanyStore();
+    store.getState().openTicket("p1", "acme", "t-1");
+    store.getState().openTicket("p1", "acme", "t-2");
+    // What the board does when it writes the open ticket back into its own query.
+    store.getState().openTicket("p1", "acme", "t-2");
+    expect(store.getState().ticketStack).toEqual(["t-1"]);
+  });
+
+  it("starts a fresh stack in another organization, and closing drops both", () => {
+    const store = createCompanyStore();
+    store.getState().openTicket("p1", "acme", "t-1");
+    store.getState().openTicket("p1", "acme", "t-2");
+    store.getState().openTicket("p1", "other", "t-9");
+    expect(open(store)).toEqual({ projectId: "p1", orgId: "other", ticketId: "t-9" });
+    expect(store.getState().ticketStack).toEqual([]);
+
+    store.getState().closeTicket();
+    expect(open(store)).toBeNull();
+    expect(store.getState().ticketStack).toEqual([]);
+  });
+
+  it("closes with the organization the reader leaves", () => {
+    const store = createCompanyStore();
+    store.setState({ currentOrgKey: "p1/acme" });
+    store.getState().openTicket("p1", "acme", "t-1");
+    store.getState().openTicket("p1", "acme", "t-2");
+    store.getState().setCurrentOrg("p1/other");
+    expect(open(store)).toBeNull();
+    expect(store.getState().ticketStack).toEqual([]);
+  });
+
+  it("a local ticket write bumps the versions the surfaces listing tickets watch", () => {
+    const store = createCompanyStore();
+    const before = store.getState().versions;
+    store.getState().ticketsChanged();
+    const after = store.getState().versions;
+    expect(after.tickets).toBe(before.tickets + 1);
+    expect(after.orgs).toBe(before.orgs + 1);
+    expect(after.messages).toBe(before.messages);
   });
 });
 
