@@ -634,9 +634,11 @@ export async function scanChannels(
 async function reconcileBudgets(deps: OrgDeps, org: LoadedOrg, spend: OrgSpend): Promise<void> {
   const nowIso = new Date(nowOf(deps)).toISOString();
   for (const e of org.chart.employees) {
-    if (e.budget === undefined || !(e.budget > 0)) continue;
+    if (e.budget === undefined) continue;
     const cost = spend.cumulative.get(e.agentId) ?? 0;
-    const ratio = cost / e.budget;
+    // A zero budget is spent the moment it is written — everything is already over it — so it
+    // reads 100% whatever the cost, the figure `budgetLine` already puts in the trigger block.
+    const ratio = e.budget > 0 ? cost / e.budget : 1;
     const state = deps.cache.budgetState(org.projectId, org.orgId, e.agentId, spend.period);
     const notify = (state: "warned" | "paused" | "resumed"): void =>
       deps.notifyProject(org.projectId, {

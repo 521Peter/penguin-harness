@@ -883,7 +883,7 @@ export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
     const orgId = requireValidId(c, "orgId");
     member(c, projectId);
     const period = c.req.query("period");
-    if (period !== undefined && !/^\d{4}-\d{2}$/.test(period))
+    if (period !== undefined && !/^\d{4}-(?:0[1-9]|1[0-2])$/.test(period))
       throw badRequest("period must be yyyy-mm.");
     return c.json(await deps.orgService.finance(projectId, orgId, period));
   });

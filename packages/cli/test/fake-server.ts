@@ -976,7 +976,8 @@ export class FakeServer {
 
     if (a === "finance" && b === undefined && method === "GET") {
       const period = url.searchParams.get("period") ?? ORG_PERIOD;
-      if (!/^\d{4}-\d{2}$/.test(period)) return this.badRequest("period must be yyyy-mm.");
+      if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(period))
+        return this.badRequest("period must be yyyy-mm.");
       const employees = org.employees.map((e) => {
         const spend = e.spend as { own: number; cumulative: number; ratio?: number };
         return {

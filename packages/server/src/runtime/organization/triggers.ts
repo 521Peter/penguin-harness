@@ -194,8 +194,10 @@ export async function dispatchToDesk(
  * Opens a ticket session: an ordinary session of the employee's Agent in the desk's (or a
  * chosen) workspace, appended to the ticket's `sessions` list — the fact that makes the
  * session the ticket's — and started with one input carrying where it stands, the rule that
- * references and deliverables are named by full path, and the whole ticket. `by` is the
- * principal the `session_started` history entry is recorded under; it defaults to the
+ * references and deliverables are named by full path, and the whole ticket. The ticket file
+ * and the cache learn of the session only once the task is away: a start that throws must
+ * leave no session behind for the spend, the history and the `#n` titles to count. `by` is
+ * the principal the `session_started` history entry is recorded under; it defaults to the
  * employee the session runs as, which is who started it in every path but a person's.
  */
 export async function openTicketSession(
@@ -226,6 +228,8 @@ export async function openTicketSession(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+  // The session joins the ticket in memory first, because the trigger below sends the ticket
+  // as it now stands; nothing is persisted until the task has started.
   const n = ticket.doc.sessions.length + 1;
   deps.sessions.updateTitle(created.sessionId, `${ticket.doc.title} #${n}`);
   ticket.doc.sessions = [...ticket.doc.sessions, created.sessionId];
@@ -238,14 +242,6 @@ export async function openTicketSession(
       note: created.sessionId,
     },
   ];
-  await deps.store.writeTicket(org.dir, ticket.ticketId, ticket.column, ticket.doc);
-  deps.cache.addTicketSession(
-    org.projectId,
-    org.orgId,
-    ticket.ticketId,
-    created.sessionId,
-    agentId,
-  );
   // Messages a ticket session sends carry hop 1: it was opened by a work run, not by a person.
   deps.cache.setTriggerHop(created.sessionId, 0);
   const origin: OrgTriggerOrigin = {
@@ -271,6 +267,15 @@ export async function openTicketSession(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+  // The task is away: the ticket may own the session now.
+  await deps.store.writeTicket(org.dir, ticket.ticketId, ticket.column, ticket.doc);
+  deps.cache.addTicketSession(
+    org.projectId,
+    org.orgId,
+    ticket.ticketId,
+    created.sessionId,
+    agentId,
+  );
   deps.notifyProject(org.projectId, {
     type: "org_run",
     projectId: org.projectId,

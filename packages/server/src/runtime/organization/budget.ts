@@ -63,9 +63,13 @@ export async function computeSpend(
   period?: string,
 ): Promise<OrgSpend> {
   const now = deps.now?.() ?? Date.now();
-  const range =
-    (period !== undefined ? zonedPeriodRange(org.config.timezone, period) : null) ??
-    zonedMonthRange(org.config.timezone, now);
+  // An explicit period that is not a month is a caller's bug — the routes refuse one with a
+  // 400 — and answering it with the current month's figures would be a wrong answer told
+  // quietly. Only the absent period falls back to the month in progress.
+  const explicit = period !== undefined ? zonedPeriodRange(org.config.timezone, period) : null;
+  if (period !== undefined && explicit === null)
+    throw new Error(`period must be yyyy-mm: ${period}`);
+  const range = explicit ?? zonedMonthRange(org.config.timezone, now);
   const owners = orgSessionOwners(deps, org, tickets);
   const sessionIds = [...owners.keys()];
   const { bySession, unpriced } = await deps.usage.costBySession(

@@ -222,6 +222,9 @@ describe("organization routes", () => {
       (await owner.get(`${base}/acme/channels/default_channel/messages?date=yesterday`)).status,
     ).toBe(400);
     expect((await owner.get(`${base}/acme/finance?period=2026-9`)).status).toBe(400);
+    // A month that is not a month: the service would answer it with the current month's spend.
+    expect((await owner.get(`${base}/acme/finance?period=2026-13`)).status).toBe(400);
+    expect((await owner.get(`${base}/acme/finance?period=2026-00`)).status).toBe(400);
     expect(calls).toEqual([]);
     const create = await owner.post(base, {
       orgId: "acme",

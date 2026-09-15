@@ -7,8 +7,9 @@
  * the employee's desk (queued when busy, held when the organization or the employee is
  * paused, held silently when the master switch is off); ticket changes are noticed once;
  * channel mentions reach desks and the chain stops at the limit; budgets warn, pause and
- * resume; and every pass brings an employee whose company plugins fell behind the library
- * back up to it.
+ * resume (a zero budget being over before anything is spent); a ticket session the runner
+ * refuses leaves the ticket as it was; and every pass brings an employee whose company
+ * plugins fell behind the library back up to it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -72,6 +73,8 @@ describe("organization runtime", () => {
   let store: OrgStore;
   let nowMs: number;
   let busy: Set<string>;
+  /** Set by a test to make every task start throw — a runner that refuses the work. */
+  let startFails: boolean;
   let started: Started[];
   let created: Array<{ projectId: string; agentId: string; workspace?: string; client: "org" }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
@@ -128,6 +131,7 @@ describe("organization runtime", () => {
     store = new OrgStore(root);
     nowMs = T0;
     busy = new Set();
+    startFails = false;
     started = [];
     created = [];
     agentsCreated = [];
@@ -155,6 +159,7 @@ describe("organization runtime", () => {
       runner: {
         statusOf: (id) => (busy.has(id) ? "running" : "idle"),
         startTask: async (sessionId, input, opts) => {
+          if (startFails) throw new Error("the runner refused the task");
           started.push({ sessionId, text: textOf(input), queueIfBusy: opts?.queueIfBusy === true });
           return { sessionId, queued: busy.has(sessionId) };
         },
@@ -825,6 +830,39 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(CEO);
+    });
+
+    it("leaves nothing on the ticket when the session cannot be started", async () => {
+      await createOrg();
+      const ceoDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      startFails = true;
+      await expect(
+        service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: ceoDesk }),
+      ).rejects.toMatchObject({ status: 409, code: "ticket_session_failed" });
+      // A session that never ran is not the ticket's: listed in `Sessions`, in the history or
+      // in the cache it would be counted by the spend and by the next session's `#n`, and a
+      // later chat in it would book its cost to this ticket and this employee.
+      const filed = await service.ticket(P, ORG, t.ticketId);
+      expect(filed.sessions).toEqual([]);
+      expect(filed.history.some((h) => h.action === "session_started")).toBe(false);
+      expect(cache.ticketSessions(P, ORG)).toEqual([]);
+      // So the retry is the ticket's first session, not its second.
+      startFails = false;
+      const retry = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice", sessionId: ceoDesk },
+      );
+      expect((await service.ticket(P, ORG, t.ticketId)).sessions).toEqual([retry.sessionId]);
+      expect(sessions.findById(retry.sessionId)?.title).toBe("Ship it #1");
     });
   });
 
@@ -2003,6 +2041,45 @@ describe("organization runtime", () => {
       expect(parseOrgTriggerMessage(started[0]!.text)?.origin.budget).toBe(
         "11.00 / 100.00 USD (11%)",
       );
+    });
+
+    it("enforces a zero budget, which nothing can be under", async () => {
+      await createOrg();
+      await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "HR",
+        reportsTo: CEO,
+        budget: 0,
+      });
+      await scheduler.tickOnce();
+      // Nothing was spent and the budget is already over: zero is a real budget, not a request
+      // to be unbounded, and it reads the 100% `budgetLine` reports for it. The pause is
+      // decided before the warning, and neither repeats on the next pass.
+      expect(
+        events.filter((e) => e.type === "org_budget").map((e) => (e as { state: string }).state),
+      ).toEqual(["paused", "warned"]);
+      expect((await service.chart(P, ORG)).employees.find((e) => e.agentId === HR)!.state).toBe(
+        "paused",
+      );
+      const finance = await service.finance(P, ORG);
+      expect(finance.employees.find((e) => e.agentId === HR)).toMatchObject({
+        own: 0,
+        budget: 0,
+        warned: true,
+        paused: true,
+      });
+      // The CEO's 100 is untouched, so the zero budget is the only one that tripped.
+      expect(finance.employees.find((e) => e.agentId === CEO)).toMatchObject({ paused: false });
+    });
+
+    it("reports the month asked for, and refuses a month that is not one", async () => {
+      await createOrg();
+      expect((await service.finance(P, ORG)).period).toBe("2026-09");
+      expect((await service.finance(P, ORG, "2026-08")).period).toBe("2026-08");
+      // A malformed month is a caller that skipped the route's check; answering it with the
+      // current month's figures would be the wrong month reported as the one asked for.
+      await expect(service.finance(P, ORG, "2026-13")).rejects.toThrow(/yyyy-mm/);
+      await expect(service.finance(P, ORG, "2026-00")).rejects.toThrow(/yyyy-mm/);
     });
   });
 
